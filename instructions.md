@@ -1,1 +1,1 @@
-Try to run the Edison-Watch app and check if a setup window appears.
+When the app window opens up, try to multiply two numbers together and check if the result is correct.

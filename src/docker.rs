@@ -24,6 +24,11 @@ pub struct DockerSession {
 }
 
 impl DockerSession {
+    /// Access the underlying Docker client (for container logs, etc.).
+    pub fn docker_client(&self) -> &Docker {
+        &self.client
+    }
+
     /// Build the Docker image from the docker/ directory if it doesn't already exist.
     pub async fn ensure_image(client: &Docker, force_rebuild: bool) -> Result<(), AppError> {
         if !force_rebuild {
@@ -218,19 +223,25 @@ impl DockerSession {
     }
 
     /// Execute a command in the background (detached) inside the container.
+    /// Output is redirected to the specified log file (default: /dev/null).
     pub async fn exec_detached(&self, cmd: &[&str]) -> Result<(), AppError> {
+        self.exec_detached_with_log(cmd, "/dev/null").await
+    }
+
+    /// Execute a command in the background, redirecting stdout/stderr to a log file.
+    pub async fn exec_detached_with_log(&self, cmd: &[&str], log_path: &str) -> Result<(), AppError> {
         // bollard doesn't have a `detach` option on CreateExecOptions,
         // so we launch a background process via bash.
+        let escaped_cmd = cmd
+            .iter()
+            .map(|s| shell_escape::escape((*s).into()))
+            .collect::<Vec<_>>()
+            .join(" ");
+
         self.exec(&[
             "bash",
             "-c",
-            &format!(
-                "nohup {} > /dev/null 2>&1 &",
-                cmd.iter()
-                    .map(|s| shell_escape::escape((*s).into()))
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            ),
+            &format!("nohup {escaped_cmd} > {log_path} 2>&1 &"),
         ])
         .await?;
 
@@ -282,7 +293,11 @@ impl DockerSession {
         Ok(())
     }
 
-    /// Copy a file from the container to a local path.
+    /// Copy a file or directory from the container to a local path.
+    ///
+    /// When copying a single file, `local_path` is the destination file.
+    /// When copying a directory, `local_path` is the destination directory
+    /// (the container directory's contents are extracted into it).
     pub async fn copy_from(&self, container_path: &str, local_path: &Path) -> Result<(), AppError> {
         let stream = self
             .client
@@ -301,25 +316,64 @@ impl DockerSession {
         }
 
         let mut archive = tar::Archive::new(&tar_bytes[..]);
-        for entry in archive
+        let entries = archive
             .entries()
-            .map_err(|e| AppError::Infra(format!("Tar read error: {e}")))?
-        {
-            let mut entry = entry.map_err(|e| AppError::Infra(format!("Tar entry error: {e}")))?;
+            .map_err(|e| AppError::Infra(format!("Tar read error: {e}")))?;
 
-            if let Some(parent) = local_path.parent() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| AppError::Infra(format!("Cannot create dir: {e}")))?;
+        // Docker wraps the path in a tar with the basename as root.
+        // e.g. downloading /home/tester gives entries like tester/, tester/.bashrc, etc.
+        // We strip the first path component and extract relative to local_path.
+        let mut entry_count = 0;
+        for entry in entries {
+            let mut entry = entry.map_err(|e| AppError::Infra(format!("Tar entry error: {e}")))?;
+            let entry_path = entry
+                .path()
+                .map_err(|e| AppError::Infra(format!("Tar path error: {e}")))?
+                .to_path_buf();
+
+            entry_count += 1;
+
+            // Strip the first component (Docker's wrapper directory)
+            let components: Vec<_> = entry_path.components().collect();
+            if components.len() <= 1 {
+                // This is the root directory entry itself; if it's a dir, ensure local_path exists
+                if entry.header().entry_type().is_dir() {
+                    std::fs::create_dir_all(local_path)
+                        .map_err(|e| AppError::Infra(format!("Cannot create dir: {e}")))?;
+                } else {
+                    // Single file download - write directly to local_path
+                    if let Some(parent) = local_path.parent() {
+                        std::fs::create_dir_all(parent)
+                            .map_err(|e| AppError::Infra(format!("Cannot create dir: {e}")))?;
+                    }
+                    let mut file = std::fs::File::create(local_path)
+                        .map_err(|e| AppError::Infra(format!("Cannot create file: {e}")))?;
+                    std::io::copy(&mut entry, &mut file)
+                        .map_err(|e| AppError::Infra(format!("Copy error: {e}")))?;
+                }
+                continue;
             }
 
-            let mut file = std::fs::File::create(local_path)
-                .map_err(|e| AppError::Infra(format!("Cannot create file: {e}")))?;
-            std::io::copy(&mut entry, &mut file)
-                .map_err(|e| AppError::Infra(format!("Copy error: {e}")))?;
+            // Build the destination path by stripping the first component
+            let relative: std::path::PathBuf = components[1..].iter().collect();
+            let dest = local_path.join(&relative);
 
-            break;
+            if entry.header().entry_type().is_dir() {
+                std::fs::create_dir_all(&dest)
+                    .map_err(|e| AppError::Infra(format!("Cannot create dir: {e}")))?;
+            } else {
+                if let Some(parent) = dest.parent() {
+                    std::fs::create_dir_all(parent)
+                        .map_err(|e| AppError::Infra(format!("Cannot create dir: {e}")))?;
+                }
+                let mut file = std::fs::File::create(&dest)
+                    .map_err(|e| AppError::Infra(format!("Cannot create file {}: {e}", dest.display())))?;
+                std::io::copy(&mut entry, &mut file)
+                    .map_err(|e| AppError::Infra(format!("Copy error: {e}")))?;
+            }
         }
 
+        debug!("Copied {} tar entries from container:{} to {}", entry_count, container_path, local_path.display());
         Ok(())
     }
 
@@ -373,8 +427,18 @@ impl DockerSession {
     }
 
     /// Launch the app inside the container (non-blocking).
-    pub async fn launch_app(&self, app_path: &str) -> Result<(), AppError> {
-        self.exec_detached(&[app_path]).await?;
+    /// App stdout/stderr is captured to /tmp/app.log for debugging.
+    /// AppImages are launched with --appimage-extract-and-run to avoid FUSE issues in containers.
+    /// All apps get --no-sandbox since Chromium's sandbox doesn't work in containers.
+    pub async fn launch_app(&self, app_path: &str, is_appimage: bool) -> Result<(), AppError> {
+        let mut args: Vec<&str> = vec![app_path];
+        if is_appimage {
+            args.push("--appimage-extract-and-run");
+        }
+        // Chromium/Electron sandbox doesn't work in containers
+        args.push("--no-sandbox");
+
+        self.exec_detached_with_log(&args, "/tmp/app.log").await?;
         info!("Launched app: {app_path}");
         Ok(())
     }

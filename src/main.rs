@@ -116,11 +116,36 @@ async fn run_inner(
     info!("Deploying app...");
     let app_path = session.deploy_app(config).await?;
 
-    // 7. Get baseline windows, launch app, wait for app window
-    let baseline_windows = readiness::get_window_list(session).await?;
+    // 7. Get stable baseline windows, launch app, wait for app window
+    info!("Waiting for stable window baseline...");
+    let baseline_windows = readiness::get_stable_window_list(session).await?;
 
+    let is_appimage = matches!(config.app_type, crate::config::AppType::Appimage);
     info!("Launching app: {app_path}");
-    session.launch_app(&app_path).await?;
+    session.launch_app(&app_path, is_appimage).await?;
+
+    // Give the app a moment to start (or crash)
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    // Check if the app process is still running
+    let pgrep_cmd = format!("pgrep -f {} || true", shell_escape::escape(app_path.as_str().into()));
+    let ps_check = session
+        .exec(&["bash", "-c", &pgrep_cmd])
+        .await;
+    if let Ok(output) = &ps_check {
+        if output.trim().is_empty() {
+            // App process not found - check the log for errors
+            let log = session
+                .exec(&["cat", "/tmp/app.log"])
+                .await
+                .unwrap_or_default();
+            if !log.trim().is_empty() {
+                tracing::warn!("App process died. Log output:\n{log}");
+            } else {
+                tracing::warn!("App process not found and no log output");
+            }
+        }
+    }
 
     info!("Waiting for app window...");
     readiness::wait_for_app_window(session, &baseline_windows, timeout, debug).await?;

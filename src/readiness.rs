@@ -53,7 +53,7 @@ pub async fn wait_for_desktop(
     }
 }
 
-/// Get the current list of visible X window IDs (baseline before launching app).
+/// Get the current list of visible X window IDs.
 pub async fn get_window_list(session: &DockerSession) -> Result<Vec<String>, AppError> {
     let output = session
         .exec(&["xdotool", "search", "--onlyvisible", "--name", ""])
@@ -65,8 +65,36 @@ pub async fn get_window_list(session: &DockerSession) -> Result<Vec<String>, App
         .filter(|l| !l.is_empty())
         .collect();
 
-    debug!("Baseline window list: {} windows", windows.len());
     Ok(windows)
+}
+
+/// Get a stable baseline of visible X windows by waiting for the window count
+/// to stop changing. This avoids false positives from XFCE panels still loading.
+pub async fn get_stable_window_list(session: &DockerSession) -> Result<Vec<String>, AppError> {
+    let mut last_windows = get_window_list(session).await?;
+    let mut stable_count = 0;
+    let required_stable = 3; // need 3 consecutive identical readings
+
+    loop {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let current = get_window_list(session).await?;
+
+        if current == last_windows {
+            stable_count += 1;
+            if stable_count >= required_stable {
+                debug!("Stable baseline window list: {} windows", current.len());
+                return Ok(current);
+            }
+        } else {
+            debug!(
+                "Window list changed: {} -> {} windows, resetting stability counter",
+                last_windows.len(),
+                current.len()
+            );
+            last_windows = current;
+            stable_count = 0;
+        }
+    }
 }
 
 /// Wait for a new X window to appear that wasn't in the baseline list.
