@@ -1,0 +1,1 @@
+Try to run the Edison-Watch app and check if a setup window appears.
