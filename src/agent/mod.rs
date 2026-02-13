@@ -5,33 +5,42 @@ pub mod tools;
 
 use std::path::PathBuf;
 
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::docker::DockerSession;
 use crate::error::{AgentOutcome, AppError};
 use openai::{
-    system_message, tool_result_message, user_image_message, user_message, OpenAiClient,
+    system_message, tool_result_message, user_image_message, user_message, ChatMessage,
+    OpenAiClient,
 };
 use tools::{dispatch_tool, tool_definitions, ToolResult};
 
 const SYSTEM_PROMPT: &str = "\
 You are a professional software tester operating a Linux XFCE desktop via provided tools.
 
-You can control the mouse and keyboard, take screenshots, and report your findings.
-Always take a screenshot first to see the current state of the screen before performing actions.
-Take screenshots frequently to confirm the result of your actions.
+## Core workflow
 
-Available interaction tools:
-- moveMouse(posX, posY): Move cursor to coordinates
-- leftClick(), doubleClick(), rightClick(), middleClick(): Mouse clicks
-- scrollUp(ticks), scrollDown(ticks): Scroll the mouse wheel
-- dragLeftClickMouse(startX, startY, endX, endY): Drag operation
-- pressAndHoldKey(key, milliseconds, modifiers?): Press a key (supports Enter, Tab, Escape, etc.)
-- type(str): Type text
-- screenshot(): Take a screenshot (returns the image)
-- done(isGood, reasoning): Signal test completion with verdict
+1. ALWAYS call think() first to describe what you see and plan your next action.
+2. Take a screenshot to see the current state of the screen.
+3. Call think() again to analyze the screenshot before acting.
+4. Perform your action (click, type, etc.).
+5. Take another screenshot to verify the result.
+6. Repeat until the test is complete, then call done().
 
-When you are done testing, call done() with your verdict and reasoning.";
+## How to interact with GUI applications
+
+- You are controlling a graphical desktop. Applications have buttons, menus, and input fields that you interact with by clicking on them with the mouse.
+- To click a button or UI element: first moveMouse() to its coordinates, then leftClick().
+- To type into a text field: first click on the field to focus it, then use type().
+- Do NOT type mathematical expressions or commands as text unless you see a text input field that accepts them. Most GUI apps (calculators, etc.) have clickable buttons.
+- The mouse cursor is visible in screenshots as a small arrow. Use it to verify your cursor position before clicking.
+
+## Important guidelines
+
+- Think step-by-step. After each screenshot, use think() to describe what you see and plan your next move.
+- If an action doesn't produce the expected result, stop and re-evaluate. Don't repeat the same failing action.
+- Use the screen coordinates carefully. Examine the screenshot to identify exact positions of buttons and UI elements before clicking.
+- When you are done testing, call done() with your verdict and reasoning.";
 
 pub struct AgentLoop<'a> {
     client: OpenAiClient,
@@ -58,6 +67,49 @@ impl<'a> AgentLoop<'a> {
         }
     }
 
+    /// Save the conversation log to artifacts, replacing base64 image data
+    /// with a short placeholder to keep the file human-readable.
+    fn save_conversation_log(&self, messages: &[ChatMessage]) {
+        let log_path = self.artifacts_dir.join("agent_conversation.json");
+
+        // Build a sanitized copy: replace base64 data URLs with placeholders
+        let sanitized: Vec<serde_json::Value> = messages
+            .iter()
+            .map(|msg| {
+                let mut val = serde_json::to_value(msg).unwrap_or_default();
+                // Check for image_url content (user messages with screenshots)
+                if let Some(content) = val.get_mut("content") {
+                    if let Some(arr) = content.as_array_mut() {
+                        for item in arr.iter_mut() {
+                            if let Some(url) = item
+                                .get_mut("image_url")
+                                .and_then(|u| u.get_mut("url"))
+                            {
+                                if let Some(s) = url.as_str() {
+                                    if s.starts_with("data:image/") {
+                                        *url = serde_json::Value::String(
+                                            "[base64 image data omitted]".into(),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                val
+            })
+            .collect();
+
+        match serde_json::to_string_pretty(&sanitized) {
+            Ok(json) => {
+                if let Err(e) = std::fs::write(&log_path, json) {
+                    warn!("Failed to write conversation log: {e}");
+                }
+            }
+            Err(e) => warn!("Failed to serialize conversation log: {e}"),
+        }
+    }
+
     pub async fn run(&mut self) -> Result<AgentOutcome, AppError> {
         let tools = tool_definitions();
         let mut messages = vec![
@@ -72,6 +124,8 @@ impl<'a> AgentLoop<'a> {
         info!("Starting agent loop");
 
         loop {
+            self.save_conversation_log(&messages);
+
             let response = self.client.chat_completion(&messages, &tools).await?;
             messages.push(response.clone());
 
@@ -91,6 +145,8 @@ impl<'a> AgentLoop<'a> {
                     match result {
                         ToolResult::Done { passed, reasoning } => {
                             info!("Agent done: passed={passed}, reasoning={reasoning}");
+                            messages.push(tool_result_message(&tc.id, &reasoning));
+                            self.save_conversation_log(&messages);
                             return Ok(AgentOutcome {
                                 passed,
                                 reasoning,

@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use serde_json::json;
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::docker::DockerSession;
 use crate::error::AppError;
@@ -123,6 +123,18 @@ pub fn tool_definitions() -> Vec<serde_json::Value> {
             "screenshot",
             "Take a screenshot of the current screen",
             json!({ "type": "object", "properties": {} }),
+        ),
+        make_tool(
+            "think",
+            "Use this tool to think step-by-step before acting. Describe what you see on screen, the absolute screen coordinates of any relevant UI elements (from the top-left corner of the 1280 x 800 screen), what you plan to do next, and why. You MUST call this before any action sequence.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "observation": { "type": "string", "description": "What you see on the current screenshot (UI elements, buttons, text, cursor position)" },
+                    "plan": { "type": "string", "description": "What you will do next and why" }
+                },
+                "required": ["observation", "plan"]
+            }),
         ),
         make_tool(
             "done",
@@ -248,6 +260,14 @@ pub async fn dispatch_tool(
             debug!("Screenshot saved to {}", path.display());
             Ok(ToolResult::ScreenshotTaken(data_url))
         }
+        "think" => {
+            let observation = args["observation"].as_str().unwrap_or("");
+            let plan = args["plan"].as_str().unwrap_or("");
+            info!("Agent thinking: observation={observation}, plan={plan}");
+            Ok(ToolResult::Success(format!(
+                "Observation noted. Plan acknowledged. Proceed with your actions."
+            )))
+        }
         "done" => {
             let is_good = args["isGood"].as_bool().unwrap_or(false);
             let reasoning = args["reasoning"]
@@ -270,7 +290,7 @@ mod tests {
     #[test]
     fn test_tool_definitions_count() {
         let defs = tool_definitions();
-        assert_eq!(defs.len(), 12, "Expected 12 tool definitions");
+        assert_eq!(defs.len(), 13, "Expected 13 tool definitions");
     }
 
     #[test]
@@ -304,6 +324,7 @@ mod tests {
             "pressAndHoldKey",
             "type",
             "screenshot",
+            "think",
             "done",
         ];
 

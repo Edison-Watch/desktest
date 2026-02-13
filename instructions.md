@@ -1,1 +1,1 @@
-When the app window opens up, try to multiply two numbers together and check if the result is correct.
+The app you are given is a simple calculator app. I want you to make sure it mupltiplies numbers correctly. Press in 9 times 12 and check if the result is correct.

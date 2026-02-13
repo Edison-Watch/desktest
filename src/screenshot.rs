@@ -16,7 +16,7 @@ pub async fn capture_screenshot(
 ) -> Result<(PathBuf, String), AppError> {
     // Capture screenshot inside container
     session
-        .exec(&["scrot", "-o", "/tmp/screenshot.png"])
+        .exec(&["scrot", "-o", "-p", "/tmp/screenshot.png"])
         .await?;
 
     // Copy from container to host

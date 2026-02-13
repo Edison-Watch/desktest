@@ -26,6 +26,10 @@ pub struct Cli {
     /// Enable debug mode (verbose logging)
     #[arg(long, default_value_t = false)]
     pub debug: bool,
+
+    /// Interactive mode: start container and app, then wait for Ctrl+C (no agent)
+    #[arg(long, default_value_t = false)]
+    pub interactive: bool,
 }
 
 fn setup_logging(debug: bool) {
@@ -45,6 +49,7 @@ async fn main() {
     let cli = Cli::parse();
     setup_logging(cli.debug);
 
+    let interactive = cli.interactive;
     let result = run(cli).await;
 
     match result {
@@ -53,6 +58,10 @@ async fn main() {
             std::process::exit(if outcome.passed { 0 } else { 1 });
         }
         Err(e) => {
+            // In interactive mode, Ctrl+C is the expected exit path
+            if interactive {
+                std::process::exit(0);
+            }
             eprintln!("Error: {e}");
             std::process::exit(e.exit_code());
         }
@@ -86,7 +95,7 @@ async fn run(cli: Cli) -> Result<AgentOutcome, AppError> {
             eprintln!("\nInterrupted (Ctrl+C), cleaning up...");
             Err(AppError::Infra("Interrupted by user".into()))
         }
-        r = run_inner(&config, &session, &artifacts_dir, &instructions, cli.debug) => r,
+        r = run_inner(&config, &session, &artifacts_dir, &instructions, cli.debug, cli.interactive) => r,
     };
 
     // Always collect artifacts and clean up
@@ -105,6 +114,7 @@ async fn run_inner(
     artifacts_dir: &std::path::Path,
     instructions: &str,
     debug: bool,
+    interactive: bool,
 ) -> Result<AgentOutcome, AppError> {
     let timeout = Duration::from_secs(config.startup_timeout_seconds);
 
@@ -155,7 +165,16 @@ async fn run_inner(
         println!("VNC available at {}:{}", config.vnc_bind_addr, vnc_port);
     }
 
-    // 9. Run agent loop
+    // 9. Interactive mode: just wait, or run agent loop
+    if interactive {
+        println!("Interactive mode: container is running. Press Ctrl+C to stop.");
+        println!("Container ID: {}", session.container_id);
+        println!("  docker exec -it {} bash", session.container_id);
+        // Wait forever (Ctrl+C is handled by the select! in run())
+        std::future::pending::<()>().await;
+        unreachable!()
+    }
+
     info!("Starting agent loop...");
     let client = agent::openai::OpenAiClient::new(&config.openai_api_key, &config.openai_model);
     let mut agent_loop = agent::AgentLoop::new(
