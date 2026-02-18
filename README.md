@@ -16,4 +16,4 @@ Once you have all of those up, you can run Tent via cargo like `cargo run -- con
 
 ## How it works
 
-Tent makes a minimal container with a virtual X11 server, a VNC server, and everything required to run AppImages for a maximal speedup. It then copies over the AppImage of your choosing to the container and runs it. Once up, an agent is given full control over the VM with the ability to take screenshots, run HCI-equivalent tool calls that are passed onto `xdotool`, and finally call a `done` tool when it decides it has successfully reproduced the instructions given and verified whether the spec is met or not.
+Tent makes a minimal container with a virtual X11 server, a VNC server, and everything required to run AppImages. It then copies over the AppImage of your choosing to the container and runs it. Once up, an agent is given full control over the VM with the ability to take screenshots, run HCI-equivalent tool calls that are passed onto `xdotool`, and finally call a `done` tool when it decides it has successfully reproduced the instructions given and verified whether the spec is met or not.
