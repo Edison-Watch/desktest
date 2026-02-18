@@ -8,6 +8,10 @@ fn default_model() -> String {
     "gpt-4.1".into()
 }
 
+fn default_base_url() -> String {
+    "https://api.openai.com".into()
+}
+
 fn default_width() -> u32 {
     1280
 }
@@ -33,10 +37,13 @@ pub enum AppType {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
-    pub openai_api_key: String,
+    pub api_key: String,
 
     #[serde(default = "default_model")]
-    pub openai_model: String,
+    pub model: String,
+
+    #[serde(default = "default_base_url")]
+    pub api_base_url: String,
 
     #[serde(default = "default_width")]
     pub display_width: u32,
@@ -84,8 +91,8 @@ impl Config {
     }
 
     fn validate(&self) -> Result<(), AppError> {
-        if self.openai_api_key.is_empty() {
-            return Err(AppError::Config("openai_api_key must not be empty".into()));
+        if self.api_key.is_empty() {
+            return Err(AppError::Config("api_key must not be empty".into()));
         }
 
         match self.app_type {
@@ -162,7 +169,7 @@ mod tests {
         let (_tmp, app_path) = make_temp_appimage();
         let json = format!(
             r#"{{
-                "openai_api_key": "sk-test",
+                "api_key": "sk-test",
                 "app_type": "appimage",
                 "app_path": "{}"
             }}"#,
@@ -170,7 +177,7 @@ mod tests {
         );
         let config = Config::parse_and_validate(&json).unwrap();
         assert_eq!(config.app_type, AppType::Appimage);
-        assert_eq!(config.openai_api_key, "sk-test");
+        assert_eq!(config.api_key, "sk-test");
         assert_eq!(config.app_path.unwrap(), app_path);
     }
 
@@ -179,7 +186,7 @@ mod tests {
         let (_tmp, app_dir) = make_temp_folder_app();
         let json = format!(
             r#"{{
-                "openai_api_key": "sk-test",
+                "api_key": "sk-test",
                 "app_type": "folder",
                 "app_dir": "{}",
                 "entrypoint": "run.sh"
@@ -196,14 +203,14 @@ mod tests {
         let (_tmp, app_path) = make_temp_appimage();
         let json = format!(
             r#"{{
-                "openai_api_key": "sk-test",
+                "api_key": "sk-test",
                 "app_type": "appimage",
                 "app_path": "{}"
             }}"#,
             app_path.display()
         );
         let config = Config::parse_and_validate(&json).unwrap();
-        assert_eq!(config.openai_model, "gpt-4.1");
+        assert_eq!(config.model, "gpt-4.1");
         assert_eq!(config.display_width, 1280);
         assert_eq!(config.display_height, 800);
         assert_eq!(config.vnc_bind_addr, "0.0.0.0");
@@ -216,7 +223,7 @@ mod tests {
         let json = r#"{"app_type": "appimage", "app_path": "/tmp/x"}"#;
         let err = Config::parse_and_validate(json).unwrap_err();
         assert!(matches!(err, AppError::Config(_)));
-        assert!(err.to_string().contains("openai_api_key"));
+        assert!(err.to_string().contains("api_key"));
     }
 
     #[test]
@@ -224,19 +231,19 @@ mod tests {
         let (_tmp, app_path) = make_temp_appimage();
         let json = format!(
             r#"{{
-                "openai_api_key": "",
+                "api_key": "",
                 "app_type": "appimage",
                 "app_path": "{}"
             }}"#,
             app_path.display()
         );
         let err = Config::parse_and_validate(&json).unwrap_err();
-        assert!(err.to_string().contains("openai_api_key must not be empty"));
+        assert!(err.to_string().contains("api_key must not be empty"));
     }
 
     #[test]
     fn test_missing_app_path_for_appimage() {
-        let json = r#"{"openai_api_key": "sk-test", "app_type": "appimage"}"#;
+        let json = r#"{"api_key": "sk-test", "app_type": "appimage"}"#;
         let err = Config::parse_and_validate(json).unwrap_err();
         assert!(err.to_string().contains("app_path is required"));
     }
@@ -246,7 +253,7 @@ mod tests {
         let (_tmp, app_dir) = make_temp_folder_app();
         let json = format!(
             r#"{{
-                "openai_api_key": "sk-test",
+                "api_key": "sk-test",
                 "app_type": "folder",
                 "app_dir": "{}"
             }}"#,
@@ -258,7 +265,7 @@ mod tests {
 
     #[test]
     fn test_missing_app_dir_for_folder() {
-        let json = r#"{"openai_api_key": "sk-test", "app_type": "folder", "entrypoint": "run.sh"}"#;
+        let json = r#"{"api_key": "sk-test", "app_type": "folder", "entrypoint": "run.sh"}"#;
         let err = Config::parse_and_validate(json).unwrap_err();
         assert!(err.to_string().contains("app_dir is required"));
     }
@@ -273,7 +280,7 @@ mod tests {
     #[test]
     fn test_app_path_not_found() {
         let json =
-            r#"{"openai_api_key": "sk-test", "app_type": "appimage", "app_path": "/nonexistent/app.AppImage"}"#;
+            r#"{"api_key": "sk-test", "app_type": "appimage", "app_path": "/nonexistent/app.AppImage"}"#;
         let err = Config::parse_and_validate(json).unwrap_err();
         assert!(err.to_string().contains("app_path does not exist"));
     }
@@ -283,7 +290,7 @@ mod tests {
         let (_tmp, app_path) = make_temp_appimage();
         let json = format!(
             r#"{{
-                "openai_api_key": "sk-test",
+                "api_key": "sk-test",
                 "app_type": "appimage",
                 "app_path": "{}",
                 "vnc_port": 0

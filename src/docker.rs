@@ -477,8 +477,9 @@ mod tests {
 
     fn test_config() -> Config {
         Config {
-            openai_api_key: "sk-test".into(),
-            openai_model: "gpt-4.1".into(),
+            api_key: "sk-test".into(),
+            model: "gpt-4.1".into(),
+            api_base_url: "https://api.openai.com".into(),
             display_width: 1280,
             display_height: 800,
             vnc_bind_addr: "127.0.0.1".into(),

@@ -176,7 +176,8 @@ async fn run_inner(
     }
 
     info!("Starting agent loop...");
-    let client = agent::openai::OpenAiClient::new(&config.openai_api_key, &config.openai_model);
+    let client = agent::openai::OpenAiClient::new(&config.api_key, &config.model)
+        .with_base_url(&config.api_base_url);
     let mut agent_loop = agent::AgentLoop::new(
         client,
         session,

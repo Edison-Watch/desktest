@@ -39,7 +39,8 @@ You are a professional software tester operating a Linux XFCE desktop via provid
 
 - Think step-by-step. After each screenshot, use think() to describe what you see and plan your next move.
 - If an action doesn't produce the expected result, stop and re-evaluate. Don't repeat the same failing action.
-- Use the screen coordinates carefully. Examine the screenshot to identify exact positions of buttons and UI elements before clicking.
+- Use the screen coordinates carefully. Examine the screenshot to identify approximate bounding box coordinates of buttons and UI elements before clicking.
+- For reference, the underlying tool for your actions is xdotool.
 - When you are done testing, call done() with your verdict and reasoning.";
 
 pub struct AgentLoop<'a> {
@@ -209,8 +210,9 @@ mod tests {
         // by the done tool. We still need a valid config for DockerSession though,
         // so we test at a higher level using wiremock.
         let config = crate::config::Config {
-            openai_api_key: "sk-test".into(),
-            openai_model: "gpt-4.1".into(),
+            api_key: "sk-test".into(),
+            model: "gpt-4.1".into(),
+            api_base_url: "https://api.openai.com".into(),
             display_width: 1280,
             display_height: 800,
             vnc_bind_addr: "127.0.0.1".into(),

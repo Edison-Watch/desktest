@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::error::AppError;
 
@@ -33,6 +33,9 @@ pub struct ToolCall {
     #[serde(rename = "type")]
     pub call_type: String,
     pub function: FunctionCall,
+    /// Gemini thought signatures — must be preserved for multi-turn function calling.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extra_content: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,7 +86,21 @@ impl OpenAiClient {
             body["tool_choice"] = serde_json::json!("auto");
         }
 
-        debug!("Sending chat completion request ({} messages)", messages.len());
+        let body_str = serde_json::to_string(&body)
+            .unwrap_or_default();
+        let payload_kb = body_str.len() / 1024;
+        let image_count = messages.iter().filter(|m| {
+            m.content.as_ref()
+                .and_then(|c| c.as_array())
+                .map_or(false, |arr| arr.iter().any(|item| item.get("image_url").is_some()))
+        }).count();
+
+        info!(
+            "API request: {} messages, {} images, ~{} KB payload",
+            messages.len(), image_count, payload_kb
+        );
+
+        let start = std::time::Instant::now();
 
         let response = self
             .http
@@ -95,7 +112,9 @@ impl OpenAiClient {
             .await
             .map_err(|e| AppError::Agent(format!("HTTP request failed: {e}")))?;
 
+        let elapsed = start.elapsed();
         let status = response.status();
+
         if !status.is_success() {
             let error_body = response.text().await.unwrap_or_default();
             return Err(AppError::Agent(format!(
@@ -116,10 +135,12 @@ impl OpenAiClient {
             .ok_or_else(|| AppError::Agent("No choices in response".into()))?
             .message;
 
-        debug!(
-            "Received response: content={}, tool_calls={}",
-            msg.content.is_some(),
-            msg.tool_calls.as_ref().map_or(0, |t| t.len())
+        let tool_names: Vec<&str> = msg.tool_calls.as_ref()
+            .map(|tcs| tcs.iter().map(|tc| tc.function.name.as_str()).collect())
+            .unwrap_or_default();
+        info!(
+            "API response in {:.1}s: tool_calls={:?}",
+            elapsed.as_secs_f64(), tool_names
         );
 
         Ok(msg)
