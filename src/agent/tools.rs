@@ -252,14 +252,14 @@ pub async fn dispatch_tool(
             session.exec(&cmd_refs).await?;
             Ok(ToolResult::Success(format!("Typed: {text}")))
         }
-        // "screenshot" => {
-        //     let (path, data_url) =
-        //         screenshot::capture_screenshot(session, artifacts_dir, *screenshot_counter)
-        //             .await?;
-        //     *screenshot_counter += 1;
-        //     debug!("Screenshot saved to {}", path.display());
-        //     Ok(ToolResult::ScreenshotTaken(data_url))
-        // }
+        "screenshot" => {
+            let (path, data_url) =
+                screenshot::capture_screenshot(session, artifacts_dir, *screenshot_counter)
+                    .await?;
+            *screenshot_counter += 1;
+            debug!("Screenshot saved to {}", path.display());
+            Ok(ToolResult::ScreenshotTaken(data_url))
+        }
         "think" => {
             let observation = args["observation"].as_str().unwrap_or("");
             let plan = args["plan"].as_str().unwrap_or("");

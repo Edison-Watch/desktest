@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info};
+use tracing::{info};
 
 use crate::error::AppError;
 
