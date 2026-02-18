@@ -2,7 +2,7 @@
 
 ### Warning: this is project is in very early alpha, and the agents are very very very dumb with the current screenshotting method
 
-Tent is a command-line tool for testing high-level behaviour for your AppImage desktop applications. Just write a high-level spec in Markdown and let Tent tell you whether it's satisfied.
+Tent is a command-line tool for testing high-level behaviour for your AppImage desktop applications. Just write a high-level spec in Markdown and let Tent tell you whether your app satisfies it.
 
 ## Building
 
