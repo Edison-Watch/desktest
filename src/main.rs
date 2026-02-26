@@ -3,6 +3,7 @@ mod artifacts;
 mod config;
 mod docker;
 mod error;
+mod evaluator;
 mod input;
 mod observation;
 mod provider;
