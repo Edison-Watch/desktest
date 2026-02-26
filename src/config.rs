@@ -81,6 +81,28 @@ pub struct Config {
 }
 
 impl Config {
+    /// Create a Config with sensible defaults for task-based runs.
+    ///
+    /// Used when `tent run <task.json>` is invoked without a separate config file.
+    /// API key and provider are resolved from environment variables at provider creation time.
+    pub fn from_task_defaults() -> Self {
+        Config {
+            api_key: String::new(),
+            provider: default_provider(),
+            model: default_model(),
+            api_base_url: default_base_url(),
+            display_width: default_width(),
+            display_height: default_height(),
+            vnc_bind_addr: default_vnc_addr(),
+            vnc_port: None,
+            app_type: AppType::Folder,
+            app_path: None,
+            app_dir: None,
+            entrypoint: None,
+            startup_timeout_seconds: default_timeout(),
+        }
+    }
+
     /// Load and validate configuration from a JSON file.
     pub fn load_and_validate(path: &Path) -> Result<Self, AppError> {
         let contents = std::fs::read_to_string(path)
