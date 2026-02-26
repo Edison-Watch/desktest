@@ -37,6 +37,7 @@ fn default_provider() -> String {
 pub enum AppType {
     Appimage,
     Folder,
+    DockerImage,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -153,6 +154,9 @@ impl Config {
                         "entrypoint is required when app_type is \"folder\"".into(),
                     ));
                 }
+            }
+            AppType::DockerImage => {
+                // No local file validation needed — image is pulled/used at container creation time
             }
         }
 
@@ -347,5 +351,35 @@ mod tests {
         );
         let err = Config::parse_and_validate(&json).unwrap_err();
         assert!(err.to_string().contains("vnc_port must be > 0"));
+    }
+
+    #[test]
+    fn test_valid_docker_image_config() {
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image"
+        }"#;
+        let config = Config::parse_and_validate(json).unwrap();
+        assert_eq!(config.app_type, AppType::DockerImage);
+    }
+
+    #[test]
+    fn test_docker_image_no_app_path_required() {
+        // DockerImage type should not require app_path or app_dir
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image"
+        }"#;
+        let config = Config::parse_and_validate(json).unwrap();
+        assert!(config.app_path.is_none());
+        assert!(config.app_dir.is_none());
+    }
+
+    #[test]
+    fn test_from_task_defaults() {
+        let config = Config::from_task_defaults();
+        assert_eq!(config.provider, "openai");
+        assert_eq!(config.model, "gpt-4.1");
+        assert!(config.api_key.is_empty());
     }
 }

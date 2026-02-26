@@ -168,7 +168,7 @@ mod tests {
             entrypoint: None,
             startup_timeout_seconds: 30,
         };
-        let session = DockerSession::create(&config).await.unwrap();
+        let session = DockerSession::create(&config, None).await.unwrap();
 
         let steps = vec![
             SetupStep::Execute { command: "echo hello > /tmp/setup_test.txt".into() },
@@ -199,7 +199,7 @@ mod tests {
             entrypoint: None,
             startup_timeout_seconds: 30,
         };
-        let session = DockerSession::create(&config).await.unwrap();
+        let session = DockerSession::create(&config, None).await.unwrap();
 
         let tmp = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(tmp.path(), b"setup copy test").unwrap();
@@ -240,7 +240,7 @@ mod tests {
             entrypoint: None,
             startup_timeout_seconds: 30,
         };
-        let session = DockerSession::create(&config).await.unwrap();
+        let session = DockerSession::create(&config, None).await.unwrap();
 
         let start = std::time::Instant::now();
         let steps = vec![SetupStep::Sleep { seconds: 0.5 }];
@@ -269,7 +269,7 @@ mod tests {
             entrypoint: None,
             startup_timeout_seconds: 30,
         };
-        let session = DockerSession::create(&config).await.unwrap();
+        let session = DockerSession::create(&config, None).await.unwrap();
 
         let steps = vec![
             SetupStep::Copy {
@@ -303,7 +303,7 @@ mod tests {
             entrypoint: None,
             startup_timeout_seconds: 30,
         };
-        let session = DockerSession::create(&config).await.unwrap();
+        let session = DockerSession::create(&config, None).await.unwrap();
 
         let steps = vec![
             SetupStep::Execute { command: "echo step1 > /tmp/order_test.txt".into() },

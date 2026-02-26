@@ -186,7 +186,7 @@ async fn run_legacy(cli: Cli) -> Result<AgentOutcome, AppError> {
 
     // 4. Create and start Docker container
     info!("Creating Docker container...");
-    let session = docker::DockerSession::create(&config).await?;
+    let session = docker::DockerSession::create(&config, None).await?;
 
     // Run the main logic, racing against Ctrl+C.
     // No matter how we exit (success, error, or signal), cleanup always runs.
@@ -322,9 +322,20 @@ async fn run_task(
     std::fs::create_dir_all(&artifacts_dir)
         .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
 
+    // Determine custom Docker image from task definition
+    let custom_image = match &task_def.app {
+        task::AppConfig::DockerImage { image, .. } => Some(image.as_str()),
+        _ => None,
+    };
+
     // Create and start Docker container
     info!("Creating Docker container...");
-    let session = docker::DockerSession::create(&config).await?;
+    let session = docker::DockerSession::create(&config, custom_image).await?;
+
+    // Validate custom image has required dependencies
+    if custom_image.is_some() {
+        session.validate_custom_image().await?;
+    }
 
     let test_id = task_def.id.clone();
 
@@ -420,41 +431,81 @@ async fn run_task_inner(
         }
     };
 
-    // 4. Deploy app into container
-    info!("Deploying app...");
-    let app_path = session.deploy_app(config).await?;
+    // 4. Deploy and launch app
+    let is_docker_image = matches!(task_def.app, task::AppConfig::DockerImage { .. });
 
-    // 5. Get stable baseline windows, launch app, wait for app window
-    info!("Waiting for stable window baseline...");
-    let baseline_windows = readiness::get_stable_window_list(session).await?;
+    if is_docker_image {
+        // Custom Docker image: no deployment needed, launch via entrypoint_cmd if provided
+        info!("Custom Docker image: skipping app deployment");
 
-    let is_appimage = matches!(config.app_type, crate::config::AppType::Appimage);
-    info!("Launching app: {app_path}");
-    session.launch_app(&app_path, is_appimage).await?;
+        if let task::AppConfig::DockerImage { entrypoint_cmd, .. } = &task_def.app {
+            if let Some(cmd) = entrypoint_cmd {
+                info!("Waiting for stable window baseline...");
+                let baseline_windows = readiness::get_stable_window_list(session).await?;
 
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                info!("Launching app via entrypoint_cmd: {cmd}");
+                session.exec_detached_with_log(
+                    &["bash", "-c", cmd],
+                    "/tmp/app.log",
+                ).await?;
 
-    let pgrep_cmd = format!(
-        "pgrep -f {} || true",
-        shell_escape::escape(app_path.as_str().into())
-    );
-    let ps_check = session.exec(&["bash", "-c", &pgrep_cmd]).await;
-    if let Ok(output) = &ps_check {
-        if output.trim().is_empty() {
-            let log = session
-                .exec(&["cat", "/tmp/app.log"])
-                .await
-                .unwrap_or_default();
-            if !log.trim().is_empty() {
-                tracing::warn!("App process died. Log output:\n{log}");
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+                let pgrep_cmd = format!("pgrep -f {} || true", shell_escape::escape(cmd.as_str().into()));
+                let ps_check = session.exec(&["bash", "-c", &pgrep_cmd]).await;
+                if let Ok(output) = &ps_check {
+                    if output.trim().is_empty() {
+                        let log = session.exec(&["cat", "/tmp/app.log"]).await.unwrap_or_default();
+                        if !log.trim().is_empty() {
+                            tracing::warn!("App process died. Log output:\n{log}");
+                        } else {
+                            tracing::warn!("App process not found and no log output");
+                        }
+                    }
+                }
+
+                info!("Waiting for app window...");
+                readiness::wait_for_app_window(session, &baseline_windows, timeout, debug).await?;
             } else {
-                tracing::warn!("App process not found and no log output");
+                info!("No entrypoint_cmd specified, assuming app starts automatically in custom image");
             }
         }
-    }
+    } else {
+        // Standard flow: deploy app into container and launch
+        info!("Deploying app...");
+        let app_path = session.deploy_app(config).await?;
 
-    info!("Waiting for app window...");
-    readiness::wait_for_app_window(session, &baseline_windows, timeout, debug).await?;
+        info!("Waiting for stable window baseline...");
+        let baseline_windows = readiness::get_stable_window_list(session).await?;
+
+        let is_appimage = matches!(config.app_type, crate::config::AppType::Appimage);
+        info!("Launching app: {app_path}");
+        session.launch_app(&app_path, is_appimage).await?;
+
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+        let pgrep_cmd = format!(
+            "pgrep -f {} || true",
+            shell_escape::escape(app_path.as_str().into())
+        );
+        let ps_check = session.exec(&["bash", "-c", &pgrep_cmd]).await;
+        if let Ok(output) = &ps_check {
+            if output.trim().is_empty() {
+                let log = session
+                    .exec(&["cat", "/tmp/app.log"])
+                    .await
+                    .unwrap_or_default();
+                if !log.trim().is_empty() {
+                    tracing::warn!("App process died. Log output:\n{log}");
+                } else {
+                    tracing::warn!("App process not found and no log output");
+                }
+            }
+        }
+
+        info!("Waiting for app window...");
+        readiness::wait_for_app_window(session, &baseline_windows, timeout, debug).await?;
+    }
 
     // 6. Print VNC info
     if let Some(vnc_port) = config.vnc_port {
@@ -851,5 +902,86 @@ mod tests {
         let eval = make_eval_result(true, vec![]);
         let result = format_evaluation_reasoning(None, Some(&eval));
         assert!(result.contains("Programmatic evaluation passed (0/0 metrics)"));
+    }
+
+    // --- Custom Docker image extraction from task ---
+
+    #[test]
+    fn test_custom_image_extracted_from_docker_image_task() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "test",
+            "app": {"type": "docker_image", "image": "my-app:latest", "entrypoint_cmd": "myapp"}
+        }"#;
+        let task = task::TaskDefinition::parse_and_validate(json).unwrap();
+        let custom_image = match &task.app {
+            task::AppConfig::DockerImage { image, .. } => Some(image.as_str()),
+            _ => None,
+        };
+        assert_eq!(custom_image, Some("my-app:latest"));
+    }
+
+    #[test]
+    fn test_no_custom_image_for_appimage_task() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "test",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"}
+        }"#;
+        let task = task::TaskDefinition::parse_and_validate(json).unwrap();
+        let custom_image = match &task.app {
+            task::AppConfig::DockerImage { image, .. } => Some(image.as_str()),
+            _ => None,
+        };
+        assert!(custom_image.is_none());
+    }
+
+    #[test]
+    fn test_no_custom_image_for_folder_task() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "test",
+            "app": {"type": "folder", "dir": "/apps/myapp", "entrypoint": "run.sh"}
+        }"#;
+        let task = task::TaskDefinition::parse_and_validate(json).unwrap();
+        let custom_image = match &task.app {
+            task::AppConfig::DockerImage { image, .. } => Some(image.as_str()),
+            _ => None,
+        };
+        assert!(custom_image.is_none());
+    }
+
+    #[test]
+    fn test_docker_image_without_entrypoint_cmd() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "test",
+            "app": {"type": "docker_image", "image": "my-app:latest"}
+        }"#;
+        let task = task::TaskDefinition::parse_and_validate(json).unwrap();
+        match &task.app {
+            task::AppConfig::DockerImage { image, entrypoint_cmd } => {
+                assert_eq!(image, "my-app:latest");
+                assert!(entrypoint_cmd.is_none());
+            }
+            _ => panic!("Expected DockerImage"),
+        }
+    }
+
+    #[test]
+    fn test_docker_image_is_detected_correctly() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "test",
+            "app": {"type": "docker_image", "image": "ubuntu:22.04"}
+        }"#;
+        let task = task::TaskDefinition::parse_and_validate(json).unwrap();
+        let is_docker_image = matches!(task.app, task::AppConfig::DockerImage { .. });
+        assert!(is_docker_image);
     }
 }
