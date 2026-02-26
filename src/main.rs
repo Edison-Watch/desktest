@@ -12,6 +12,7 @@ mod results;
 mod screenshot;
 mod setup;
 mod task;
+mod trajectory;
 
 use std::time::{Duration, Instant};
 
@@ -35,6 +36,10 @@ pub struct Cli {
     /// Enable debug mode (verbose logging)
     #[arg(long, default_value_t = false, global = true)]
     pub debug: bool,
+
+    /// Enable verbose trajectory logging (includes full LLM responses in trajectory.jsonl)
+    #[arg(long, default_value_t = false, global = true)]
+    pub verbose: bool,
 
     /// Interactive mode: start container and app, then wait for Ctrl+C (no agent)
     #[arg(long, default_value_t = false)]
@@ -118,7 +123,7 @@ async fn main() {
                     config::Config::from_task_defaults()
                 };
 
-                let result = run_task(task_def, run_config, cli.debug, output.clone()).await;
+                let result = run_task(task_def, run_config, cli.debug, cli.verbose, output.clone()).await;
                 match result {
                     Ok(outcome) => {
                         println!("{outcome}");
@@ -299,6 +304,7 @@ async fn run_task(
     task_def: task::TaskDefinition,
     config: Config,
     debug: bool,
+    verbose: bool,
     output_dir: std::path::PathBuf,
 ) -> Result<AgentOutcome, AppError> {
     let start = Instant::now();
@@ -322,7 +328,7 @@ async fn run_task(
             eprintln!("\nInterrupted (Ctrl+C), cleaning up...");
             Err(AppError::Infra("Interrupted by user".into()))
         }
-        r = run_task_inner(&task_def, &config, &session, &artifacts_dir, debug) => r,
+        r = run_task_inner(&task_def, &config, &session, &artifacts_dir, debug, verbose) => r,
     };
 
     // Always collect artifacts and clean up
@@ -365,6 +371,7 @@ async fn run_task_inner(
     session: &docker::DockerSession,
     artifacts_dir: &std::path::Path,
     debug: bool,
+    verbose: bool,
 ) -> Result<TaskRunResult, AppError> {
     use task::EvaluatorMode;
 
@@ -461,7 +468,7 @@ async fn run_task_inner(
         EvaluatorMode::Llm => {
             // LLM mode: run agent loop only, use agent verdict
             info!("Starting agent loop v2 (LLM-only evaluation)...");
-            let agent_outcome = run_agent_loop(task_def, config, session, artifacts_dir, debug).await?;
+            let agent_outcome = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose).await?;
 
             print_validation_results(Some(&agent_outcome), None);
 
@@ -474,7 +481,7 @@ async fn run_task_inner(
         EvaluatorMode::Hybrid => {
             // Hybrid mode: run agent loop AND programmatic evaluation, both must pass
             info!("Starting agent loop v2 (hybrid evaluation)...");
-            let agent_outcome = run_agent_loop(task_def, config, session, artifacts_dir, debug).await?;
+            let agent_outcome = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose).await?;
 
             info!("Agent loop complete, running programmatic evaluation...");
             let evaluator = task_def.evaluator.as_ref().expect(
@@ -507,6 +514,7 @@ async fn run_agent_loop(
     session: &docker::DockerSession,
     artifacts_dir: &std::path::Path,
     debug: bool,
+    verbose: bool,
 ) -> Result<AgentOutcome, AppError> {
     let llm_client = provider::create_provider(
         &config.provider,
@@ -517,6 +525,7 @@ async fn run_agent_loop(
 
     let loop_config = agent::loop_v2::AgentLoopV2Config {
         debug,
+        verbose,
         ..Default::default()
     };
     let mut agent_loop = agent::loop_v2::AgentLoopV2::new(

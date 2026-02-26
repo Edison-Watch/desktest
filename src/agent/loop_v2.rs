@@ -15,6 +15,7 @@ use crate::docker::DockerSession;
 use crate::error::{AgentOutcome, AppError};
 use crate::observation::{self, Observation, ObservationConfig};
 use crate::provider::{ChatMessage, LlmProvider};
+use crate::trajectory::TrajectoryLogger;
 
 /// Default maximum number of agent steps per test.
 const DEFAULT_MAX_STEPS: usize = 15;
@@ -46,6 +47,8 @@ pub struct AgentLoopV2Config {
     pub max_trajectory_length: usize,
     /// Enable verbose/debug logging.
     pub debug: bool,
+    /// Enable verbose trajectory logging (includes full LLM responses).
+    pub verbose: bool,
 }
 
 impl Default for AgentLoopV2Config {
@@ -57,6 +60,7 @@ impl Default for AgentLoopV2Config {
             observation_config: ObservationConfig::default(),
             max_trajectory_length: crate::agent::context::DEFAULT_MAX_TRAJECTORY_LENGTH,
             debug: false,
+            verbose: false,
         }
     }
 }
@@ -74,6 +78,7 @@ pub struct AgentLoopV2<'a> {
     artifacts_dir: PathBuf,
     context: ContextManager,
     config: AgentLoopV2Config,
+    trajectory: Option<TrajectoryLogger>,
 }
 
 impl<'a> AgentLoopV2<'a> {
@@ -94,12 +99,21 @@ impl<'a> AgentLoopV2<'a> {
             config.max_trajectory_length,
         );
 
+        let trajectory = match TrajectoryLogger::new(&artifacts_dir, config.verbose) {
+            Ok(logger) => Some(logger),
+            Err(e) => {
+                warn!("Failed to create trajectory logger: {e}");
+                None
+            }
+        };
+
         Self {
             client,
             session,
             artifacts_dir,
             context,
             config,
+            trajectory,
         }
     }
 
@@ -126,6 +140,14 @@ impl<'a> AgentLoopV2<'a> {
                     "Total timeout ({:?}) exceeded after {} steps",
                     self.config.total_timeout, step_index
                 );
+                self.log_trajectory_entry(
+                    step_index,
+                    "",
+                    &[],
+                    &current_observation,
+                    "timeout",
+                    None,
+                );
                 self.save_conversation_log();
                 return Ok(AgentOutcome {
                     passed: false,
@@ -141,6 +163,14 @@ impl<'a> AgentLoopV2<'a> {
             // Check max steps
             if step_index >= self.config.max_steps {
                 warn!("Max steps ({}) reached", self.config.max_steps);
+                self.log_trajectory_entry(
+                    step_index,
+                    "",
+                    &[],
+                    &current_observation,
+                    "max_steps",
+                    None,
+                );
                 self.save_conversation_log();
                 return Ok(AgentOutcome {
                     passed: false,
@@ -178,6 +208,9 @@ impl<'a> AgentLoopV2<'a> {
             info!("LLM response length: {} chars", response_text.len());
 
             // Parse response for special commands and code blocks
+            let parsed = pyautogui::parse_response(&response_text);
+            let code_blocks = parsed.code_blocks.clone();
+
             let turn_result = pyautogui::process_turn(
                 self.session,
                 &response_text,
@@ -190,7 +223,14 @@ impl<'a> AgentLoopV2<'a> {
                 match command {
                     SpecialCommand::Done => {
                         info!("Agent signalled DONE at step {step_index}");
-                        // Record the final turn
+                        self.log_trajectory_entry(
+                            step_index,
+                            &response_text,
+                            &code_blocks,
+                            &current_observation,
+                            "done",
+                            Some(&response_text),
+                        );
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
@@ -205,6 +245,14 @@ impl<'a> AgentLoopV2<'a> {
                     }
                     SpecialCommand::Fail => {
                         info!("Agent signalled FAIL at step {step_index}");
+                        self.log_trajectory_entry(
+                            step_index,
+                            &response_text,
+                            &code_blocks,
+                            &current_observation,
+                            "fail",
+                            Some(&response_text),
+                        );
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
@@ -219,6 +267,14 @@ impl<'a> AgentLoopV2<'a> {
                     }
                     SpecialCommand::Wait => {
                         info!("Agent signalled WAIT at step {step_index}, re-observing...");
+                        self.log_trajectory_entry(
+                            step_index,
+                            &response_text,
+                            &code_blocks,
+                            &current_observation,
+                            "wait",
+                            Some(&response_text),
+                        );
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
@@ -231,6 +287,29 @@ impl<'a> AgentLoopV2<'a> {
                     }
                 }
             }
+
+            // Determine result string for trajectory
+            let result_str = if turn_result.all_succeeded {
+                "success".to_string()
+            } else {
+                format!(
+                    "error:{}",
+                    turn_result
+                        .error_feedback
+                        .as_deref()
+                        .unwrap_or("unknown error")
+                )
+            };
+
+            // Log trajectory entry
+            self.log_trajectory_entry(
+                step_index,
+                &response_text,
+                &code_blocks,
+                &current_observation,
+                &result_str,
+                Some(&response_text),
+            );
 
             // Record the turn in trajectory
             self.context.push_turn(TrajectoryTurn {
@@ -246,6 +325,30 @@ impl<'a> AgentLoopV2<'a> {
 
             // Capture new observation after action(s)
             current_observation = self.capture_observation_for_step(step_index).await?;
+        }
+    }
+
+    /// Log a trajectory entry for the current step.
+    fn log_trajectory_entry(
+        &mut self,
+        step_index: usize,
+        response_text: &str,
+        code_blocks: &[String],
+        observation: &Observation,
+        result: &str,
+        raw_response: Option<&str>,
+    ) {
+        if let Some(ref mut trajectory) = self.trajectory {
+            let entry = trajectory.build_entry(
+                step_index,
+                response_text,
+                code_blocks,
+                observation.screenshot_path.as_deref(),
+                observation.a11y_tree_text.as_deref(),
+                result,
+                raw_response,
+            );
+            trajectory.log_entry(&entry);
         }
     }
 
@@ -572,6 +675,7 @@ mod tests {
         assert_eq!(config.total_timeout, Duration::from_secs(DEFAULT_TOTAL_TIMEOUT_SECS));
         assert_eq!(config.max_trajectory_length, 3);
         assert!(!config.debug);
+        assert!(!config.verbose);
     }
 
     // --- Integration-style tests ---
@@ -585,12 +689,14 @@ mod tests {
             observation_config: ObservationConfig::default(),
             max_trajectory_length: 5,
             debug: true,
+            verbose: true,
         };
         assert_eq!(config.max_steps, 25);
         assert_eq!(config.step_timeout.as_secs(), 120);
         assert_eq!(config.total_timeout.as_secs(), 600);
         assert_eq!(config.max_trajectory_length, 5);
         assert!(config.debug);
+        assert!(config.verbose);
     }
 
     #[test]
