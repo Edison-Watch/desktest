@@ -8,6 +8,7 @@ mod input;
 mod observation;
 mod provider;
 mod readiness;
+mod recording;
 mod results;
 mod screenshot;
 mod setup;
@@ -40,6 +41,10 @@ pub struct Cli {
     /// Enable verbose trajectory logging (includes full LLM responses in trajectory.jsonl)
     #[arg(long, default_value_t = false, global = true)]
     pub verbose: bool,
+
+    /// Disable video recording of test sessions
+    #[arg(long, default_value_t = false, global = true)]
+    pub no_recording: bool,
 
     /// Interactive mode: start container and app, then wait for Ctrl+C (no agent)
     #[arg(long, default_value_t = false)]
@@ -123,7 +128,7 @@ async fn main() {
                     config::Config::from_task_defaults()
                 };
 
-                let result = run_task(task_def, run_config, cli.debug, cli.verbose, output.clone()).await;
+                let result = run_task(task_def, run_config, cli.debug, cli.verbose, cli.no_recording, output.clone()).await;
                 match result {
                     Ok(outcome) => {
                         println!("{outcome}");
@@ -305,6 +310,7 @@ async fn run_task(
     config: Config,
     debug: bool,
     verbose: bool,
+    no_recording: bool,
     output_dir: std::path::PathBuf,
 ) -> Result<AgentOutcome, AppError> {
     let start = Instant::now();
@@ -328,7 +334,7 @@ async fn run_task(
             eprintln!("\nInterrupted (Ctrl+C), cleaning up...");
             Err(AppError::Infra("Interrupted by user".into()))
         }
-        r = run_task_inner(&task_def, &config, &session, &artifacts_dir, debug, verbose) => r,
+        r = run_task_inner(&task_def, &config, &session, &artifacts_dir, debug, verbose, no_recording) => r,
     };
 
     // Always collect artifacts and clean up
@@ -372,6 +378,7 @@ async fn run_task_inner(
     artifacts_dir: &std::path::Path,
     debug: bool,
     verbose: bool,
+    no_recording: bool,
 ) -> Result<TaskRunResult, AppError> {
     use task::EvaluatorMode;
 
@@ -400,11 +407,24 @@ async fn run_task_inner(
         setup::run_setup_steps(session, &task_def.config).await?;
     }
 
-    // 3. Deploy app into container
+    // 3. Start video recording (before app launch so we capture the full session)
+    let recording = if no_recording {
+        None
+    } else {
+        match recording::Recording::start(session, config.display_width, config.display_height).await {
+            Ok(rec) => Some(rec),
+            Err(e) => {
+                tracing::warn!("Failed to start recording: {e}");
+                None
+            }
+        }
+    };
+
+    // 4. Deploy app into container
     info!("Deploying app...");
     let app_path = session.deploy_app(config).await?;
 
-    // 4. Get stable baseline windows, launch app, wait for app window
+    // 5. Get stable baseline windows, launch app, wait for app window
     info!("Waiting for stable window baseline...");
     let baseline_windows = readiness::get_stable_window_list(session).await?;
 
@@ -436,13 +456,13 @@ async fn run_task_inner(
     info!("Waiting for app window...");
     readiness::wait_for_app_window(session, &baseline_windows, timeout, debug).await?;
 
-    // 5. Print VNC info
+    // 6. Print VNC info
     if let Some(vnc_port) = config.vnc_port {
         println!("VNC available at {}:{}", config.vnc_bind_addr, vnc_port);
     }
 
-    // 6. Run agent loop and/or evaluation based on mode
-    match eval_mode {
+    // 7. Run agent loop and/or evaluation based on mode
+    let result = match eval_mode {
         EvaluatorMode::Programmatic => {
             // Programmatic mode: skip agent loop, run evaluation directly
             info!("Programmatic mode: skipping agent loop, running evaluation...");
@@ -504,7 +524,15 @@ async fn run_task_inner(
                 agent_ran: true,
             })
         }
+    };
+
+    // 8. Stop recording and collect the video file (regardless of test outcome)
+    if let Some(rec) = &recording {
+        rec.stop(session).await;
+        rec.collect(session, artifacts_dir).await;
     }
+
+    result
 }
 
 /// Run the v2 agent loop (used by LLM and hybrid modes).
