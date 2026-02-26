@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 pub mod context;
+pub mod loop_v2;
 pub mod openai;
 pub mod pyautogui;
 pub mod tools;

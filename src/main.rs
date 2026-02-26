@@ -376,20 +376,27 @@ async fn run_task_inner(
         println!("VNC available at {}:{}", config.vnc_bind_addr, vnc_port);
     }
 
-    // 6. Run agent loop
-    info!("Starting agent loop...");
+    // 6. Run agent loop (v2 — OSWorld-style with PyAutoGUI + observation + sliding window)
+    info!("Starting agent loop v2...");
     let llm_client = provider::create_provider(
         &config.provider,
         &config.api_key,
         &config.model,
         &config.api_base_url,
     )?;
-    let mut agent_loop = agent::AgentLoop::new(
+
+    let loop_config = agent::loop_v2::AgentLoopV2Config {
+        debug,
+        ..Default::default()
+    };
+    let mut agent_loop = agent::loop_v2::AgentLoopV2::new(
         llm_client,
         session,
         artifacts_dir.to_path_buf(),
-        task_def.instruction.clone(),
-        debug,
+        &task_def.instruction,
+        config.display_width,
+        config.display_height,
+        loop_config,
     );
     agent_loop.run().await
 }
