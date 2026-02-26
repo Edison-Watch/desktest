@@ -126,7 +126,7 @@ pub fn tool_definitions() -> Vec<serde_json::Value> {
         ),
         make_tool(
             "think",
-            "Use this tool to think step-by-step before acting. Describe what you see on screen, the absolute screen coordinates of any relevant UI elements (from the top-left corner of the 1280 x 800 screen), what you plan to do next, and why. You MUST call this before any action sequence.",
+            "Use this tool to think step-by-step before acting. Describe what you see on screen, the absolute screen coordinates of any relevant UI elements (from the top-left corner of the 1920 x 1080 screen), what you plan to do next, and why. You MUST call this before any action sequence.",
             json!({
                 "type": "object",
                 "properties": {

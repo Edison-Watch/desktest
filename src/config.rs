@@ -13,11 +13,11 @@ fn default_base_url() -> String {
 }
 
 fn default_width() -> u32 {
-    1280
+    1920
 }
 
 fn default_height() -> u32 {
-    800
+    1080
 }
 
 fn default_vnc_addr() -> String {
@@ -241,8 +241,8 @@ mod tests {
         );
         let config = Config::parse_and_validate(&json).unwrap();
         assert_eq!(config.model, "gpt-4.1");
-        assert_eq!(config.display_width, 1280);
-        assert_eq!(config.display_height, 800);
+        assert_eq!(config.display_width, 1920);
+        assert_eq!(config.display_height, 1080);
         assert_eq!(config.vnc_bind_addr, "0.0.0.0");
         assert!(config.vnc_port.is_none());
         assert_eq!(config.startup_timeout_seconds, 30);

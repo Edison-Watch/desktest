@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "id": "libreoffice-calc-sum",
+  "instruction": "Open LibreOffice Calc. In cell A1 type '10', in cell A2 type '20', in cell A3 type '=SUM(A1:A2)', then press Enter. Save the file as /home/tester/result.ods.",
+  "app": {
+    "type": "docker_image",
+    "image": "tent-libreoffice:latest",
+    "entrypoint_cmd": "libreoffice --calc"
+  },
+  "config": [
+    {
+      "type": "execute",
+      "command": "mkdir -p /home/tester"
+    }
+  ],
+  "evaluator": {
+    "mode": "hybrid",
+    "metrics": [
+      {
+        "type": "file_exists",
+        "path": "/home/tester/result.ods"
+      },
+      {
+        "type": "exit_code",
+        "command": "test -s /home/tester/result.ods",
+        "expected": 0
+      }
+    ]
+  },
+  "timeout": 180,
+  "metadata": {
+    "description": "Tests spreadsheet interaction: typing values, entering formulas, and saving in LibreOffice Calc.",
+    "tags": ["libreoffice", "calc", "spreadsheet", "docker-image"]
+  }
+}

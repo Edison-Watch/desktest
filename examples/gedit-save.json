@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0",
+  "id": "gedit-save-file",
+  "instruction": "Open the file /home/tester/document.txt in gedit, add the line 'Hello World' at the end, and save the file.",
+  "app": {
+    "type": "folder",
+    "dir": "./examples/gedit-app",
+    "entrypoint": "run.sh"
+  },
+  "config": [
+    {
+      "type": "execute",
+      "command": "mkdir -p /home/tester && echo 'Existing content' > /home/tester/document.txt"
+    }
+  ],
+  "evaluator": {
+    "mode": "hybrid",
+    "metrics": [
+      {
+        "type": "file_exists",
+        "path": "/home/tester/document.txt"
+      },
+      {
+        "type": "command_output",
+        "command": "cat /home/tester/document.txt",
+        "match_mode": "contains",
+        "expected": "Hello World"
+      }
+    ]
+  },
+  "timeout": 120,
+  "metadata": {
+    "description": "Tests basic text editing: opening a file, typing, and saving in gedit.",
+    "tags": ["gtk", "gedit", "text-editing", "folder-deploy"]
+  }
+}
