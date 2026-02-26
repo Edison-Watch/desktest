@@ -8,11 +8,12 @@ mod input;
 mod observation;
 mod provider;
 mod readiness;
+mod results;
 mod screenshot;
 mod setup;
 mod task;
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use clap::{Parser, Subcommand};
 use config::Config;
@@ -56,6 +57,10 @@ pub enum Command {
         /// Path to an optional config JSON file (for API key, provider, display settings)
         #[arg(long)]
         config: Option<std::path::PathBuf>,
+
+        /// Output directory for results.json (default: ./test-results/)
+        #[arg(long, default_value = results::DEFAULT_OUTPUT_DIR)]
+        output: std::path::PathBuf,
     },
 }
 
@@ -91,7 +96,7 @@ async fn main() {
                     }
                 }
             }
-            Command::Run { task, config } => {
+            Command::Run { task, config, output } => {
                 let task_def = match task::TaskDefinition::load(task) {
                     Ok(t) => t,
                     Err(e) => {
@@ -113,7 +118,7 @@ async fn main() {
                     config::Config::from_task_defaults()
                 };
 
-                let result = run_task(task_def, run_config, cli.debug).await;
+                let result = run_task(task_def, run_config, cli.debug, output.clone()).await;
                 match result {
                     Ok(outcome) => {
                         println!("{outcome}");
@@ -278,6 +283,14 @@ async fn run_inner(
     agent_loop.run().await
 }
 
+/// Internal result from run_task_inner, preserving evaluation details for results.json.
+struct TaskRunResult {
+    outcome: AgentOutcome,
+    eval_result: Option<evaluator::EvaluationResult>,
+    /// True when an agent loop was run (LLM or hybrid mode).
+    agent_ran: bool,
+}
+
 /// Run a test from a task definition file.
 ///
 /// This is the new task-based flow: load task → create container → wait for desktop →
@@ -286,7 +299,10 @@ async fn run_task(
     task_def: task::TaskDefinition,
     config: Config,
     debug: bool,
+    output_dir: std::path::PathBuf,
 ) -> Result<AgentOutcome, AppError> {
+    let start = Instant::now();
+
     // Set up artifacts directory
     let artifacts_dir = std::env::current_dir()
         .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
@@ -297,6 +313,8 @@ async fn run_task(
     // Create and start Docker container
     info!("Creating Docker container...");
     let session = docker::DockerSession::create(&config).await?;
+
+    let test_id = task_def.id.clone();
 
     let result = tokio::select! {
         biased;
@@ -314,7 +332,31 @@ async fn run_task(
     info!("Cleaning up container...");
     let _ = session.cleanup().await;
 
-    result
+    let duration_ms = start.elapsed().as_millis() as u64;
+
+    // Write results.json
+    let test_result = match &result {
+        Ok(run_result) if !run_result.agent_ran => {
+            // Programmatic-only mode: no agent verdict
+            results::from_evaluation(
+                &test_id,
+                run_result.eval_result.as_ref().expect("programmatic mode has eval_result"),
+                duration_ms,
+            )
+        }
+        Ok(run_result) => results::from_outcome(
+            &test_id,
+            &run_result.outcome,
+            run_result.eval_result.as_ref(),
+            duration_ms,
+        ),
+        Err(e) => results::from_error(&test_id, e, duration_ms),
+    };
+    if let Err(e) = results::write_results(&test_result, &output_dir) {
+        tracing::warn!("Failed to write results.json: {e}");
+    }
+
+    result.map(|r| r.outcome)
 }
 
 async fn run_task_inner(
@@ -323,7 +365,7 @@ async fn run_task_inner(
     session: &docker::DockerSession,
     artifacts_dir: &std::path::Path,
     debug: bool,
-) -> Result<AgentOutcome, AppError> {
+) -> Result<TaskRunResult, AppError> {
     use task::EvaluatorMode;
 
     let timeout = Duration::from_secs(config.startup_timeout_seconds);
@@ -406,10 +448,14 @@ async fn run_task_inner(
 
             print_validation_results(None, Some(&eval_result));
 
-            Ok(AgentOutcome {
-                passed: eval_result.passed,
-                reasoning: format_evaluation_reasoning(None, Some(&eval_result)),
-                screenshot_count: 0,
+            Ok(TaskRunResult {
+                outcome: AgentOutcome {
+                    passed: eval_result.passed,
+                    reasoning: format_evaluation_reasoning(None, Some(&eval_result)),
+                    screenshot_count: 0,
+                },
+                eval_result: Some(eval_result),
+                agent_ran: false,
             })
         }
         EvaluatorMode::Llm => {
@@ -419,7 +465,11 @@ async fn run_task_inner(
 
             print_validation_results(Some(&agent_outcome), None);
 
-            Ok(agent_outcome)
+            Ok(TaskRunResult {
+                outcome: agent_outcome,
+                eval_result: None,
+                agent_ran: true,
+            })
         }
         EvaluatorMode::Hybrid => {
             // Hybrid mode: run agent loop AND programmatic evaluation, both must pass
@@ -437,10 +487,14 @@ async fn run_task_inner(
 
             print_validation_results(Some(&agent_outcome), Some(&eval_result));
 
-            Ok(AgentOutcome {
-                passed: both_passed,
-                reasoning: format_evaluation_reasoning(Some(&agent_outcome), Some(&eval_result)),
-                screenshot_count: agent_outcome.screenshot_count,
+            Ok(TaskRunResult {
+                outcome: AgentOutcome {
+                    passed: both_passed,
+                    reasoning: format_evaluation_reasoning(Some(&agent_outcome), Some(&eval_result)),
+                    screenshot_count: agent_outcome.screenshot_count,
+                },
+                eval_result: Some(eval_result),
+                agent_ran: true,
             })
         }
     }
