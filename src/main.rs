@@ -24,16 +24,39 @@ use error::{AgentOutcome, AppError};
 use tracing::info;
 
 #[derive(Parser, Debug)]
-#[command(name = "tent", about = "LLM-powered desktop app tester")]
+#[command(
+    name = "tent",
+    about = "LLM-powered desktop app tester",
+    after_help = "\
+EXAMPLES:
+  Legacy mode (backward compatible):
+    tent config.json instructions.md
+    tent --interactive config.json instructions.md
+
+  Subcommand mode:
+    tent run task.json
+    tent run task.json --config config.json --output ./results
+    tent suite ./tests --filter gedit
+    tent interactive task.json
+    tent validate task.json"
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
 
     /// Path to the JSON config file (legacy positional arg)
-    pub config: Option<std::path::PathBuf>,
+    pub config_pos: Option<std::path::PathBuf>,
 
     /// Path to the instructions Markdown file (legacy positional arg)
     pub instructions: Option<std::path::PathBuf>,
+
+    /// Path to config JSON file (API key, provider, display settings)
+    #[arg(long = "config", global = true)]
+    pub config_flag: Option<std::path::PathBuf>,
+
+    /// Output directory for results (default: ./test-results/)
+    #[arg(long, global = true, default_value = results::DEFAULT_OUTPUT_DIR)]
+    pub output: std::path::PathBuf,
 
     /// Enable debug mode (verbose logging)
     #[arg(long, default_value_t = false, global = true)]
@@ -47,49 +70,68 @@ pub struct Cli {
     #[arg(long, default_value_t = false, global = true)]
     pub no_recording: bool,
 
-    /// Interactive mode: start container and app, then wait for Ctrl+C (no agent)
-    #[arg(long, default_value_t = false)]
+    /// Interactive mode: start container and app, then wait for Ctrl+C (no agent) [legacy flag]
+    #[arg(long, default_value_t = false, hide = true)]
     pub interactive: bool,
 }
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
     /// Validate a task JSON file against the schema without running anything
+    #[command(after_help = "\
+EXAMPLES:
+  tent validate task.json
+  tent validate tests/gedit-save.json")]
     Validate {
         /// Path to the task JSON file to validate
         task: std::path::PathBuf,
     },
 
     /// Run a single test from a task JSON file
+    #[command(after_help = "\
+EXAMPLES:
+  tent run task.json
+  tent run task.json --config config.json
+  tent run task.json --output ./my-results --verbose
+  tent run task.json --no-recording --debug")]
     Run {
         /// Path to the task JSON file
         task: std::path::PathBuf,
-
-        /// Path to an optional config JSON file (for API key, provider, display settings)
-        #[arg(long)]
-        config: Option<std::path::PathBuf>,
-
-        /// Output directory for results.json (default: ./test-results/)
-        #[arg(long, default_value = results::DEFAULT_OUTPUT_DIR)]
-        output: std::path::PathBuf,
     },
 
     /// Run a suite of tests from a directory of task JSON files
+    #[command(after_help = "\
+EXAMPLES:
+  tent suite ./tests
+  tent suite ./tests --filter gedit
+  tent suite ./tests --config config.json --output ./results")]
     Suite {
         /// Path to the directory containing task JSON files
         dir: std::path::PathBuf,
 
-        /// Path to an optional config JSON file (for API key, provider, display settings)
-        #[arg(long)]
-        config: Option<std::path::PathBuf>,
-
-        /// Output directory for suite-results.json and per-test results (default: ./test-results/)
-        #[arg(long, default_value = results::DEFAULT_OUTPUT_DIR)]
-        output: std::path::PathBuf,
-
         /// Run only tests matching this name pattern
         #[arg(long)]
         filter: Option<String>,
+    },
+
+    /// Start a container with a task for interactive development and debugging
+    #[command(after_help = "\
+EXAMPLES:
+  tent interactive task.json                   # Start container, run setup, pause
+  tent interactive task.json --step            # Run agent one step at a time
+  tent interactive task.json --validate-only   # Skip agent, run evaluation only
+  tent interactive task.json --config c.json   # Use custom config")]
+    Interactive {
+        /// Path to the task JSON file
+        task: std::path::PathBuf,
+
+        /// Run agent one step at a time, pausing after each step
+        #[arg(long, default_value_t = false)]
+        step: bool,
+
+        /// Skip agent loop, run programmatic evaluation only
+        #[arg(long, default_value_t = false)]
+        validate_only: bool,
     },
 }
 
@@ -125,7 +167,7 @@ async fn main() {
                     }
                 }
             }
-            Command::Run { task, config, output } => {
+            Command::Run { task } => {
                 let task_def = match task::TaskDefinition::load(task) {
                     Ok(t) => t,
                     Err(e) => {
@@ -134,20 +176,9 @@ async fn main() {
                     }
                 };
 
-                let run_config = if let Some(config_path) = config {
-                    match config::Config::load_and_validate(config_path) {
-                        Ok(c) => c,
-                        Err(e) => {
-                            eprintln!("Config error: {e}");
-                            std::process::exit(e.exit_code());
-                        }
-                    }
-                } else {
-                    // Build a minimal config from task definition + env vars
-                    config::Config::from_task_defaults()
-                };
+                let run_config = load_config_or_defaults(&cli.config_flag);
 
-                let result = run_task(task_def, run_config, cli.debug, cli.verbose, cli.no_recording, output.clone()).await;
+                let result = run_task(task_def, run_config, cli.debug, cli.verbose, cli.no_recording, cli.output.clone()).await;
                 match result {
                     Ok(outcome) => {
                         println!("{outcome}");
@@ -159,12 +190,12 @@ async fn main() {
                     }
                 }
             }
-            Command::Suite { dir, config, output, filter } => {
+            Command::Suite { dir, filter } => {
                 let result = suite::run_suite(
                     dir,
-                    config.as_deref(),
+                    cli.config_flag.as_deref(),
                     filter.as_deref(),
-                    output,
+                    &cli.output,
                     cli.debug,
                     cli.verbose,
                     cli.no_recording,
@@ -176,6 +207,43 @@ async fn main() {
                     }
                     Err(e) => {
                         eprintln!("Suite error: {e}");
+                        std::process::exit(e.exit_code());
+                    }
+                }
+            }
+            Command::Interactive { task, step, validate_only } => {
+                let task_def = match task::TaskDefinition::load(task) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        eprintln!("Task load error: {e}");
+                        std::process::exit(e.exit_code());
+                    }
+                };
+
+                let run_config = load_config_or_defaults(&cli.config_flag);
+
+                let result = run_interactive(
+                    task_def,
+                    run_config,
+                    cli.debug,
+                    cli.verbose,
+                    cli.no_recording,
+                    cli.output.clone(),
+                    *step,
+                    *validate_only,
+                ).await;
+
+                match result {
+                    Ok(outcome) => {
+                        println!("{outcome}");
+                        std::process::exit(if outcome.passed { 0 } else { 1 });
+                    }
+                    Err(e) => {
+                        // In interactive mode (no --step, no --validate-only), Ctrl+C is expected
+                        if !step && !validate_only {
+                            std::process::exit(0);
+                        }
+                        eprintln!("Error: {e}");
                         std::process::exit(e.exit_code());
                     }
                 }
@@ -203,10 +271,25 @@ async fn main() {
     }
 }
 
+/// Load config from --config flag path or use task defaults.
+fn load_config_or_defaults(config_flag: &Option<std::path::PathBuf>) -> Config {
+    if let Some(config_path) = config_flag {
+        match config::Config::load_and_validate(config_path) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("Config error: {e}");
+                std::process::exit(e.exit_code());
+            }
+        }
+    } else {
+        config::Config::from_task_defaults()
+    }
+}
+
 async fn run_legacy(cli: Cli) -> Result<AgentOutcome, AppError> {
     // 1. Validate config
-    let config_path = cli.config.ok_or_else(|| {
-        AppError::Config("Missing config file argument. Usage: tent <config.json> <instructions.md>".into())
+    let config_path = cli.config_pos.ok_or_else(|| {
+        AppError::Config("Missing config file argument. Usage: tent <config.json> <instructions.md>\n\nOr use subcommands: tent run <task.json>, tent suite <dir>, tent interactive <task.json>, tent validate <task.json>".into())
     })?;
     let config = Config::load_and_validate(&config_path)?;
 
@@ -659,6 +742,349 @@ async fn run_agent_loop(
     agent_loop.run().await
 }
 
+/// Run the interactive subcommand: starts container, runs setup, provides dev access.
+async fn run_interactive(
+    task_def: task::TaskDefinition,
+    config: Config,
+    debug: bool,
+    verbose: bool,
+    no_recording: bool,
+    output_dir: std::path::PathBuf,
+    step: bool,
+    validate_only: bool,
+) -> Result<AgentOutcome, AppError> {
+    if validate_only {
+        // --validate-only: skip agent loop, run programmatic evaluation only
+        // Force evaluation mode to programmatic, reusing the existing run_task flow
+        // but we need to check that the task has an evaluator config
+        if task_def.evaluator.is_none() {
+            return Err(AppError::Config(
+                "interactive --validate-only requires a task with an evaluator config".into(),
+            ));
+        }
+
+        // Create a modified task with programmatic mode for the evaluator
+        let mut task_def = task_def;
+        if let Some(ref mut eval) = task_def.evaluator {
+            eval.mode = task::EvaluatorMode::Programmatic;
+        }
+
+        return run_task(task_def, config, debug, verbose, no_recording, output_dir).await;
+    }
+
+    if step {
+        // --step: run agent one step at a time, pausing after each
+        return run_interactive_step(task_def, config, debug, verbose, no_recording, output_dir).await;
+    }
+
+    // Default interactive: start container, run setup, print VNC info, pause
+    run_interactive_pause(task_def, config, debug, no_recording).await
+}
+
+/// Interactive mode: start container, run setup steps, print VNC info, pause.
+async fn run_interactive_pause(
+    task_def: task::TaskDefinition,
+    config: Config,
+    debug: bool,
+    no_recording: bool,
+) -> Result<AgentOutcome, AppError> {
+    let timeout = Duration::from_secs(config.startup_timeout_seconds);
+
+    // Determine custom Docker image from task definition
+    let custom_image = match &task_def.app {
+        task::AppConfig::DockerImage { image, .. } => Some(image.as_str()),
+        _ => None,
+    };
+
+    info!("Creating Docker container...");
+    let session = docker::DockerSession::create(&config, custom_image).await?;
+
+    if custom_image.is_some() {
+        session.validate_custom_image().await?;
+    }
+
+    let result = tokio::select! {
+        biased;
+        _ = tokio::signal::ctrl_c() => {
+            eprintln!("\nInterrupted (Ctrl+C), cleaning up...");
+            Err(AppError::Infra("Interrupted by user".into()))
+        }
+        r = run_interactive_pause_inner(&task_def, &config, &session, timeout, debug, no_recording) => r,
+    };
+
+    // Always clean up
+    info!("Collecting artifacts...");
+    let artifacts_dir = std::env::current_dir()
+        .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
+        .join("artifacts");
+    let _ = artifacts::collect_artifacts(&session, &artifacts_dir).await;
+
+    info!("Cleaning up container...");
+    let _ = session.cleanup().await;
+
+    result
+}
+
+async fn run_interactive_pause_inner(
+    task_def: &task::TaskDefinition,
+    config: &Config,
+    session: &docker::DockerSession,
+    timeout: Duration,
+    debug: bool,
+    _no_recording: bool,
+) -> Result<AgentOutcome, AppError> {
+    // 1. Wait for desktop
+    info!("Waiting for desktop to be ready...");
+    readiness::wait_for_desktop(session, timeout, debug).await?;
+
+    // 2. Run setup steps
+    if !task_def.config.is_empty() {
+        info!("Running {} setup steps...", task_def.config.len());
+        setup::run_setup_steps(session, &task_def.config).await?;
+    }
+
+    // 3. Deploy and launch app
+    let is_docker_image = matches!(task_def.app, task::AppConfig::DockerImage { .. });
+
+    if is_docker_image {
+        info!("Custom Docker image: skipping app deployment");
+        if let task::AppConfig::DockerImage { entrypoint_cmd, .. } = &task_def.app {
+            if let Some(cmd) = entrypoint_cmd {
+                info!("Launching app via entrypoint_cmd: {cmd}");
+                session.exec_detached_with_log(&["bash", "-c", cmd], "/tmp/app.log").await?;
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+        }
+    } else {
+        info!("Deploying app...");
+        let app_path = session.deploy_app(config).await?;
+        let is_appimage = matches!(config.app_type, crate::config::AppType::Appimage);
+        info!("Launching app: {app_path}");
+        session.launch_app(&app_path, is_appimage).await?;
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
+
+    // 4. Print VNC info and container info
+    if let Some(vnc_port) = config.vnc_port {
+        println!("VNC available at {}:{}", config.vnc_bind_addr, vnc_port);
+    }
+
+    println!("\nInteractive mode: container is running with task '{}'.", task_def.id);
+    println!("  Instruction: {}", task_def.instruction);
+    println!("  Container ID: {}", session.container_id);
+    println!("  docker exec -it {} bash", session.container_id);
+    println!("\nPress Ctrl+C to stop and clean up.");
+
+    // Wait forever until Ctrl+C
+    std::future::pending::<()>().await;
+    unreachable!()
+}
+
+/// Interactive step mode: run agent one step at a time, pausing after each.
+async fn run_interactive_step(
+    task_def: task::TaskDefinition,
+    config: Config,
+    debug: bool,
+    verbose: bool,
+    no_recording: bool,
+    output_dir: std::path::PathBuf,
+) -> Result<AgentOutcome, AppError> {
+    let start = Instant::now();
+
+    let artifacts_dir = std::env::current_dir()
+        .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
+        .join("artifacts");
+    std::fs::create_dir_all(&artifacts_dir)
+        .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
+
+    let custom_image = match &task_def.app {
+        task::AppConfig::DockerImage { image, .. } => Some(image.as_str()),
+        _ => None,
+    };
+
+    info!("Creating Docker container...");
+    let session = docker::DockerSession::create(&config, custom_image).await?;
+
+    if custom_image.is_some() {
+        session.validate_custom_image().await?;
+    }
+
+    let test_id = task_def.id.clone();
+    let timeout = Duration::from_secs(config.startup_timeout_seconds);
+
+    let result = tokio::select! {
+        biased;
+        _ = tokio::signal::ctrl_c() => {
+            eprintln!("\nInterrupted (Ctrl+C), cleaning up...");
+            Err(AppError::Infra("Interrupted by user".into()))
+        }
+        r = run_interactive_step_inner(&task_def, &config, &session, &artifacts_dir, timeout, debug, verbose, no_recording) => r,
+    };
+
+    // Collect artifacts and clean up
+    info!("Collecting artifacts...");
+    let _ = artifacts::collect_artifacts(&session, &artifacts_dir).await;
+    info!("Cleaning up container...");
+    let _ = session.cleanup().await;
+
+    let duration_ms = start.elapsed().as_millis() as u64;
+
+    // Write results
+    let test_result = match &result {
+        Ok(run_result) if !run_result.agent_ran => {
+            results::from_evaluation(
+                &test_id,
+                run_result.eval_result.as_ref().expect("eval_result"),
+                duration_ms,
+            )
+        }
+        Ok(run_result) => results::from_outcome(
+            &test_id,
+            &run_result.outcome,
+            run_result.eval_result.as_ref(),
+            duration_ms,
+        ),
+        Err(e) => results::from_error(&test_id, e, duration_ms),
+    };
+    if let Err(e) = results::write_results(&test_result, &output_dir) {
+        tracing::warn!("Failed to write results.json: {e}");
+    }
+
+    result.map(|r| r.outcome)
+}
+
+async fn run_interactive_step_inner(
+    task_def: &task::TaskDefinition,
+    config: &Config,
+    session: &docker::DockerSession,
+    artifacts_dir: &std::path::Path,
+    timeout: Duration,
+    debug: bool,
+    verbose: bool,
+    no_recording: bool,
+) -> Result<TaskRunResult, AppError> {
+    use task::EvaluatorMode;
+
+    // 1. Wait for desktop
+    info!("Waiting for desktop to be ready...");
+    readiness::wait_for_desktop(session, timeout, debug).await?;
+
+    // 2. Run setup steps
+    if !task_def.config.is_empty() {
+        info!("Running {} setup steps...", task_def.config.len());
+        setup::run_setup_steps(session, &task_def.config).await?;
+    }
+
+    // 3. Start recording
+    let recording = if no_recording {
+        None
+    } else {
+        match recording::Recording::start(session, config.display_width, config.display_height).await {
+            Ok(rec) => Some(rec),
+            Err(e) => {
+                tracing::warn!("Failed to start recording: {e}");
+                None
+            }
+        }
+    };
+
+    // 4. Deploy and launch app (same as run_task_inner)
+    let is_docker_image = matches!(task_def.app, task::AppConfig::DockerImage { .. });
+    if is_docker_image {
+        info!("Custom Docker image: skipping app deployment");
+        if let task::AppConfig::DockerImage { entrypoint_cmd, .. } = &task_def.app {
+            if let Some(cmd) = entrypoint_cmd {
+                let baseline_windows = readiness::get_stable_window_list(session).await?;
+                info!("Launching app via entrypoint_cmd: {cmd}");
+                session.exec_detached_with_log(&["bash", "-c", cmd], "/tmp/app.log").await?;
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                info!("Waiting for app window...");
+                readiness::wait_for_app_window(session, &baseline_windows, timeout, debug).await?;
+            }
+        }
+    } else {
+        info!("Deploying app...");
+        let app_path = session.deploy_app(config).await?;
+        let baseline_windows = readiness::get_stable_window_list(session).await?;
+        let is_appimage = matches!(config.app_type, crate::config::AppType::Appimage);
+        info!("Launching app: {app_path}");
+        session.launch_app(&app_path, is_appimage).await?;
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        info!("Waiting for app window...");
+        readiness::wait_for_app_window(session, &baseline_windows, timeout, debug).await?;
+    }
+
+    // Print VNC info
+    if let Some(vnc_port) = config.vnc_port {
+        println!("VNC available at {}:{}", config.vnc_bind_addr, vnc_port);
+    }
+
+    // 5. Run agent loop in step mode
+    info!("Starting agent loop v2 in step mode...");
+    let llm_client = provider::create_provider(
+        &config.provider,
+        &config.api_key,
+        &config.model,
+        &config.api_base_url,
+    )?;
+
+    let loop_config = agent::loop_v2::AgentLoopV2Config {
+        debug,
+        verbose,
+        ..Default::default()
+    };
+    let mut agent_loop = agent::loop_v2::AgentLoopV2::new(
+        llm_client,
+        session,
+        artifacts_dir.to_path_buf(),
+        &task_def.instruction,
+        config.display_width,
+        config.display_height,
+        loop_config,
+    );
+
+    let agent_outcome = agent_loop.run_step_by_step().await?;
+
+    // 6. Run evaluation if needed
+    let eval_mode = task_def
+        .evaluator
+        .as_ref()
+        .map(|e| &e.mode)
+        .unwrap_or(&EvaluatorMode::Llm);
+
+    let eval_result = if matches!(eval_mode, EvaluatorMode::Hybrid | EvaluatorMode::Programmatic) {
+        info!("Running programmatic evaluation...");
+        let evaluator = task_def.evaluator.as_ref().expect("evaluator config");
+        Some(evaluator::run_evaluation(session, evaluator, artifacts_dir).await?)
+    } else {
+        None
+    };
+
+    let final_passed = match (&eval_result, eval_mode) {
+        (Some(eval), EvaluatorMode::Hybrid) => agent_outcome.passed && eval.passed,
+        (Some(eval), EvaluatorMode::Programmatic) => eval.passed,
+        _ => agent_outcome.passed,
+    };
+
+    print_validation_results(Some(&agent_outcome), eval_result.as_ref());
+
+    // Stop recording
+    if let Some(rec) = &recording {
+        rec.stop(session).await;
+        rec.collect(session, artifacts_dir).await;
+    }
+
+    Ok(TaskRunResult {
+        outcome: AgentOutcome {
+            passed: final_passed,
+            reasoning: format_evaluation_reasoning(Some(&agent_outcome), eval_result.as_ref()),
+            screenshot_count: agent_outcome.screenshot_count,
+        },
+        eval_result,
+        agent_ran: true,
+    })
+}
+
 /// Print validation results showing which sources passed/failed.
 fn print_validation_results(
     agent_outcome: Option<&AgentOutcome>,
@@ -1023,5 +1449,50 @@ mod tests {
         let task = task::TaskDefinition::parse_and_validate(json).unwrap();
         let is_docker_image = matches!(task.app, task::AppConfig::DockerImage { .. });
         assert!(is_docker_image);
+    }
+
+    // --- CLI subcommand tests ---
+
+    #[test]
+    fn test_load_config_or_defaults_none() {
+        let config = load_config_or_defaults(&None);
+        assert_eq!(config.provider, "openai");
+        assert_eq!(config.model, "gpt-4.1");
+        assert!(config.api_key.is_empty());
+    }
+
+    #[test]
+    fn test_interactive_validate_only_requires_evaluator() {
+        // A task without evaluator should fail validate-only
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "test",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"}
+        }"#;
+        let task = task::TaskDefinition::parse_and_validate(json).unwrap();
+        assert!(task.evaluator.is_none());
+    }
+
+    #[test]
+    fn test_interactive_validate_only_with_evaluator() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "test",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "evaluator": {
+                "mode": "hybrid",
+                "metrics": [{"type": "file_exists", "path": "/tmp/out"}]
+            }
+        }"#;
+        let task = task::TaskDefinition::parse_and_validate(json).unwrap();
+        assert!(task.evaluator.is_some());
+        // Verify mode can be changed to programmatic
+        let mut task_mut = task;
+        if let Some(ref mut eval) = task_mut.evaluator {
+            eval.mode = task::EvaluatorMode::Programmatic;
+        }
+        assert_eq!(task_mut.evaluator.as_ref().unwrap().mode, task::EvaluatorMode::Programmatic);
     }
 }

@@ -328,6 +328,169 @@ impl<'a> AgentLoopV2<'a> {
         }
     }
 
+    /// Run the agent loop step by step, pausing after each step for user confirmation.
+    ///
+    /// Reads a line from stdin after each step. Press Enter to continue, 'q' to quit.
+    pub async fn run_step_by_step(&mut self) -> Result<AgentOutcome, AppError> {
+        let start_time = Instant::now();
+        let mut step_index: usize = 0;
+
+        info!(
+            "Starting AgentLoopV2 (step-by-step): max_steps={}, step_timeout={:?}, total_timeout={:?}",
+            self.config.max_steps, self.config.step_timeout, self.config.total_timeout
+        );
+
+        // Capture initial observation
+        info!("Capturing initial observation...");
+        let mut current_observation = self.capture_observation_for_step(0).await?;
+
+        loop {
+            if start_time.elapsed() >= self.config.total_timeout {
+                warn!("Total timeout exceeded after {} steps", step_index);
+                self.save_conversation_log();
+                return Ok(AgentOutcome {
+                    passed: false,
+                    reasoning: format!(
+                        "Total timeout ({}s) exceeded after {} steps",
+                        self.config.total_timeout.as_secs(), step_index
+                    ),
+                    screenshot_count: step_index,
+                });
+            }
+
+            if step_index >= self.config.max_steps {
+                warn!("Max steps ({}) reached", self.config.max_steps);
+                self.save_conversation_log();
+                return Ok(AgentOutcome {
+                    passed: false,
+                    reasoning: format!("Max steps ({}) reached", self.config.max_steps),
+                    screenshot_count: step_index,
+                });
+            }
+
+            step_index += 1;
+
+            // Pause and wait for user input
+            println!("\n--- Step {}/{} --- Press Enter to execute, 'q' to quit ---",
+                step_index, self.config.max_steps);
+            let mut input = String::new();
+            if std::io::stdin().read_line(&mut input).is_ok() {
+                let trimmed = input.trim().to_lowercase();
+                if trimmed == "q" || trimmed == "quit" {
+                    info!("User requested quit at step {step_index}");
+                    self.save_conversation_log();
+                    return Ok(AgentOutcome {
+                        passed: false,
+                        reasoning: format!("User quit at step {step_index}"),
+                        screenshot_count: step_index - 1,
+                    });
+                }
+            }
+
+            info!("--- Executing step {}/{} ---", step_index, self.config.max_steps);
+
+            // Build messages and call LLM
+            let messages = self.context.build_messages(&current_observation);
+            let llm_result = self.call_llm_with_retry(&messages, &current_observation).await;
+
+            let response = match llm_result {
+                Ok(msg) => msg,
+                Err(e) => {
+                    warn!("LLM call failed: {e}");
+                    self.save_conversation_log();
+                    return Err(e);
+                }
+            };
+
+            let response_text = extract_text_content(&response);
+            println!("  LLM response ({} chars):", response_text.len());
+
+            // Show a preview of the response
+            let preview: String = response_text.chars().take(500).collect();
+            println!("  {preview}");
+            if response_text.len() > 500 {
+                println!("  ... (truncated)");
+            }
+
+            let parsed = pyautogui::parse_response(&response_text);
+            let code_blocks = parsed.code_blocks.clone();
+
+            let turn_result = pyautogui::process_turn(
+                self.session,
+                &response_text,
+                Some(self.config.step_timeout),
+            )
+            .await?;
+
+            // Check for special commands
+            if let Some(ref command) = turn_result.command {
+                match command {
+                    SpecialCommand::Done => {
+                        println!("  => Agent signalled DONE");
+                        self.log_trajectory_entry(step_index, &response_text, &code_blocks, &current_observation, "done", Some(&response_text));
+                        self.context.push_turn(TrajectoryTurn {
+                            observation: current_observation,
+                            response_text: response_text.clone(),
+                            error_feedback: None,
+                        });
+                        self.save_conversation_log();
+                        return Ok(AgentOutcome {
+                            passed: true,
+                            reasoning: extract_reasoning(&response_text),
+                            screenshot_count: step_index,
+                        });
+                    }
+                    SpecialCommand::Fail => {
+                        println!("  => Agent signalled FAIL");
+                        self.log_trajectory_entry(step_index, &response_text, &code_blocks, &current_observation, "fail", Some(&response_text));
+                        self.context.push_turn(TrajectoryTurn {
+                            observation: current_observation,
+                            response_text: response_text.clone(),
+                            error_feedback: None,
+                        });
+                        self.save_conversation_log();
+                        return Ok(AgentOutcome {
+                            passed: false,
+                            reasoning: extract_reasoning(&response_text),
+                            screenshot_count: step_index,
+                        });
+                    }
+                    SpecialCommand::Wait => {
+                        println!("  => Agent signalled WAIT, re-observing...");
+                        self.log_trajectory_entry(step_index, &response_text, &code_blocks, &current_observation, "wait", Some(&response_text));
+                        self.context.push_turn(TrajectoryTurn {
+                            observation: current_observation,
+                            response_text: response_text.clone(),
+                            error_feedback: None,
+                        });
+                        current_observation = self.capture_observation_for_step(step_index).await?;
+                        continue;
+                    }
+                }
+            }
+
+            // Show execution result
+            let result_str = if turn_result.all_succeeded {
+                println!("  => Executed {} code block(s) successfully", turn_result.executions.len());
+                "success".to_string()
+            } else {
+                let err = turn_result.error_feedback.as_deref().unwrap_or("unknown error");
+                println!("  => Execution error: {err}");
+                format!("error:{err}")
+            };
+
+            self.log_trajectory_entry(step_index, &response_text, &code_blocks, &current_observation, &result_str, Some(&response_text));
+            self.context.push_turn(TrajectoryTurn {
+                observation: current_observation,
+                response_text: response_text.clone(),
+                error_feedback: turn_result.error_feedback.clone(),
+            });
+
+            // Capture new observation
+            current_observation = self.capture_observation_for_step(step_index).await?;
+        }
+    }
+
     /// Log a trajectory entry for the current step.
     fn log_trajectory_entry(
         &mut self,
