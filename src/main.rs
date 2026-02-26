@@ -324,7 +324,22 @@ async fn run_task_inner(
     artifacts_dir: &std::path::Path,
     debug: bool,
 ) -> Result<AgentOutcome, AppError> {
+    use task::EvaluatorMode;
+
     let timeout = Duration::from_secs(config.startup_timeout_seconds);
+
+    // Determine evaluation mode (default to LLM if no evaluator configured)
+    let eval_mode = task_def
+        .evaluator
+        .as_ref()
+        .map(|e| &e.mode)
+        .unwrap_or(&EvaluatorMode::Llm);
+
+    info!("Evaluation mode: {}", match eval_mode {
+        EvaluatorMode::Llm => "llm",
+        EvaluatorMode::Programmatic => "programmatic",
+        EvaluatorMode::Hybrid => "hybrid",
+    });
 
     // 1. Wait for desktop to be ready
     info!("Waiting for desktop to be ready...");
@@ -377,8 +392,68 @@ async fn run_task_inner(
         println!("VNC available at {}:{}", config.vnc_bind_addr, vnc_port);
     }
 
-    // 6. Run agent loop (v2 — OSWorld-style with PyAutoGUI + observation + sliding window)
-    info!("Starting agent loop v2...");
+    // 6. Run agent loop and/or evaluation based on mode
+    match eval_mode {
+        EvaluatorMode::Programmatic => {
+            // Programmatic mode: skip agent loop, run evaluation directly
+            info!("Programmatic mode: skipping agent loop, running evaluation...");
+
+            let evaluator = task_def.evaluator.as_ref().expect(
+                "Programmatic mode requires evaluator config (validated at task load time)",
+            );
+            let eval_result =
+                evaluator::run_evaluation(session, evaluator, artifacts_dir).await?;
+
+            print_validation_results(None, Some(&eval_result));
+
+            Ok(AgentOutcome {
+                passed: eval_result.passed,
+                reasoning: format_evaluation_reasoning(None, Some(&eval_result)),
+                screenshot_count: 0,
+            })
+        }
+        EvaluatorMode::Llm => {
+            // LLM mode: run agent loop only, use agent verdict
+            info!("Starting agent loop v2 (LLM-only evaluation)...");
+            let agent_outcome = run_agent_loop(task_def, config, session, artifacts_dir, debug).await?;
+
+            print_validation_results(Some(&agent_outcome), None);
+
+            Ok(agent_outcome)
+        }
+        EvaluatorMode::Hybrid => {
+            // Hybrid mode: run agent loop AND programmatic evaluation, both must pass
+            info!("Starting agent loop v2 (hybrid evaluation)...");
+            let agent_outcome = run_agent_loop(task_def, config, session, artifacts_dir, debug).await?;
+
+            info!("Agent loop complete, running programmatic evaluation...");
+            let evaluator = task_def.evaluator.as_ref().expect(
+                "Hybrid mode requires evaluator config (validated at task load time)",
+            );
+            let eval_result =
+                evaluator::run_evaluation(session, evaluator, artifacts_dir).await?;
+
+            let both_passed = agent_outcome.passed && eval_result.passed;
+
+            print_validation_results(Some(&agent_outcome), Some(&eval_result));
+
+            Ok(AgentOutcome {
+                passed: both_passed,
+                reasoning: format_evaluation_reasoning(Some(&agent_outcome), Some(&eval_result)),
+                screenshot_count: agent_outcome.screenshot_count,
+            })
+        }
+    }
+}
+
+/// Run the v2 agent loop (used by LLM and hybrid modes).
+async fn run_agent_loop(
+    task_def: &task::TaskDefinition,
+    config: &Config,
+    session: &docker::DockerSession,
+    artifacts_dir: &std::path::Path,
+    debug: bool,
+) -> Result<AgentOutcome, AppError> {
     let llm_client = provider::create_provider(
         &config.provider,
         &config.api_key,
@@ -400,4 +475,290 @@ async fn run_task_inner(
         loop_config,
     );
     agent_loop.run().await
+}
+
+/// Print validation results showing which sources passed/failed.
+fn print_validation_results(
+    agent_outcome: Option<&AgentOutcome>,
+    eval_result: Option<&evaluator::EvaluationResult>,
+) {
+    println!("\n=== Validation Results ===");
+
+    if let Some(outcome) = agent_outcome {
+        let verdict = if outcome.passed { "PASSED" } else { "FAILED" };
+        println!("  Agent verdict: {verdict}");
+        println!("    Reasoning: {}", outcome.reasoning);
+        println!("    Steps: {}", outcome.screenshot_count);
+    }
+
+    if let Some(result) = eval_result {
+        let verdict = if result.passed { "PASSED" } else { "FAILED" };
+        println!("  Programmatic evaluation: {verdict}");
+        for mr in &result.metric_results {
+            let status = if mr.passed { "PASS" } else { "FAIL" };
+            println!("    [{status}] {}: {}", mr.metric, mr.detail);
+        }
+    }
+
+    // Combined result
+    let final_passed = match (agent_outcome, eval_result) {
+        (Some(a), Some(e)) => a.passed && e.passed,  // hybrid
+        (Some(a), None) => a.passed,                   // llm
+        (None, Some(e)) => e.passed,                   // programmatic
+        (None, None) => true,
+    };
+    let final_verdict = if final_passed { "PASSED" } else { "FAILED" };
+    println!("  Final result: {final_verdict}");
+    println!("========================\n");
+}
+
+/// Format a combined reasoning string from agent and evaluation results.
+fn format_evaluation_reasoning(
+    agent_outcome: Option<&AgentOutcome>,
+    eval_result: Option<&evaluator::EvaluationResult>,
+) -> String {
+    let mut parts = Vec::new();
+
+    if let Some(outcome) = agent_outcome {
+        let verdict = if outcome.passed { "passed" } else { "failed" };
+        parts.push(format!("Agent {verdict}: {}", outcome.reasoning));
+    }
+
+    if let Some(result) = eval_result {
+        let total = result.metric_results.len();
+        let passed = result.metric_results.iter().filter(|m| m.passed).count();
+        let failed = total - passed;
+        if result.passed {
+            parts.push(format!("Programmatic evaluation passed ({passed}/{total} metrics)"));
+        } else {
+            let failures: Vec<String> = result
+                .metric_results
+                .iter()
+                .filter(|m| !m.passed)
+                .map(|m| format!("{}: {}", m.metric, m.detail))
+                .collect();
+            parts.push(format!(
+                "Programmatic evaluation failed ({failed}/{total} metrics failed: {})",
+                failures.join("; ")
+            ));
+        }
+    }
+
+    parts.join(". ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use evaluator::{EvaluationResult, MetricResult};
+
+    fn make_agent_outcome(passed: bool, reasoning: &str) -> AgentOutcome {
+        AgentOutcome {
+            passed,
+            reasoning: reasoning.into(),
+            screenshot_count: 5,
+        }
+    }
+
+    fn make_eval_result(passed: bool, metrics: Vec<MetricResult>) -> EvaluationResult {
+        EvaluationResult {
+            passed,
+            mode: if passed { "programmatic" } else { "programmatic" }.into(),
+            metric_results: metrics,
+        }
+    }
+
+    fn make_metric(passed: bool, name: &str, detail: &str) -> MetricResult {
+        MetricResult {
+            passed,
+            metric: name.into(),
+            expected: "expected".into(),
+            actual: "actual".into(),
+            detail: detail.into(),
+        }
+    }
+
+    // --- format_evaluation_reasoning tests ---
+
+    #[test]
+    fn test_format_reasoning_agent_only_passed() {
+        let outcome = make_agent_outcome(true, "Task completed");
+        let result = format_evaluation_reasoning(Some(&outcome), None);
+        assert!(result.contains("Agent passed"));
+        assert!(result.contains("Task completed"));
+    }
+
+    #[test]
+    fn test_format_reasoning_agent_only_failed() {
+        let outcome = make_agent_outcome(false, "Could not find button");
+        let result = format_evaluation_reasoning(Some(&outcome), None);
+        assert!(result.contains("Agent failed"));
+        assert!(result.contains("Could not find button"));
+    }
+
+    #[test]
+    fn test_format_reasoning_eval_only_passed() {
+        let metrics = vec![
+            make_metric(true, "file_exists", "File exists"),
+            make_metric(true, "command_output", "Output matches"),
+        ];
+        let eval = make_eval_result(true, metrics);
+        let result = format_evaluation_reasoning(None, Some(&eval));
+        assert!(result.contains("Programmatic evaluation passed"));
+        assert!(result.contains("2/2 metrics"));
+    }
+
+    #[test]
+    fn test_format_reasoning_eval_only_failed() {
+        let metrics = vec![
+            make_metric(true, "file_exists", "File exists"),
+            make_metric(false, "command_output", "Output mismatch"),
+        ];
+        let eval = make_eval_result(false, metrics);
+        let result = format_evaluation_reasoning(None, Some(&eval));
+        assert!(result.contains("Programmatic evaluation failed"));
+        assert!(result.contains("1/2 metrics failed"));
+        assert!(result.contains("command_output: Output mismatch"));
+    }
+
+    #[test]
+    fn test_format_reasoning_hybrid_both_passed() {
+        let outcome = make_agent_outcome(true, "Done");
+        let metrics = vec![make_metric(true, "file_exists", "File exists")];
+        let eval = make_eval_result(true, metrics);
+        let result = format_evaluation_reasoning(Some(&outcome), Some(&eval));
+        assert!(result.contains("Agent passed"));
+        assert!(result.contains("Programmatic evaluation passed"));
+    }
+
+    #[test]
+    fn test_format_reasoning_hybrid_agent_passed_eval_failed() {
+        let outcome = make_agent_outcome(true, "Done");
+        let metrics = vec![make_metric(false, "file_compare", "Files differ")];
+        let eval = make_eval_result(false, metrics);
+        let result = format_evaluation_reasoning(Some(&outcome), Some(&eval));
+        assert!(result.contains("Agent passed"));
+        assert!(result.contains("Programmatic evaluation failed"));
+    }
+
+    #[test]
+    fn test_format_reasoning_hybrid_agent_failed_eval_passed() {
+        let outcome = make_agent_outcome(false, "Timed out");
+        let metrics = vec![make_metric(true, "file_exists", "File exists")];
+        let eval = make_eval_result(true, metrics);
+        let result = format_evaluation_reasoning(Some(&outcome), Some(&eval));
+        assert!(result.contains("Agent failed"));
+        assert!(result.contains("Programmatic evaluation passed"));
+    }
+
+    #[test]
+    fn test_format_reasoning_no_sources() {
+        let result = format_evaluation_reasoning(None, None);
+        assert!(result.is_empty());
+    }
+
+    // --- print_validation_results does not panic ---
+
+    #[test]
+    fn test_print_validation_agent_only() {
+        let outcome = make_agent_outcome(true, "Done");
+        // Should not panic
+        print_validation_results(Some(&outcome), None);
+    }
+
+    #[test]
+    fn test_print_validation_eval_only() {
+        let metrics = vec![make_metric(true, "file_exists", "OK")];
+        let eval = make_eval_result(true, metrics);
+        print_validation_results(None, Some(&eval));
+    }
+
+    #[test]
+    fn test_print_validation_hybrid() {
+        let outcome = make_agent_outcome(false, "Failed");
+        let metrics = vec![
+            make_metric(true, "file_exists", "OK"),
+            make_metric(false, "command_output", "Mismatch"),
+        ];
+        let eval = make_eval_result(false, metrics);
+        print_validation_results(Some(&outcome), Some(&eval));
+    }
+
+    #[test]
+    fn test_print_validation_none() {
+        print_validation_results(None, None);
+    }
+
+    // --- Evaluation mode detection from task ---
+
+    #[test]
+    fn test_task_no_evaluator_defaults_to_llm() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "test",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"}
+        }"#;
+        let task = task::TaskDefinition::parse_and_validate(json).unwrap();
+        let mode = task
+            .evaluator
+            .as_ref()
+            .map(|e| &e.mode)
+            .unwrap_or(&task::EvaluatorMode::Llm);
+        assert_eq!(*mode, task::EvaluatorMode::Llm);
+    }
+
+    #[test]
+    fn test_task_hybrid_mode_detected() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "test",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "evaluator": {
+                "mode": "hybrid",
+                "metrics": [{"type": "file_exists", "path": "/tmp/out"}]
+            }
+        }"#;
+        let task = task::TaskDefinition::parse_and_validate(json).unwrap();
+        let mode = &task.evaluator.as_ref().unwrap().mode;
+        assert_eq!(*mode, task::EvaluatorMode::Hybrid);
+    }
+
+    #[test]
+    fn test_task_programmatic_mode_detected() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "test",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "evaluator": {
+                "mode": "programmatic",
+                "metrics": [{"type": "file_exists", "path": "/tmp/out"}]
+            }
+        }"#;
+        let task = task::TaskDefinition::parse_and_validate(json).unwrap();
+        let mode = &task.evaluator.as_ref().unwrap().mode;
+        assert_eq!(*mode, task::EvaluatorMode::Programmatic);
+    }
+
+    #[test]
+    fn test_format_reasoning_eval_all_failed() {
+        let metrics = vec![
+            make_metric(false, "file_exists", "File not found"),
+            make_metric(false, "exit_code", "Exit code 1"),
+        ];
+        let eval = make_eval_result(false, metrics);
+        let result = format_evaluation_reasoning(None, Some(&eval));
+        assert!(result.contains("2/2 metrics failed"));
+        assert!(result.contains("file_exists"));
+        assert!(result.contains("exit_code"));
+    }
+
+    #[test]
+    fn test_format_reasoning_eval_empty_metrics_passed() {
+        let eval = make_eval_result(true, vec![]);
+        let result = format_evaluation_reasoning(None, Some(&eval));
+        assert!(result.contains("Programmatic evaluation passed (0/0 metrics)"));
+    }
 }

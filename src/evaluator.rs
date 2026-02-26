@@ -1,6 +1,3 @@
-// Allow dead code for types/functions that are defined now but wired up in US-011 (Hybrid validation mode).
-#![allow(dead_code)]
-
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
