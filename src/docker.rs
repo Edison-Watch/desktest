@@ -11,6 +11,7 @@ use bollard::image::BuildImageOptions;
 use bollard::models::{HostConfig, PortBinding};
 use bollard::Docker;
 use futures::StreamExt;
+use tokio::io::AsyncWriteExt;
 use tracing::{debug, info};
 
 use crate::config::Config;
@@ -213,6 +214,54 @@ impl DockerSession {
 
         let mut output = String::new();
         if let StartExecResults::Attached { output: mut stream, .. } = start_result {
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk.map_err(AppError::Docker)?;
+                output.push_str(&chunk.to_string());
+            }
+        }
+
+        Ok(output)
+    }
+
+    /// Execute a command inside the container with data piped to stdin,
+    /// and return stdout.
+    pub async fn exec_with_stdin(&self, cmd: &[&str], stdin_data: &[u8]) -> Result<String, AppError> {
+        let exec = self
+            .client
+            .create_exec(
+                &self.container_id,
+                CreateExecOptions {
+                    cmd: Some(cmd.to_vec()),
+                    attach_stdin: Some(true),
+                    attach_stdout: Some(true),
+                    attach_stderr: Some(true),
+                    env: Some(vec!["DISPLAY=:99"]),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(AppError::Docker)?;
+
+        let start_result = self
+            .client
+            .start_exec(&exec.id, None)
+            .await
+            .map_err(AppError::Docker)?;
+
+        let mut output = String::new();
+        if let StartExecResults::Attached { output: mut stream, input: mut writer } = start_result {
+            // Write stdin data and close the writer
+            writer
+                .write_all(stdin_data)
+                .await
+                .map_err(|e| AppError::Infra(format!("Failed to write stdin: {e}")))?;
+            writer
+                .shutdown()
+                .await
+                .map_err(|e| AppError::Infra(format!("Failed to close stdin: {e}")))?;
+            drop(writer);
+
+            // Read all output
             while let Some(chunk) = stream.next().await {
                 let chunk = chunk.map_err(AppError::Docker)?;
                 output.push_str(&chunk.to_string());

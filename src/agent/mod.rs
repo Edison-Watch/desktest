@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 pub mod openai;
+pub mod pyautogui;
 pub mod tools;
 
 use std::path::PathBuf;
