@@ -6,30 +6,43 @@ mod error;
 mod input;
 mod readiness;
 mod screenshot;
+mod task;
 
 use std::time::Duration;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use config::Config;
 use error::{AgentOutcome, AppError};
 use tracing::info;
 
 #[derive(Parser, Debug)]
-#[command(name = "llm-desktop-app-tester", about = "LLM-powered desktop app tester")]
+#[command(name = "tent", about = "LLM-powered desktop app tester")]
 pub struct Cli {
-    /// Path to the JSON config file
-    pub config: std::path::PathBuf,
+    #[command(subcommand)]
+    pub command: Option<Command>,
 
-    /// Path to the instructions Markdown file
-    pub instructions: std::path::PathBuf,
+    /// Path to the JSON config file (legacy positional arg)
+    pub config: Option<std::path::PathBuf>,
+
+    /// Path to the instructions Markdown file (legacy positional arg)
+    pub instructions: Option<std::path::PathBuf>,
 
     /// Enable debug mode (verbose logging)
-    #[arg(long, default_value_t = false)]
+    #[arg(long, default_value_t = false, global = true)]
     pub debug: bool,
 
     /// Interactive mode: start container and app, then wait for Ctrl+C (no agent)
     #[arg(long, default_value_t = false)]
     pub interactive: bool,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum Command {
+    /// Validate a task JSON file against the schema without running anything
+    Validate {
+        /// Path to the task JSON file to validate
+        task: std::path::PathBuf,
+    },
 }
 
 fn setup_logging(debug: bool) {
@@ -49,8 +62,27 @@ async fn main() {
     let cli = Cli::parse();
     setup_logging(cli.debug);
 
+    // Handle subcommands first
+    if let Some(command) = &cli.command {
+        match command {
+            Command::Validate { task } => {
+                match task::TaskDefinition::load(task) {
+                    Ok(task_def) => {
+                        println!("Task '{}' is valid (schema v{}).", task_def.id, task_def.schema_version);
+                        std::process::exit(0);
+                    }
+                    Err(e) => {
+                        eprintln!("Validation error: {e}");
+                        std::process::exit(e.exit_code());
+                    }
+                }
+            }
+        }
+    }
+
+    // Legacy CLI: positional args for config + instructions
     let interactive = cli.interactive;
-    let result = run(cli).await;
+    let result = run_legacy(cli).await;
 
     match result {
         Ok(outcome) => {
@@ -68,12 +100,18 @@ async fn main() {
     }
 }
 
-async fn run(cli: Cli) -> Result<AgentOutcome, AppError> {
+async fn run_legacy(cli: Cli) -> Result<AgentOutcome, AppError> {
     // 1. Validate config
-    let config = Config::load_and_validate(&cli.config)?;
+    let config_path = cli.config.ok_or_else(|| {
+        AppError::Config("Missing config file argument. Usage: tent <config.json> <instructions.md>".into())
+    })?;
+    let config = Config::load_and_validate(&config_path)?;
 
     // 2. Read instructions
-    let instructions = std::fs::read_to_string(&cli.instructions)
+    let instructions_path = cli.instructions.ok_or_else(|| {
+        AppError::Config("Missing instructions file argument. Usage: tent <config.json> <instructions.md>".into())
+    })?;
+    let instructions = std::fs::read_to_string(&instructions_path)
         .map_err(|e| AppError::Config(format!("Cannot read instructions file: {e}")))?;
 
     // 3. Set up artifacts directory
