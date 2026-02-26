@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+pub mod anthropic;
+pub mod custom;
 pub mod openai;
 
 use std::future::Future;
@@ -110,11 +112,13 @@ pub fn tool_result_message(tool_call_id: &str, content: &str) -> ChatMessage {
 /// Create an LlmProvider from configuration fields.
 ///
 /// Provider selection:
-/// - "openai" (default): OpenAI-compatible API
+/// - "openai" (default): OpenAI API
+/// - "anthropic": Anthropic Messages API (Claude models)
+/// - "custom": OpenAI-compatible API with configurable base_url
 ///
 /// API key resolution order:
 /// 1. Explicit `api_key` parameter
-/// 2. Provider-specific env var (e.g., OPENAI_API_KEY)
+/// 2. Provider-specific env var (OPENAI_API_KEY, ANTHROPIC_API_KEY)
 /// 3. Generic LLM_API_KEY env var
 pub fn create_provider(
     provider_name: &str,
@@ -132,10 +136,42 @@ pub fn create_provider(
             }
             Ok(Box::new(client))
         }
+        "anthropic" => {
+            validate_image_support(provider_name, model)?;
+            let mut client = anthropic::AnthropicProvider::new(&resolved_key, model);
+            if base_url != "https://api.openai.com" && base_url != "https://api.anthropic.com" {
+                client = client.with_base_url(base_url);
+            }
+            Ok(Box::new(client))
+        }
+        "custom" => {
+            let client = custom::CustomProvider::new(&resolved_key, model, base_url);
+            Ok(Box::new(client))
+        }
         other => Err(AppError::Config(format!(
-            "Unknown provider '{other}'. Supported: openai"
+            "Unknown provider '{other}'. Supported: openai, anthropic, custom"
         ))),
     }
+}
+
+/// Validate that the selected model supports image inputs.
+///
+/// Some models (e.g., older text-only models) cannot process screenshots.
+/// This check runs at provider creation time to fail fast.
+fn validate_image_support(provider_name: &str, model: &str) -> Result<(), AppError> {
+    let text_only_models = match provider_name {
+        "anthropic" => &["claude-instant-1", "claude-instant-1.2"][..],
+        _ => &[],
+    };
+
+    if text_only_models.iter().any(|m| model.starts_with(m)) {
+        return Err(AppError::Config(format!(
+            "Model '{model}' does not support image inputs. \
+             Use a vision-capable model (e.g., claude-sonnet-4-20250514)."
+        )));
+    }
+
+    Ok(())
 }
 
 /// Resolve the API key using the fallback chain:
@@ -240,6 +276,28 @@ mod tests {
     }
 
     #[test]
+    fn test_create_provider_anthropic() {
+        let provider = create_provider(
+            "anthropic",
+            "sk-ant-test",
+            "claude-sonnet-4-20250514",
+            "https://api.anthropic.com",
+        );
+        assert!(provider.is_ok());
+    }
+
+    #[test]
+    fn test_create_provider_custom() {
+        let provider = create_provider(
+            "custom",
+            "sk-test",
+            "local-model",
+            "http://localhost:8080",
+        );
+        assert!(provider.is_ok());
+    }
+
+    #[test]
     fn test_create_provider_unknown() {
         let result = create_provider("unknown", "sk-test", "model", "https://example.com");
         assert!(result.is_err());
@@ -251,5 +309,43 @@ mod tests {
     fn test_create_provider_with_custom_base_url() {
         let provider = create_provider("openai", "sk-test", "gpt-4.1", "https://custom.api.com");
         assert!(provider.is_ok());
+    }
+
+    #[test]
+    fn test_anthropic_text_only_model_rejected() {
+        let result = create_provider(
+            "anthropic",
+            "sk-ant-test",
+            "claude-instant-1.2",
+            "https://api.anthropic.com",
+        );
+        assert!(result.is_err());
+        let err = result.err().unwrap();
+        assert!(err.to_string().contains("does not support image inputs"));
+    }
+
+    #[test]
+    fn test_anthropic_vision_model_accepted() {
+        let result = create_provider(
+            "anthropic",
+            "sk-ant-test",
+            "claude-sonnet-4-20250514",
+            "https://api.anthropic.com",
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_resolve_api_key_anthropic_provider() {
+        // With explicit key, should resolve immediately
+        let key = resolve_api_key("sk-ant-test", "anthropic").unwrap();
+        assert_eq!(key, "sk-ant-test");
+    }
+
+    #[test]
+    fn test_resolve_api_key_custom_provider() {
+        // Custom provider falls through to LLM_API_KEY (no provider-specific env var)
+        let key = resolve_api_key("custom-key", "custom").unwrap();
+        assert_eq!(key, "custom-key");
     }
 }
