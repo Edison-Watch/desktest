@@ -12,6 +12,7 @@ mod recording;
 mod results;
 mod screenshot;
 mod setup;
+mod suite;
 mod task;
 mod trajectory;
 
@@ -71,6 +72,24 @@ pub enum Command {
         /// Output directory for results.json (default: ./test-results/)
         #[arg(long, default_value = results::DEFAULT_OUTPUT_DIR)]
         output: std::path::PathBuf,
+    },
+
+    /// Run a suite of tests from a directory of task JSON files
+    Suite {
+        /// Path to the directory containing task JSON files
+        dir: std::path::PathBuf,
+
+        /// Path to an optional config JSON file (for API key, provider, display settings)
+        #[arg(long)]
+        config: Option<std::path::PathBuf>,
+
+        /// Output directory for suite-results.json and per-test results (default: ./test-results/)
+        #[arg(long, default_value = results::DEFAULT_OUTPUT_DIR)]
+        output: std::path::PathBuf,
+
+        /// Run only tests matching this name pattern
+        #[arg(long)]
+        filter: Option<String>,
     },
 }
 
@@ -136,6 +155,27 @@ async fn main() {
                     }
                     Err(e) => {
                         eprintln!("Error: {e}");
+                        std::process::exit(e.exit_code());
+                    }
+                }
+            }
+            Command::Suite { dir, config, output, filter } => {
+                let result = suite::run_suite(
+                    dir,
+                    config.as_deref(),
+                    filter.as_deref(),
+                    output,
+                    cli.debug,
+                    cli.verbose,
+                    cli.no_recording,
+                ).await;
+
+                match result {
+                    Ok(suite_result) => {
+                        std::process::exit(suite::suite_exit_code(&suite_result));
+                    }
+                    Err(e) => {
+                        eprintln!("Suite error: {e}");
                         std::process::exit(e.exit_code());
                     }
                 }
@@ -305,7 +345,7 @@ struct TaskRunResult {
 ///
 /// This is the new task-based flow: load task → create container → wait for desktop →
 /// run setup steps → deploy & launch app → run agent loop → cleanup.
-async fn run_task(
+pub(crate) async fn run_task(
     task_def: task::TaskDefinition,
     config: Config,
     debug: bool,
