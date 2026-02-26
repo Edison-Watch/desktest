@@ -4,6 +4,7 @@ mod config;
 mod docker;
 mod error;
 mod input;
+mod provider;
 mod readiness;
 mod screenshot;
 mod task;
@@ -214,10 +215,14 @@ async fn run_inner(
     }
 
     info!("Starting agent loop...");
-    let client = agent::openai::OpenAiClient::new(&config.api_key, &config.model)
-        .with_base_url(&config.api_base_url);
+    let llm_client = provider::create_provider(
+        &config.provider,
+        &config.api_key,
+        &config.model,
+        &config.api_base_url,
+    )?;
     let mut agent_loop = agent::AgentLoop::new(
-        client,
+        llm_client,
         session,
         artifacts_dir.to_path_buf(),
         instructions.to_string(),

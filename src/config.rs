@@ -28,6 +28,10 @@ fn default_timeout() -> u64 {
     30
 }
 
+fn default_provider() -> String {
+    "openai".into()
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AppType {
@@ -37,7 +41,11 @@ pub enum AppType {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
+    #[serde(default)]
     pub api_key: String,
+
+    #[serde(default = "default_provider")]
+    pub provider: String,
 
     #[serde(default = "default_model")]
     pub model: String,
@@ -91,10 +99,6 @@ impl Config {
     }
 
     fn validate(&self) -> Result<(), AppError> {
-        if self.api_key.is_empty() {
-            return Err(AppError::Config("api_key must not be empty".into()));
-        }
-
         match self.app_type {
             AppType::Appimage => {
                 let app_path = self
@@ -219,26 +223,48 @@ mod tests {
     }
 
     #[test]
-    fn test_missing_api_key() {
-        let json = r#"{"app_type": "appimage", "app_path": "/tmp/x"}"#;
-        let err = Config::parse_and_validate(json).unwrap_err();
-        assert!(matches!(err, AppError::Config(_)));
-        assert!(err.to_string().contains("api_key"));
-    }
-
-    #[test]
-    fn test_empty_api_key() {
+    fn test_missing_api_key_defaults_to_empty() {
         let (_tmp, app_path) = make_temp_appimage();
         let json = format!(
             r#"{{
-                "api_key": "",
                 "app_type": "appimage",
                 "app_path": "{}"
             }}"#,
             app_path.display()
         );
-        let err = Config::parse_and_validate(&json).unwrap_err();
-        assert!(err.to_string().contains("api_key must not be empty"));
+        let config = Config::parse_and_validate(&json).unwrap();
+        assert_eq!(config.api_key, "");
+    }
+
+    #[test]
+    fn test_provider_defaults_to_openai() {
+        let (_tmp, app_path) = make_temp_appimage();
+        let json = format!(
+            r#"{{
+                "api_key": "sk-test",
+                "app_type": "appimage",
+                "app_path": "{}"
+            }}"#,
+            app_path.display()
+        );
+        let config = Config::parse_and_validate(&json).unwrap();
+        assert_eq!(config.provider, "openai");
+    }
+
+    #[test]
+    fn test_provider_custom_value() {
+        let (_tmp, app_path) = make_temp_appimage();
+        let json = format!(
+            r#"{{
+                "api_key": "sk-test",
+                "provider": "anthropic",
+                "app_type": "appimage",
+                "app_path": "{}"
+            }}"#,
+            app_path.display()
+        );
+        let config = Config::parse_and_validate(&json).unwrap();
+        assert_eq!(config.provider, "anthropic");
     }
 
     #[test]

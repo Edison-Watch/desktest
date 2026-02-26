@@ -9,9 +9,9 @@ use tracing::{debug, info, warn};
 
 use crate::docker::DockerSession;
 use crate::error::{AgentOutcome, AppError};
-use openai::{
+use crate::provider::{
     system_message, tool_result_message, user_image_message, user_message, ChatMessage,
-    OpenAiClient,
+    LlmProvider,
 };
 use tools::{dispatch_tool, tool_definitions, ToolResult};
 
@@ -44,7 +44,7 @@ You are a professional software tester operating a Linux XFCE desktop via provid
 - When you are done testing, call done() with your verdict and reasoning.";
 
 pub struct AgentLoop<'a> {
-    client: OpenAiClient,
+    client: Box<dyn LlmProvider>,
     session: &'a DockerSession,
     artifacts_dir: PathBuf,
     instructions: String,
@@ -53,7 +53,7 @@ pub struct AgentLoop<'a> {
 
 impl<'a> AgentLoop<'a> {
     pub fn new(
-        client: OpenAiClient,
+        client: Box<dyn LlmProvider>,
         session: &'a DockerSession,
         artifacts_dir: PathBuf,
         instructions: String,
@@ -180,6 +180,7 @@ impl<'a> AgentLoop<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::provider::openai::OpenAiProvider;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -205,12 +206,10 @@ mod tests {
         })
     }
 
-    fn test_session_not_needed() -> (crate::config::Config, PathBuf) {
-        // For tests that call done() immediately, the session/artifacts aren't used
-        // by the done tool. We still need a valid config for DockerSession though,
-        // so we test at a higher level using wiremock.
+    fn _test_session_not_needed() -> (crate::config::Config, std::path::PathBuf) {
         let config = crate::config::Config {
             api_key: "sk-test".into(),
+            provider: "openai".into(),
             model: "gpt-4.1".into(),
             api_base_url: "https://api.openai.com".into(),
             display_width: 1280,
@@ -266,9 +265,8 @@ mod tests {
             .mount(&server)
             .await;
 
-        // We can't easily create a DockerSession in unit tests, so we test
-        // the OpenAI client error propagation directly.
-        let client = OpenAiClient::new("sk-test", "gpt-4.1").with_base_url(&server.uri());
+        // Test the provider's error propagation directly.
+        let client = OpenAiProvider::new("sk-test", "gpt-4.1").with_base_url(&server.uri());
         let result = client
             .chat_completion(&[user_message("test")], &tool_definitions())
             .await;
