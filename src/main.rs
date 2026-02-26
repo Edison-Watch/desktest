@@ -4,6 +4,7 @@ mod config;
 mod docker;
 mod error;
 mod input;
+mod observation;
 mod provider;
 mod readiness;
 mod screenshot;
