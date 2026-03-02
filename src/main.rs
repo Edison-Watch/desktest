@@ -1461,8 +1461,8 @@ mod tests {
     #[test]
     fn test_load_config_or_defaults_none() {
         let config = load_config_or_defaults(&None);
-        assert_eq!(config.provider, "openai");
-        assert_eq!(config.model, "gpt-4.1");
+        assert_eq!(config.provider, "anthropic");
+        assert_eq!(config.model, "claude-sonnet-4-5-20250929");
         assert!(config.api_key.is_empty());
     }
 

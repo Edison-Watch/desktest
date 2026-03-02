@@ -5,11 +5,11 @@ use serde::Deserialize;
 use crate::error::AppError;
 
 fn default_model() -> String {
-    "gpt-4.1".into()
+    "claude-sonnet-4-5-20250929".into()
 }
 
 fn default_base_url() -> String {
-    "https://api.openai.com".into()
+    "https://api.anthropic.com".into()
 }
 
 fn default_width() -> u32 {
@@ -29,7 +29,7 @@ fn default_timeout() -> u64 {
 }
 
 fn default_provider() -> String {
-    "openai".into()
+    "anthropic".into()
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -262,7 +262,7 @@ mod tests {
             app_path.display()
         );
         let config = Config::parse_and_validate(&json).unwrap();
-        assert_eq!(config.model, "gpt-4.1");
+        assert_eq!(config.model, "claude-sonnet-4-5-20250929");
         assert_eq!(config.display_width, 1920);
         assert_eq!(config.display_height, 1080);
         assert_eq!(config.vnc_bind_addr, "0.0.0.0");
@@ -296,7 +296,7 @@ mod tests {
             app_path.display()
         );
         let config = Config::parse_and_validate(&json).unwrap();
-        assert_eq!(config.provider, "openai");
+        assert_eq!(config.provider, "anthropic");
     }
 
     #[test]
@@ -400,8 +400,8 @@ mod tests {
     #[test]
     fn test_from_task_defaults() {
         let config = Config::from_task_defaults();
-        assert_eq!(config.provider, "openai");
-        assert_eq!(config.model, "gpt-4.1");
+        assert_eq!(config.provider, "anthropic");
+        assert_eq!(config.model, "claude-sonnet-4-5-20250929");
         assert!(config.api_key.is_empty());
     }
 }
