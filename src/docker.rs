@@ -416,7 +416,7 @@ impl DockerSession {
         self.exec(&[
             "bash",
             "-c",
-            &format!("nohup {escaped_cmd} > {log_path} 2>&1 &"),
+            &format!("nohup {escaped_cmd} > {} 2>&1 &", shell_escape::escape(log_path.into())),
         ])
         .await?;
 
