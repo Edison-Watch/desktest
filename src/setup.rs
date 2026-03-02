@@ -34,13 +34,18 @@ pub async fn run_setup_steps(
 async fn run_step(session: &DockerSession, step: &SetupStep) -> Result<(), AppError> {
     match step {
         SetupStep::Execute { command } => {
-            let output = session
-                .exec(&["bash", "-c", command])
+            let (output, exit_code) = session
+                .exec_with_exit_code(&["bash", "-c", command])
                 .await?;
             // Log output if non-empty for debugging
             let trimmed = output.trim();
             if !trimmed.is_empty() {
                 tracing::debug!("execute output: {trimmed}");
+            }
+            if exit_code != 0 {
+                return Err(AppError::Infra(format!(
+                    "Command exited with code {exit_code}: {command}"
+                )));
             }
             Ok(())
         }
