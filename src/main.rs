@@ -240,7 +240,7 @@ async fn main() {
                     }
                     Err(e) => {
                         // In interactive mode (no --step, no --validate-only), Ctrl+C is expected
-                        if !step && !validate_only {
+                        if !step && !validate_only && e.is_interrupt() {
                             std::process::exit(0);
                         }
                         eprintln!("Error: {e}");
@@ -262,7 +262,7 @@ async fn main() {
         }
         Err(e) => {
             // In interactive mode, Ctrl+C is the expected exit path
-            if interactive {
+            if interactive && e.is_interrupt() {
                 std::process::exit(0);
             }
             eprintln!("Error: {e}");

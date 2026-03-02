@@ -32,6 +32,15 @@ impl AppError {
             AppError::Agent(_) | AppError::Http(_) => 4,
         }
     }
+
+    /// Returns true if this error represents a user interrupt (Ctrl+C / SIGINT).
+    pub fn is_interrupt(&self) -> bool {
+        match self {
+            AppError::Io(e) => e.kind() == std::io::ErrorKind::Interrupted,
+            AppError::Docker(e) => e.to_string().contains("interrupted"),
+            _ => false,
+        }
+    }
 }
 
 /// The outcome of a completed test run (not an error).
