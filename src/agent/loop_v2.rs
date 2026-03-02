@@ -569,17 +569,50 @@ impl<'a> AgentLoopV2<'a> {
                         self.context.clear_trajectory();
                         let fallback_messages =
                             self.context.build_fallback_messages(current_observation);
-                        match self
-                            .client
-                            .chat_completion(&fallback_messages, &empty_tools)
-                            .await
-                        {
-                            Ok(response) => return Ok(response),
-                            Err(fallback_err) => {
-                                warn!("Fallback LLM call also failed: {fallback_err}");
-                                return Err(fallback_err);
+
+                        // Fallback call with timeout and retry on transient errors
+                        let mut fallback_last_err = None;
+                        for fallback_attempt in 0..=LLM_MAX_RETRIES {
+                            if fallback_attempt > 0 {
+                                warn!(
+                                    "Fallback LLM retry {}/{}...",
+                                    fallback_attempt, LLM_MAX_RETRIES
+                                );
+                                tokio::time::sleep(LLM_RETRY_INTERVAL).await;
+                            }
+
+                            let fallback_result = tokio::time::timeout(
+                                self.config.step_timeout,
+                                self.client
+                                    .chat_completion(&fallback_messages, &empty_tools),
+                            )
+                            .await;
+
+                            match fallback_result {
+                                Ok(Ok(response)) => return Ok(response),
+                                Ok(Err(fb_err)) => {
+                                    if is_transient_error(&fb_err.to_string()) {
+                                        warn!("Transient error on fallback (attempt {fallback_attempt}): {fb_err}");
+                                        fallback_last_err = Some(fb_err);
+                                        continue;
+                                    }
+                                    warn!("Fallback LLM call failed (non-transient): {fb_err}");
+                                    return Err(fb_err);
+                                }
+                                Err(_timeout) => {
+                                    warn!("Fallback LLM call timed out (attempt {fallback_attempt})");
+                                    fallback_last_err = Some(AppError::Agent(format!(
+                                        "Fallback LLM call timed out after {:?}",
+                                        self.config.step_timeout
+                                    )));
+                                    continue;
+                                }
                             }
                         }
+
+                        return Err(fallback_last_err.unwrap_or_else(|| {
+                            AppError::Agent("Fallback LLM call exhausted retries".into())
+                        }));
                     }
 
                     // Check for transient errors (429, 5xx)

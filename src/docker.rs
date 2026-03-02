@@ -250,10 +250,10 @@ impl DockerSession {
 
         // Check required Python packages
         for (package, apt_name) in Self::REQUIRED_PYTHON_PACKAGES {
-            let result = self
-                .exec(&["python3", "-c", &format!("import {package}")])
-                .await;
-            if result.is_err() {
+            let (_, exit_code) = self
+                .exec_with_exit_code(&["python3", "-c", &format!("import {package}")])
+                .await?;
+            if exit_code != 0 {
                 missing.push(format!("{apt_name} (Python package '{package}')"));
             }
         }
@@ -301,6 +301,52 @@ impl DockerSession {
         }
 
         Ok(output)
+    }
+
+    /// Execute a command inside the container and return (stdout, exit_code).
+    ///
+    /// Unlike `exec()`, this inspects the process exit code via the Docker API,
+    /// making it suitable for validation checks where a non-zero exit matters.
+    pub async fn exec_with_exit_code(&self, cmd: &[&str]) -> Result<(String, i64), AppError> {
+        let exec = self
+            .client
+            .create_exec(
+                &self.container_id,
+                CreateExecOptions {
+                    cmd: Some(cmd.to_vec()),
+                    attach_stdout: Some(true),
+                    attach_stderr: Some(true),
+                    env: Some(vec!["DISPLAY=:99"]),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(AppError::Docker)?;
+
+        let exec_id = exec.id.clone();
+
+        let start_result = self
+            .client
+            .start_exec(&exec_id, None)
+            .await
+            .map_err(AppError::Docker)?;
+
+        let mut output = String::new();
+        if let StartExecResults::Attached { output: mut stream, .. } = start_result {
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk.map_err(AppError::Docker)?;
+                output.push_str(&chunk.to_string());
+            }
+        }
+
+        let inspect = self
+            .client
+            .inspect_exec(&exec_id)
+            .await
+            .map_err(AppError::Docker)?;
+
+        let exit_code = inspect.exit_code.unwrap_or(-1);
+        Ok((output, exit_code))
     }
 
     /// Execute a command inside the container with data piped to stdin,
