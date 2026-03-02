@@ -37,6 +37,7 @@ impl AppError {
     pub fn is_interrupt(&self) -> bool {
         match self {
             AppError::Io(e) => e.kind() == std::io::ErrorKind::Interrupted,
+            AppError::Infra(msg) => msg.contains("Interrupted by user"),
             AppError::Docker(e) => e.to_string().contains("interrupted"),
             _ => false,
         }
