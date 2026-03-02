@@ -2,11 +2,12 @@
 
 Tent is a CLI tool for automated end-to-end testing of Linux desktop applications using LLM-powered agents. It spins up a disposable Docker container with a virtual desktop, deploys your app, and runs an agent that interacts with it like a real user — clicking, typing, and reading the screen. Deterministic programmatic checks then validate correctness.
 
+> **Warning:** Tent is beta software under active development. APIs, task schema, and CLI flags may change between releases.
+
 ## Features
 
 - **Structured JSON task definitions** with schema validation
 - **OSWorld-style agent loop**: observe (screenshot + accessibility tree) → think → act (PyAutoGUI) → repeat
-- **Multi-model LLM support**: OpenAI, Anthropic Claude, or any OpenAI-compatible endpoint
 - **Programmatic evaluation**: file comparison, command output checks, file existence, exit codes
 - **Three validation modes**: LLM-only, programmatic-only, or hybrid (both must pass)
 - **Test suites**: run a directory of tests with aggregated results
@@ -14,6 +15,43 @@ Tent is a CLI tool for automated end-to-end testing of Linux desktop application
 - **Trajectory logging**: step-by-step JSONL logs with screenshots and accessibility trees
 - **Custom Docker images**: bring your own image for apps with complex dependencies
 - **Interactive mode**: step through agent actions one at a time for debugging
+
+## Architecture
+
+```
+Developer writes task.json
+        │
+        ▼
+   ┌─────────┐
+   │ tent CLI │  validate / run / suite / interactive
+   └────┬─────┘
+        │
+        ▼
+   ┌──────────────────────────────────┐
+   │  Docker Container                │
+   │  ┌──────┐  ┌─────┐  ┌────────┐  │
+   │  │ Xvfb │  │XFCE │  │x11vnc  │  │
+   │  └──┬───┘  └──┬──┘  └────────┘  │
+   │     │  virtual desktop           │
+   │  ┌──┴─────────┴──┐              │
+   │  │  Your App      │              │
+   │  └───────────────┘              │
+   └──────────┬───────────────────────┘
+              │ screenshot + a11y tree
+              ▼
+   ┌──────────────────┐
+   │  LLM Agent Loop  │  observe → think → act → repeat
+   │  (PyAutoGUI code) │
+   └────────┬─────────┘
+            │
+            ▼
+   ┌──────────────────┐
+   │  Evaluator        │  programmatic checks / LLM judge / hybrid
+   └────────┬─────────┘
+            │
+            ▼
+   results.json + recording.mp4 + trajectory.jsonl
+```
 
 ## Requirements
 
