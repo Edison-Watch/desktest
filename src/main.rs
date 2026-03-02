@@ -454,14 +454,22 @@ pub(crate) async fn run_task(
         _ => None,
     };
 
-    // Create and start Docker container
+    // Create and start Docker container (inside select! so Ctrl+C works during image pull)
     info!("Creating Docker container...");
-    let session = docker::DockerSession::create(&config, custom_image).await?;
-
-    // Validate custom image has required dependencies
-    if custom_image.is_some() {
-        session.validate_custom_image().await?;
-    }
+    let session = tokio::select! {
+        biased;
+        _ = tokio::signal::ctrl_c() => {
+            eprintln!("\nInterrupted (Ctrl+C) during container setup");
+            return Err(AppError::Infra("Interrupted by user".into()));
+        }
+        r = async {
+            let s = docker::DockerSession::create(&config, custom_image).await?;
+            if custom_image.is_some() {
+                s.validate_custom_image().await?;
+            }
+            Ok::<_, AppError>(s)
+        } => r?,
+    };
 
     let test_id = task_def.id.clone();
 
