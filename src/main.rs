@@ -430,13 +430,16 @@ struct TaskRunResult {
 /// run setup steps → deploy & launch app → run agent loop → cleanup.
 pub(crate) async fn run_task(
     task_def: task::TaskDefinition,
-    config: Config,
+    mut config: Config,
     debug: bool,
     verbose: bool,
     no_recording: bool,
     output_dir: std::path::PathBuf,
 ) -> Result<AgentOutcome, AppError> {
     let start = Instant::now();
+
+    // Populate config app fields from task definition (needed when no --config file)
+    config.apply_task_app(&task_def.app);
 
     // Set up artifacts directory
     let artifacts_dir = std::env::current_dir()
@@ -784,10 +787,11 @@ async fn run_interactive(
 /// Interactive mode: start container, run setup steps, print VNC info, pause.
 async fn run_interactive_pause(
     task_def: task::TaskDefinition,
-    config: Config,
+    mut config: Config,
     debug: bool,
     no_recording: bool,
 ) -> Result<AgentOutcome, AppError> {
+    config.apply_task_app(&task_def.app);
     let timeout = Duration::from_secs(config.startup_timeout_seconds);
 
     // Determine custom Docker image from task definition
@@ -883,13 +887,14 @@ async fn run_interactive_pause_inner(
 /// Interactive step mode: run agent one step at a time, pausing after each.
 async fn run_interactive_step(
     task_def: task::TaskDefinition,
-    config: Config,
+    mut config: Config,
     debug: bool,
     verbose: bool,
     no_recording: bool,
     output_dir: std::path::PathBuf,
 ) -> Result<AgentOutcome, AppError> {
     let start = Instant::now();
+    config.apply_task_app(&task_def.app);
 
     let artifacts_dir = std::env::current_dir()
         .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?

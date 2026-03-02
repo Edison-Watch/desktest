@@ -104,6 +104,28 @@ impl Config {
         }
     }
 
+    /// Populate app-related config fields from a task definition's AppConfig.
+    ///
+    /// When running via `tent run <task.json>` without a separate config file,
+    /// the Config starts with default/None app fields. This method fills them
+    /// from the task definition so that `deploy_app()` works correctly.
+    pub fn apply_task_app(&mut self, app: &crate::task::AppConfig) {
+        match app {
+            crate::task::AppConfig::Appimage { path } => {
+                self.app_type = AppType::Appimage;
+                self.app_path = Some(PathBuf::from(path));
+            }
+            crate::task::AppConfig::Folder { dir, entrypoint } => {
+                self.app_type = AppType::Folder;
+                self.app_dir = Some(PathBuf::from(dir));
+                self.entrypoint = Some(entrypoint.clone());
+            }
+            crate::task::AppConfig::DockerImage { .. } => {
+                self.app_type = AppType::DockerImage;
+            }
+        }
+    }
+
     /// Load and validate configuration from a JSON file.
     pub fn load_and_validate(path: &Path) -> Result<Self, AppError> {
         let contents = std::fs::read_to_string(path)
