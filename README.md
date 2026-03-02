@@ -66,19 +66,19 @@ Developer writes task.json
 cargo build --release
 
 # Validate a task file
-cargo run -- validate examples/gedit-save.json
+cargo run -- validate elcalc-test.json
 
 # Run a single test
-cargo run -- run examples/gedit-save.json --config config.json
+cargo run -- run elcalc-test.json
 
 # Run a test suite
-cargo run -- suite examples/ --config config.json
+cargo run -- suite tests/
 
 # Interactive debugging (starts container, prints VNC info, pauses)
-cargo run -- interactive examples/gedit-save.json
+cargo run -- interactive elcalc-test.json
 
 # Step-by-step mode (pause after each agent action)
-cargo run -- interactive examples/gedit-save.json --step
+cargo run -- interactive elcalc-test.json --step
 ```
 
 ## CLI
@@ -102,32 +102,26 @@ Options:
 
 ## Task Definition
 
-Tests are defined in JSON files. See `examples/` for complete examples.
+Tests are defined in JSON files. Here's a complete example that tests a calculator app:
 
 ```json
 {
   "schema_version": "1.0",
-  "id": "my-test",
-  "instruction": "Open the file, add a line, and save",
+  "id": "elcalc-addition",
+  "instruction": "Using the calculator app, compute 42 + 58 and verify the result shows 100.",
   "app": {
-    "type": "folder",
-    "app_dir": "./my-app",
-    "entrypoint": "run.sh"
+    "type": "appimage",
+    "appimage_path": "./elcalc-2.0.3-x86_64.AppImage"
   },
-  "config": [
-    { "type": "execute", "command": "echo 'hello' > /tmp/test.txt" },
-    { "type": "copy", "src": "./fixtures/data.txt", "dest": "/home/tester/data.txt" }
-  ],
   "evaluator": {
-    "mode": "programmatic",
-    "metrics": [
-      { "type": "file_exists", "path": "/home/tester/output.txt" },
-      { "type": "command_output", "command": "cat /home/tester/output.txt", "expected": "hello world", "match_mode": "contains" }
-    ]
+    "mode": "llm",
+    "llm_judge_prompt": "Does the calculator display show the number 100 as the result? Answer pass or fail."
   },
   "timeout": 120
 }
 ```
+
+See `examples/` for more examples including folder deploys and custom Docker images.
 
 ### App Types
 
