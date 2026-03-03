@@ -224,6 +224,7 @@ mod tests {
             app_dir: None,
             entrypoint: None,
             startup_timeout_seconds: 30,
+            max_trajectory_length: 3,
         };
         let artifacts = std::env::temp_dir().join("test-artifacts");
         (config, artifacts)

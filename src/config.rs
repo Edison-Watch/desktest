@@ -28,6 +28,10 @@ fn default_timeout() -> u64 {
     30
 }
 
+fn default_max_trajectory_length() -> usize {
+    crate::agent::context::DEFAULT_MAX_TRAJECTORY_LENGTH
+}
+
 fn default_provider() -> String {
     "anthropic".into()
 }
@@ -79,6 +83,10 @@ pub struct Config {
 
     #[serde(default = "default_timeout")]
     pub startup_timeout_seconds: u64,
+
+    /// Number of recent turns the agent keeps in its sliding context window (default: 3).
+    #[serde(default = "default_max_trajectory_length")]
+    pub max_trajectory_length: usize,
 }
 
 impl Config {
@@ -101,6 +109,7 @@ impl Config {
             app_dir: None,
             entrypoint: None,
             startup_timeout_seconds: default_timeout(),
+            max_trajectory_length: default_max_trajectory_length(),
         }
     }
 
@@ -268,6 +277,7 @@ mod tests {
         assert_eq!(config.vnc_bind_addr, "0.0.0.0");
         assert!(config.vnc_port.is_none());
         assert_eq!(config.startup_timeout_seconds, 30);
+        assert_eq!(config.max_trajectory_length, 3);
     }
 
     #[test]
