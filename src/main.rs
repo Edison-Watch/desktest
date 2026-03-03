@@ -462,14 +462,16 @@ pub(crate) async fn run_task(
             eprintln!("\nInterrupted (Ctrl+C) during container setup");
             return Err(AppError::Infra("Interrupted by user".into()));
         }
-        r = async {
-            let s = docker::DockerSession::create(&config, custom_image).await?;
-            if custom_image.is_some() {
-                s.validate_custom_image().await?;
-            }
-            Ok::<_, AppError>(s)
-        } => r?,
+        r = docker::DockerSession::create(&config, custom_image) => r?,
     };
+
+    // Validate custom image (after session exists so we can clean up on failure)
+    if custom_image.is_some() {
+        if let Err(e) = session.validate_custom_image().await {
+            let _ = session.cleanup().await;
+            return Err(e);
+        }
+    }
 
     let test_id = task_def.id.clone();
 
@@ -812,7 +814,10 @@ async fn run_interactive_pause(
     let session = docker::DockerSession::create(&config, custom_image).await?;
 
     if custom_image.is_some() {
-        session.validate_custom_image().await?;
+        if let Err(e) = session.validate_custom_image().await {
+            let _ = session.cleanup().await;
+            return Err(e);
+        }
     }
 
     let result = tokio::select! {
@@ -919,7 +924,10 @@ async fn run_interactive_step(
     let session = docker::DockerSession::create(&config, custom_image).await?;
 
     if custom_image.is_some() {
-        session.validate_custom_image().await?;
+        if let Err(e) = session.validate_custom_image().await {
+            let _ = session.cleanup().await;
+            return Err(e);
+        }
     }
 
     let test_id = task_def.id.clone();
