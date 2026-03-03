@@ -741,6 +741,7 @@ async fn run_agent_loop(
     let loop_config = agent::loop_v2::AgentLoopV2Config {
         debug,
         verbose,
+        max_trajectory_length: config.max_trajectory_length,
         ..Default::default()
     };
     let mut agent_loop = agent::loop_v2::AgentLoopV2::new(
@@ -1052,6 +1053,7 @@ async fn run_interactive_step_inner(
     let loop_config = agent::loop_v2::AgentLoopV2Config {
         debug,
         verbose,
+        max_trajectory_length: config.max_trajectory_length,
         ..Default::default()
     };
     let mut agent_loop = agent::loop_v2::AgentLoopV2::new(
