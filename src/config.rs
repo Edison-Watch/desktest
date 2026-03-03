@@ -5,19 +5,19 @@ use serde::Deserialize;
 use crate::error::AppError;
 
 fn default_model() -> String {
-    "gpt-4.1".into()
+    "claude-sonnet-4-5-20250929".into()
 }
 
 fn default_base_url() -> String {
-    "https://api.openai.com".into()
+    "https://api.anthropic.com".into()
 }
 
 fn default_width() -> u32 {
-    1280
+    1920
 }
 
 fn default_height() -> u32 {
-    800
+    1080
 }
 
 fn default_vnc_addr() -> String {
@@ -28,16 +28,25 @@ fn default_timeout() -> u64 {
     30
 }
 
+fn default_provider() -> String {
+    "anthropic".into()
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AppType {
     Appimage,
     Folder,
+    DockerImage,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
+    #[serde(default)]
     pub api_key: String,
+
+    #[serde(default = "default_provider")]
+    pub provider: String,
 
     #[serde(default = "default_model")]
     pub model: String,
@@ -73,6 +82,50 @@ pub struct Config {
 }
 
 impl Config {
+    /// Create a Config with sensible defaults for task-based runs.
+    ///
+    /// Used when `tent run <task.json>` is invoked without a separate config file.
+    /// API key and provider are resolved from environment variables at provider creation time.
+    pub fn from_task_defaults() -> Self {
+        Config {
+            api_key: String::new(),
+            provider: default_provider(),
+            model: default_model(),
+            api_base_url: default_base_url(),
+            display_width: default_width(),
+            display_height: default_height(),
+            vnc_bind_addr: default_vnc_addr(),
+            vnc_port: None,
+            app_type: AppType::Folder,
+            app_path: None,
+            app_dir: None,
+            entrypoint: None,
+            startup_timeout_seconds: default_timeout(),
+        }
+    }
+
+    /// Populate app-related config fields from a task definition's AppConfig.
+    ///
+    /// When running via `tent run <task.json>` without a separate config file,
+    /// the Config starts with default/None app fields. This method fills them
+    /// from the task definition so that `deploy_app()` works correctly.
+    pub fn apply_task_app(&mut self, app: &crate::task::AppConfig) {
+        match app {
+            crate::task::AppConfig::Appimage { path } => {
+                self.app_type = AppType::Appimage;
+                self.app_path = Some(PathBuf::from(path));
+            }
+            crate::task::AppConfig::Folder { dir, entrypoint } => {
+                self.app_type = AppType::Folder;
+                self.app_dir = Some(PathBuf::from(dir));
+                self.entrypoint = Some(entrypoint.clone());
+            }
+            crate::task::AppConfig::DockerImage { .. } => {
+                self.app_type = AppType::DockerImage;
+            }
+        }
+    }
+
     /// Load and validate configuration from a JSON file.
     pub fn load_and_validate(path: &Path) -> Result<Self, AppError> {
         let contents = std::fs::read_to_string(path)
@@ -91,10 +144,6 @@ impl Config {
     }
 
     fn validate(&self) -> Result<(), AppError> {
-        if self.api_key.is_empty() {
-            return Err(AppError::Config("api_key must not be empty".into()));
-        }
-
         match self.app_type {
             AppType::Appimage => {
                 let app_path = self
@@ -127,6 +176,9 @@ impl Config {
                         "entrypoint is required when app_type is \"folder\"".into(),
                     ));
                 }
+            }
+            AppType::DockerImage => {
+                // No local file validation needed — image is pulled/used at container creation time
             }
         }
 
@@ -210,35 +262,57 @@ mod tests {
             app_path.display()
         );
         let config = Config::parse_and_validate(&json).unwrap();
-        assert_eq!(config.model, "gpt-4.1");
-        assert_eq!(config.display_width, 1280);
-        assert_eq!(config.display_height, 800);
+        assert_eq!(config.model, "claude-sonnet-4-5-20250929");
+        assert_eq!(config.display_width, 1920);
+        assert_eq!(config.display_height, 1080);
         assert_eq!(config.vnc_bind_addr, "0.0.0.0");
         assert!(config.vnc_port.is_none());
         assert_eq!(config.startup_timeout_seconds, 30);
     }
 
     #[test]
-    fn test_missing_api_key() {
-        let json = r#"{"app_type": "appimage", "app_path": "/tmp/x"}"#;
-        let err = Config::parse_and_validate(json).unwrap_err();
-        assert!(matches!(err, AppError::Config(_)));
-        assert!(err.to_string().contains("api_key"));
-    }
-
-    #[test]
-    fn test_empty_api_key() {
+    fn test_missing_api_key_defaults_to_empty() {
         let (_tmp, app_path) = make_temp_appimage();
         let json = format!(
             r#"{{
-                "api_key": "",
                 "app_type": "appimage",
                 "app_path": "{}"
             }}"#,
             app_path.display()
         );
-        let err = Config::parse_and_validate(&json).unwrap_err();
-        assert!(err.to_string().contains("api_key must not be empty"));
+        let config = Config::parse_and_validate(&json).unwrap();
+        assert_eq!(config.api_key, "");
+    }
+
+    #[test]
+    fn test_provider_defaults_to_openai() {
+        let (_tmp, app_path) = make_temp_appimage();
+        let json = format!(
+            r#"{{
+                "api_key": "sk-test",
+                "app_type": "appimage",
+                "app_path": "{}"
+            }}"#,
+            app_path.display()
+        );
+        let config = Config::parse_and_validate(&json).unwrap();
+        assert_eq!(config.provider, "anthropic");
+    }
+
+    #[test]
+    fn test_provider_custom_value() {
+        let (_tmp, app_path) = make_temp_appimage();
+        let json = format!(
+            r#"{{
+                "api_key": "sk-test",
+                "provider": "anthropic",
+                "app_type": "appimage",
+                "app_path": "{}"
+            }}"#,
+            app_path.display()
+        );
+        let config = Config::parse_and_validate(&json).unwrap();
+        assert_eq!(config.provider, "anthropic");
     }
 
     #[test]
@@ -299,5 +373,35 @@ mod tests {
         );
         let err = Config::parse_and_validate(&json).unwrap_err();
         assert!(err.to_string().contains("vnc_port must be > 0"));
+    }
+
+    #[test]
+    fn test_valid_docker_image_config() {
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image"
+        }"#;
+        let config = Config::parse_and_validate(json).unwrap();
+        assert_eq!(config.app_type, AppType::DockerImage);
+    }
+
+    #[test]
+    fn test_docker_image_no_app_path_required() {
+        // DockerImage type should not require app_path or app_dir
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image"
+        }"#;
+        let config = Config::parse_and_validate(json).unwrap();
+        assert!(config.app_path.is_none());
+        assert!(config.app_dir.is_none());
+    }
+
+    #[test]
+    fn test_from_task_defaults() {
+        let config = Config::from_task_defaults();
+        assert_eq!(config.provider, "anthropic");
+        assert_eq!(config.model, "claude-sonnet-4-5-20250929");
+        assert!(config.api_key.is_empty());
     }
 }

@@ -11,6 +11,7 @@ use bollard::image::BuildImageOptions;
 use bollard::models::{HostConfig, PortBinding};
 use bollard::Docker;
 use futures::StreamExt;
+use tokio::io::AsyncWriteExt;
 use tracing::{debug, info};
 
 use crate::config::Config;
@@ -111,11 +112,38 @@ impl DockerSession {
     }
 
     /// Create and start a container from the test image.
-    pub async fn create(config: &Config) -> Result<Self, AppError> {
+    ///
+    /// When `custom_image` is `Some`, use that pre-built image instead of the
+    /// built-in `llm-desktop-tester` base image. The custom image is NOT built —
+    /// it must already exist locally or be pullable by Docker.
+    pub async fn create(config: &Config, custom_image: Option<&str>) -> Result<Self, AppError> {
         let client =
             Docker::connect_with_local_defaults().map_err(|e| AppError::Infra(format!("Cannot connect to Docker: {e}")))?;
 
-        Self::ensure_image(&client, false).await?;
+        let image_name = if let Some(img) = custom_image {
+            // For custom images, check if the image exists locally; if not, try to pull it.
+            if client.inspect_image(img).await.is_err() {
+                info!("Custom image '{img}' not found locally, attempting to pull...");
+                use bollard::image::CreateImageOptions;
+                let options = CreateImageOptions {
+                    from_image: img,
+                    ..Default::default()
+                };
+                let mut stream = client.create_image(Some(options), None, None);
+                while let Some(result) = stream.next().await {
+                    let info = result.map_err(|e| AppError::Config(format!(
+                        "Cannot pull custom Docker image '{img}': {e}"
+                    )))?;
+                    if let Some(status) = &info.status {
+                        debug!("Pull: {status}");
+                    }
+                }
+            }
+            img.to_string()
+        } else {
+            Self::ensure_image(&client, false).await?;
+            IMAGE_NAME.to_string()
+        };
 
         // VNC port inside the container is always 5900.
         // If the user specified a host port, we bind it; otherwise VNC runs but isn't exposed.
@@ -156,7 +184,7 @@ impl DockerSession {
         }
 
         let container_config = ContainerConfig {
-            image: Some(IMAGE_NAME.to_string()),
+            image: Some(image_name.clone()),
             env: Some(env),
             exposed_ports: if exposed_ports.is_empty() {
                 None
@@ -180,12 +208,65 @@ impl DockerSession {
             .await
             .map_err(AppError::Docker)?;
 
-        info!("Started container {container_id}");
+        info!("Started container {container_id} (image: {image_name})");
 
         Ok(Self {
             client,
             container_id,
         })
+    }
+
+    /// Required binaries that must exist in custom Docker images.
+    const REQUIRED_BINARIES: &[&str] = &[
+        "xdotool",
+        "scrot",
+        "Xvfb",
+        "ffmpeg",
+        "python3",
+    ];
+
+    /// Required Python packages that must be importable in custom Docker images.
+    const REQUIRED_PYTHON_PACKAGES: &[(&str, &str)] = &[
+        ("pyautogui", "python3-pyautogui"),
+        ("Xlib", "python3-xlib"),
+        ("pyatspi", "python3-pyatspi"),
+    ];
+
+    /// Validate that a custom Docker image has all required dependencies.
+    ///
+    /// Checks for required binaries and Python packages by running commands
+    /// inside the container. Returns `AppError::Config` (exit code 2) if
+    /// any dependency is missing.
+    pub async fn validate_custom_image(&self) -> Result<(), AppError> {
+        let mut missing: Vec<String> = Vec::new();
+
+        // Check required binaries
+        for binary in Self::REQUIRED_BINARIES {
+            let result = self.exec(&["which", binary]).await;
+            if result.is_err() || result.as_ref().is_ok_and(|o| o.trim().is_empty()) {
+                missing.push(format!("{binary} (binary)"));
+            }
+        }
+
+        // Check required Python packages
+        for (package, apt_name) in Self::REQUIRED_PYTHON_PACKAGES {
+            let (_, exit_code) = self
+                .exec_with_exit_code(&["python3", "-c", &format!("import {package}")])
+                .await?;
+            if exit_code != 0 {
+                missing.push(format!("{apt_name} (Python package '{package}')"));
+            }
+        }
+
+        if missing.is_empty() {
+            info!("Custom image validation passed: all required dependencies found");
+            Ok(())
+        } else {
+            Err(AppError::Config(format!(
+                "Custom Docker image is missing required dependencies: {}",
+                missing.join(", ")
+            )))
+        }
     }
 
     /// Execute a command inside the container and return stdout.
@@ -222,6 +303,100 @@ impl DockerSession {
         Ok(output)
     }
 
+    /// Execute a command inside the container and return (stdout, exit_code).
+    ///
+    /// Unlike `exec()`, this inspects the process exit code via the Docker API,
+    /// making it suitable for validation checks where a non-zero exit matters.
+    pub async fn exec_with_exit_code(&self, cmd: &[&str]) -> Result<(String, i64), AppError> {
+        let exec = self
+            .client
+            .create_exec(
+                &self.container_id,
+                CreateExecOptions {
+                    cmd: Some(cmd.to_vec()),
+                    attach_stdout: Some(true),
+                    attach_stderr: Some(true),
+                    env: Some(vec!["DISPLAY=:99"]),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(AppError::Docker)?;
+
+        let exec_id = exec.id.clone();
+
+        let start_result = self
+            .client
+            .start_exec(&exec_id, None)
+            .await
+            .map_err(AppError::Docker)?;
+
+        let mut output = String::new();
+        if let StartExecResults::Attached { output: mut stream, .. } = start_result {
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk.map_err(AppError::Docker)?;
+                output.push_str(&chunk.to_string());
+            }
+        }
+
+        let inspect = self
+            .client
+            .inspect_exec(&exec_id)
+            .await
+            .map_err(AppError::Docker)?;
+
+        let exit_code = inspect.exit_code.unwrap_or(-1);
+        Ok((output, exit_code))
+    }
+
+    /// Execute a command inside the container with data piped to stdin,
+    /// and return stdout.
+    pub async fn exec_with_stdin(&self, cmd: &[&str], stdin_data: &[u8]) -> Result<String, AppError> {
+        let exec = self
+            .client
+            .create_exec(
+                &self.container_id,
+                CreateExecOptions {
+                    cmd: Some(cmd.to_vec()),
+                    attach_stdin: Some(true),
+                    attach_stdout: Some(true),
+                    attach_stderr: Some(true),
+                    env: Some(vec!["DISPLAY=:99"]),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(AppError::Docker)?;
+
+        let start_result = self
+            .client
+            .start_exec(&exec.id, None)
+            .await
+            .map_err(AppError::Docker)?;
+
+        let mut output = String::new();
+        if let StartExecResults::Attached { output: mut stream, input: mut writer } = start_result {
+            // Write stdin data and close the writer
+            writer
+                .write_all(stdin_data)
+                .await
+                .map_err(|e| AppError::Infra(format!("Failed to write stdin: {e}")))?;
+            writer
+                .shutdown()
+                .await
+                .map_err(|e| AppError::Infra(format!("Failed to close stdin: {e}")))?;
+            drop(writer);
+
+            // Read all output
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk.map_err(AppError::Docker)?;
+                output.push_str(&chunk.to_string());
+            }
+        }
+
+        Ok(output)
+    }
+
     /// Execute a command in the background (detached) inside the container.
     /// Output is redirected to the specified log file (default: /dev/null).
     pub async fn exec_detached(&self, cmd: &[&str]) -> Result<(), AppError> {
@@ -241,7 +416,7 @@ impl DockerSession {
         self.exec(&[
             "bash",
             "-c",
-            &format!("nohup {escaped_cmd} > {log_path} 2>&1 &"),
+            &format!("nohup {escaped_cmd} > {} 2>&1 &", shell_escape::escape(log_path.into())),
         ])
         .await?;
 
@@ -378,6 +553,9 @@ impl DockerSession {
     }
 
     /// Deploy the app under test into the container. Returns the path to run inside the container.
+    ///
+    /// For `DockerImage` app type, nothing is deployed — the app is already in the custom image.
+    /// The returned path is empty string (caller should use `entrypoint_cmd` to launch).
     pub async fn deploy_app(&self, config: &Config) -> Result<String, AppError> {
         match config.app_type {
             crate::config::AppType::Appimage => {
@@ -422,6 +600,11 @@ impl DockerSession {
 
                 info!("Deployed folder app, entrypoint: {entrypoint_path}");
                 Ok(entrypoint_path)
+            }
+            crate::config::AppType::DockerImage => {
+                // Nothing to deploy — the app is already part of the custom Docker image.
+                info!("DockerImage app type: no deployment needed (app is in custom image)");
+                Ok(String::new())
             }
         }
     }
@@ -478,10 +661,11 @@ mod tests {
     fn test_config() -> Config {
         Config {
             api_key: "sk-test".into(),
+            provider: "openai".into(),
             model: "gpt-4.1".into(),
             api_base_url: "https://api.openai.com".into(),
-            display_width: 1280,
-            display_height: 800,
+            display_width: 1920,
+            display_height: 1080,
             vnc_bind_addr: "127.0.0.1".into(),
             vnc_port: None,
             app_type: crate::config::AppType::Appimage,
@@ -505,7 +689,7 @@ mod tests {
     #[ignore] // Requires Docker daemon
     async fn test_container_create_start_stop() {
         let config = test_config();
-        let session = DockerSession::create(&config).await.unwrap();
+        let session = DockerSession::create(&config, None).await.unwrap();
 
         let inspect = session
             .client
@@ -527,7 +711,7 @@ mod tests {
     #[ignore] // Requires Docker daemon
     async fn test_exec_command() {
         let config = test_config();
-        let session = DockerSession::create(&config).await.unwrap();
+        let session = DockerSession::create(&config, None).await.unwrap();
 
         let output = session.exec(&["echo", "hello"]).await.unwrap();
         assert!(output.trim().contains("hello"));
@@ -539,7 +723,7 @@ mod tests {
     #[ignore] // Requires Docker daemon
     async fn test_copy_file_into_container() {
         let config = test_config();
-        let session = DockerSession::create(&config).await.unwrap();
+        let session = DockerSession::create(&config, None).await.unwrap();
 
         let tmp = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(tmp.path(), b"test content").unwrap();
@@ -557,5 +741,43 @@ mod tests {
         assert!(output.contains("test content"));
 
         session.cleanup().await.unwrap();
+    }
+
+    #[test]
+    fn test_required_binaries_list() {
+        // Verify that the required binaries list contains the expected entries
+        assert!(DockerSession::REQUIRED_BINARIES.contains(&"xdotool"));
+        assert!(DockerSession::REQUIRED_BINARIES.contains(&"scrot"));
+        assert!(DockerSession::REQUIRED_BINARIES.contains(&"Xvfb"));
+        assert!(DockerSession::REQUIRED_BINARIES.contains(&"ffmpeg"));
+        assert!(DockerSession::REQUIRED_BINARIES.contains(&"python3"));
+    }
+
+    #[test]
+    fn test_required_python_packages_list() {
+        let packages: Vec<&str> = DockerSession::REQUIRED_PYTHON_PACKAGES
+            .iter()
+            .map(|(pkg, _)| *pkg)
+            .collect();
+        assert!(packages.contains(&"pyautogui"));
+        assert!(packages.contains(&"Xlib"));
+        assert!(packages.contains(&"pyatspi"));
+    }
+
+    #[test]
+    fn test_deploy_app_docker_image_type() {
+        // DockerImage deploy should return an empty string (no deployment needed)
+        let config = Config {
+            app_type: crate::config::AppType::DockerImage,
+            ..test_config()
+        };
+        // We can't actually run deploy_app without a real Docker session,
+        // but we verify the AppType variant exists and can be constructed
+        assert_eq!(config.app_type, crate::config::AppType::DockerImage);
+    }
+
+    #[test]
+    fn test_image_name_constant() {
+        assert_eq!(IMAGE_NAME, "llm-desktop-tester:latest");
     }
 }

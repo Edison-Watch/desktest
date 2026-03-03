@@ -15,6 +15,9 @@ sleep 1
 eval "$(dbus-launch --sh-syntax)"
 export DBUS_SESSION_BUS_ADDRESS
 
+# Start AT-SPI2 accessibility registry daemon
+/usr/libexec/at-spi2-registryd &
+
 # Start XFCE session
 xfce4-session &
 sleep 2
