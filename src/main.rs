@@ -149,6 +149,9 @@ fn setup_logging(debug: bool) {
 
 #[tokio::main]
 async fn main() {
+    // Load .env file if present (silently ignored if missing)
+    let _ = dotenvy::dotenv();
+
     let cli = Cli::parse();
     setup_logging(cli.debug);
 
