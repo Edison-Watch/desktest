@@ -557,20 +557,7 @@ async fn run_task_inner(
         setup::run_setup_steps(session, &task_def.config).await?;
     }
 
-    // 3. Start video recording (before app launch so we capture the full session)
-    let recording = if no_recording {
-        None
-    } else {
-        match recording::Recording::start(session, config.display_width, config.display_height).await {
-            Ok(rec) => Some(rec),
-            Err(e) => {
-                tracing::warn!("Failed to start recording: {e}");
-                None
-            }
-        }
-    };
-
-    // 4. Deploy and launch app
+    // 3. Deploy and launch app
     let is_docker_image = matches!(task_def.app, task::AppConfig::DockerImage { .. });
 
     if is_docker_image {
@@ -651,7 +638,20 @@ async fn run_task_inner(
         println!("VNC available at {}:{}", config.vnc_bind_addr, port);
     }
 
-    // 7. Run agent loop and/or evaluation based on mode
+    // 7. Start video recording (after app is ready so we skip the boot/setup filler)
+    let recording = if no_recording {
+        None
+    } else {
+        match recording::Recording::start(session, config.display_width, config.display_height).await {
+            Ok(rec) => Some(rec),
+            Err(e) => {
+                tracing::warn!("Failed to start recording: {e}");
+                None
+            }
+        }
+    };
+
+    // 8. Run agent loop and/or evaluation based on mode
     let result = match eval_mode {
         EvaluatorMode::Programmatic => {
             // Programmatic mode: skip agent loop, run evaluation directly
@@ -716,7 +716,7 @@ async fn run_task_inner(
         }
     };
 
-    // 8. Stop recording and collect the video file (regardless of test outcome)
+    // 9. Stop recording and collect the video file (regardless of test outcome)
     if let Some(rec) = &recording {
         rec.stop(session).await;
         rec.collect(session, artifacts_dir).await;
@@ -1001,20 +1001,7 @@ async fn run_interactive_step_inner(
         setup::run_setup_steps(session, &task_def.config).await?;
     }
 
-    // 3. Start recording
-    let recording = if no_recording {
-        None
-    } else {
-        match recording::Recording::start(session, config.display_width, config.display_height).await {
-            Ok(rec) => Some(rec),
-            Err(e) => {
-                tracing::warn!("Failed to start recording: {e}");
-                None
-            }
-        }
-    };
-
-    // 4. Deploy and launch app (same as run_task_inner)
+    // 3. Deploy and launch app (same as run_task_inner)
     let is_docker_image = matches!(task_def.app, task::AppConfig::DockerImage { .. });
     if is_docker_image {
         info!("Custom Docker image: skipping app deployment");
@@ -1044,6 +1031,19 @@ async fn run_interactive_step_inner(
     if let Some(port) = session.vnc_host_port().await {
         println!("VNC available at {}:{}", config.vnc_bind_addr, port);
     }
+
+    // 4. Start video recording (after app is ready so we skip the boot/setup filler)
+    let recording = if no_recording {
+        None
+    } else {
+        match recording::Recording::start(session, config.display_width, config.display_height).await {
+            Ok(rec) => Some(rec),
+            Err(e) => {
+                tracing::warn!("Failed to start recording: {e}");
+                None
+            }
+        }
+    };
 
     // 5. Run agent loop in step mode
     info!("Starting agent loop v2 in step mode...");
