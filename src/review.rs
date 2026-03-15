@@ -157,7 +157,7 @@ function selectStep(index) {{
   document.querySelector(`.step-item[data-index="${{index}}"]`).classList.add('active');
 
   const s = STEPS[index];
-  let html = `<div class="detail-header"><h2>Step ${{s.step}}</h2><span class="badge ${{badgeClass(s.result)}}">${{s.result}}</span><span style="color:#484f58;font-size:13px">${{s.timestamp}}</span></div>`;
+  let html = `<div class="detail-header"><h2>Step ${{s.step}}</h2><span class="badge ${{badgeClass(s.result)}}">${{escapeHtml(s.result)}}</span><span style="color:#484f58;font-size:13px">${{escapeHtml(s.timestamp)}}</span></div>`;
 
   if (s.screenshot) {{
     html += `<img class="screenshot" src="data:image/png;base64,${{s.screenshot}}" alt="Step ${{s.step}} screenshot">`;

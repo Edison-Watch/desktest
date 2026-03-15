@@ -148,8 +148,10 @@ pub fn generate_replay_script(
                 .as_deref()
                 .unwrap_or("action")
                 .chars()
+                .filter(|c| *c != '\n' && *c != '\r')
                 .take(50)
                 .collect::<String>()
+                .replace('\\', "\\\\")
                 .replace('\'', "\\'")
         ));
         script.push_str(&format!("    {fn_name}()\n"));
