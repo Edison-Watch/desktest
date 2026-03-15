@@ -661,7 +661,15 @@ async fn run_task_inner(
                 "Programmatic mode requires evaluator config (validated at task load time)",
             );
             let eval_result =
-                evaluator::run_evaluation(session, evaluator, artifacts_dir).await?;
+                evaluator::run_evaluation(session, evaluator, artifacts_dir).await;
+
+            // Stop recording unconditionally (before propagating any error)
+            if let Some(rec) = &recording {
+                rec.stop(session).await;
+                rec.collect(session, artifacts_dir).await;
+            }
+
+            let eval_result = eval_result?;
 
             print_validation_results(None, Some(&eval_result));
 
@@ -731,15 +739,6 @@ async fn run_task_inner(
             })
         }
     };
-
-    // For Programmatic mode (which doesn't go through the agent loop branches above),
-    // stop recording here if it was started.
-    if matches!(eval_mode, EvaluatorMode::Programmatic) {
-        if let Some(rec) = &recording {
-            rec.stop(session).await;
-            rec.collect(session, artifacts_dir).await;
-        }
-    }
 
     result
 }
