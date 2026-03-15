@@ -1,7 +1,10 @@
 /target
 .env
+.DS_Store
+.claude/
+/test-results
+/artifacts
 
 config.json
 *.back
-/artifacts
 instructions.md
