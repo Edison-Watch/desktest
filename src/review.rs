@@ -140,7 +140,7 @@ STEPS.forEach((s, i) => {{
   const div = document.createElement('div');
   div.className = 'step-item';
   div.dataset.index = i;
-  div.innerHTML = `<span class="step-num">Step ${{s.step}}</span><span class="badge ${{badgeClass(s.result)}}">${{s.result}}</span><div class="step-thought">${{s.thought || '(no thought)'}}</div>`;
+  div.innerHTML = `<span class="step-num">Step ${{s.step}}</span><span class="badge ${{badgeClass(s.result)}}">${{escapeHtml(s.result)}}</span><div class="step-thought">${{escapeHtml(s.thought || '(no thought)')}}</div>`;
   div.addEventListener('click', () => selectStep(i));
   stepList.appendChild(div);
 

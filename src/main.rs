@@ -324,7 +324,7 @@ async fn main() {
                     None => None,
                 };
 
-                let script = codify::generate_replay_script(
+                let (script, included_count) = codify::generate_replay_script(
                     &entries,
                     step_filter.as_deref(),
                     *delay,
@@ -335,7 +335,7 @@ async fn main() {
                 match std::fs::write(output, &script) {
                     Ok(()) => {
                         println!("Replay script written to {}", output.display());
-                        println!("  {} steps included", entries.len());
+                        println!("  {} steps included (of {} total)", included_count, entries.len());
                         std::process::exit(0);
                     }
                     Err(e) => {

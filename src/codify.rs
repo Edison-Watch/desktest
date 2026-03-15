@@ -57,7 +57,7 @@ pub fn generate_replay_script(
     delay: f64,
     with_screenshots: bool,
     threshold: f64,
-) -> String {
+) -> (String, usize) {
     let mut script = String::new();
 
     // Header
@@ -116,11 +116,14 @@ pub fn generate_replay_script(
                 script.push_str(&format!(
                     "    # Screenshot assertion (threshold: {threshold})\n"
                 ));
-                script.push_str(&format!(
+                script.push_str(
+                    "    subprocess.run(['scrot', '/tmp/_replay_actual.png'], check=True)\n"
+                );
+                script.push_str(
                     "    subprocess.run(['python3', '/usr/local/bin/screenshot-compare',\n"
-                ));
+                );
                 script.push_str(&format!(
-                    "        '--expected', '{screenshot}', '--threshold', '{threshold}'], check=True)\n"
+                    "        '--expected', '{screenshot}', '--actual', '/tmp/_replay_actual.png', '--threshold', '{threshold}'], check=True)\n"
                 ));
             }
         }
@@ -157,7 +160,8 @@ pub fn generate_replay_script(
     script.push_str("\nif __name__ == '__main__':\n");
     script.push_str("    main()\n");
 
-    script
+    let count = filtered.len();
+    (script, count)
 }
 
 /// Parse a comma-separated list of step numbers.
@@ -208,7 +212,7 @@ mod tests {
     #[test]
     fn test_generate_replay_basic() {
         let entries = sample_entries();
-        let script = generate_replay_script(&entries, None, 0.5, false, 0.95);
+        let (script, _count) = generate_replay_script(&entries, None, 0.5, false, 0.95);
         assert!(script.contains("#!/usr/bin/env python3"));
         assert!(script.contains("def step_001():"));
         assert!(script.contains("def step_002():"));
@@ -221,7 +225,7 @@ mod tests {
     #[test]
     fn test_generate_replay_filtered_steps() {
         let entries = sample_entries();
-        let script = generate_replay_script(&entries, Some(&[2]), 1.0, false, 0.95);
+        let (script, _count) = generate_replay_script(&entries, Some(&[2]), 1.0, false, 0.95);
         assert!(!script.contains("def step_001():"));
         assert!(script.contains("def step_002():"));
     }
@@ -229,7 +233,7 @@ mod tests {
     #[test]
     fn test_generate_replay_with_screenshots() {
         let entries = sample_entries();
-        let script = generate_replay_script(&entries, None, 0.5, true, 0.95);
+        let (script, _count) = generate_replay_script(&entries, None, 0.5, true, 0.95);
         assert!(script.contains("import subprocess"));
         assert!(script.contains("screenshot-compare"));
     }
@@ -254,7 +258,7 @@ mod tests {
     #[test]
     fn test_empty_action_code_filtered() {
         let entries = sample_entries();
-        let script = generate_replay_script(&entries, None, 0.5, false, 0.95);
+        let (script, _count) = generate_replay_script(&entries, None, 0.5, false, 0.95);
         // Step 3 has empty action_code, should be filtered out
         assert!(!script.contains("def step_003():"));
     }
