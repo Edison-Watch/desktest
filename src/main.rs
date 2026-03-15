@@ -388,8 +388,8 @@ async fn run_inner(
     readiness::wait_for_app_window(session, &baseline_windows, timeout, debug).await?;
 
     // 8. Print VNC info
-    if let Some(vnc_port) = config.vnc_port {
-        println!("VNC available at {}:{}", config.vnc_bind_addr, vnc_port);
+    if let Some(port) = session.vnc_host_port().await {
+        println!("VNC available at {}:{}", config.vnc_bind_addr, port);
     }
 
     // 9. Interactive mode: just wait, or run agent loop
@@ -647,8 +647,8 @@ async fn run_task_inner(
     }
 
     // 6. Print VNC info
-    if let Some(vnc_port) = config.vnc_port {
-        println!("VNC available at {}:{}", config.vnc_bind_addr, vnc_port);
+    if let Some(port) = session.vnc_host_port().await {
+        println!("VNC available at {}:{}", config.vnc_bind_addr, port);
     }
 
     // 7. Run agent loop and/or evaluation based on mode
@@ -678,7 +678,7 @@ async fn run_task_inner(
         EvaluatorMode::Llm => {
             // LLM mode: run agent loop only, use agent verdict
             info!("Starting agent loop v2 (LLM-only evaluation)...");
-            let agent_outcome = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose).await?;
+            let agent_outcome = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose, recording.as_ref()).await?;
 
             print_validation_results(Some(&agent_outcome), None);
 
@@ -691,7 +691,7 @@ async fn run_task_inner(
         EvaluatorMode::Hybrid => {
             // Hybrid mode: run agent loop AND programmatic evaluation, both must pass
             info!("Starting agent loop v2 (hybrid evaluation)...");
-            let agent_outcome = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose).await?;
+            let agent_outcome = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose, recording.as_ref()).await?;
 
             info!("Agent loop complete, running programmatic evaluation...");
             let evaluator = task_def.evaluator.as_ref().expect(
@@ -733,6 +733,7 @@ async fn run_agent_loop(
     artifacts_dir: &std::path::Path,
     debug: bool,
     verbose: bool,
+    recording: Option<&recording::Recording>,
 ) -> Result<AgentOutcome, AppError> {
     let llm_client = provider::create_provider(
         &config.provider,
@@ -754,6 +755,7 @@ async fn run_agent_loop(
         config.display_width,
         config.display_height,
         loop_config,
+        recording,
     );
     agent_loop.run().await
 }
@@ -885,8 +887,8 @@ async fn run_interactive_pause_inner(
     }
 
     // 4. Print VNC info and container info
-    if let Some(vnc_port) = config.vnc_port {
-        println!("VNC available at {}:{}", config.vnc_bind_addr, vnc_port);
+    if let Some(port) = session.vnc_host_port().await {
+        println!("VNC available at {}:{}", config.vnc_bind_addr, port);
     }
 
     println!("\nInteractive mode: container is running with task '{}'.", task_def.id);
@@ -1039,8 +1041,8 @@ async fn run_interactive_step_inner(
     }
 
     // Print VNC info
-    if let Some(vnc_port) = config.vnc_port {
-        println!("VNC available at {}:{}", config.vnc_bind_addr, vnc_port);
+    if let Some(port) = session.vnc_host_port().await {
+        println!("VNC available at {}:{}", config.vnc_bind_addr, port);
     }
 
     // 5. Run agent loop in step mode
@@ -1065,6 +1067,7 @@ async fn run_interactive_step_inner(
         config.display_width,
         config.display_height,
         loop_config,
+        recording.as_ref(),
     );
 
     let agent_outcome = agent_loop.run_step_by_step().await?;

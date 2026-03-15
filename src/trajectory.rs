@@ -143,7 +143,7 @@ impl TrajectoryLogger {
 
 /// Extract the "thought" (reasoning) from an LLM response by removing code blocks
 /// and special commands. Returns None if no meaningful text remains.
-fn extract_thought(response_text: &str, code_blocks: &[String]) -> Option<String> {
+pub fn extract_thought(response_text: &str, code_blocks: &[String]) -> Option<String> {
     let mut text = response_text.to_string();
 
     // Remove code blocks from the text
