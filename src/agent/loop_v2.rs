@@ -423,6 +423,9 @@ impl<'a> AgentLoopV2<'a> {
             let parsed = pyautogui::parse_response(&response_text);
             let code_blocks = parsed.code_blocks.clone();
 
+            // Update video caption with agent's thought before executing
+            self.update_caption(step_index, &response_text, &code_blocks).await;
+
             let turn_result = pyautogui::process_turn(
                 self.session,
                 &response_text,
@@ -472,6 +475,7 @@ impl<'a> AgentLoopV2<'a> {
                             error_feedback: None,
                         });
                         current_observation = self.capture_observation_for_step(step_index).await?;
+                        execution_elapsed += step_start.elapsed();
                         continue;
                     }
                 }

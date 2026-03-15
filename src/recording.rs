@@ -143,7 +143,8 @@ impl Recording {
             return;
         }
 
-        let caption = format_caption(step, thought, action_code);
+        // Escape % to %% for ffmpeg drawtext which interprets %{expr} sequences
+        let caption = format_caption(step, thought, action_code).replace('%', "%%");
 
         // Write via stdin to avoid shell escaping issues
         match session
@@ -241,7 +242,8 @@ fn format_caption(step: usize, thought: Option<&str>, action_code: &[String]) ->
             let prefix = if trimmed.starts_with('#') { "# " } else { "> " };
             let prefixed = format!("{prefix}{trimmed}");
             if prefixed.len() > CAPTION_LINE_WIDTH {
-                lines.push(format!("{}...", &prefixed[..CAPTION_LINE_WIDTH]));
+                let truncated: String = prefixed.chars().take(CAPTION_LINE_WIDTH).collect();
+                lines.push(format!("{truncated}..."));
             } else {
                 lines.push(prefixed);
             }
