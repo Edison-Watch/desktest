@@ -172,6 +172,7 @@ mod tests {
             app_dir: None,
             entrypoint: None,
             startup_timeout_seconds: 30,
+            electron: false,
         };
         let session = DockerSession::create(&config, None).await.unwrap();
 
@@ -203,6 +204,7 @@ mod tests {
             app_dir: None,
             entrypoint: None,
             startup_timeout_seconds: 30,
+            electron: false,
         };
         let session = DockerSession::create(&config, None).await.unwrap();
 
@@ -244,6 +246,7 @@ mod tests {
             app_dir: None,
             entrypoint: None,
             startup_timeout_seconds: 30,
+            electron: false,
         };
         let session = DockerSession::create(&config, None).await.unwrap();
 
@@ -273,6 +276,7 @@ mod tests {
             app_dir: None,
             entrypoint: None,
             startup_timeout_seconds: 30,
+            electron: false,
         };
         let session = DockerSession::create(&config, None).await.unwrap();
 
@@ -307,6 +311,7 @@ mod tests {
             app_dir: None,
             entrypoint: None,
             startup_timeout_seconds: 30,
+            electron: false,
         };
         let session = DockerSession::create(&config, None).await.unwrap();
 

@@ -386,6 +386,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "eyetest"
+version = "0.2.0"
+dependencies = [
+ "assert_cmd",
+ "base64",
+ "bollard",
+ "clap",
+ "csv",
+ "dotenvy",
+ "futures",
+ "predicates",
+ "quick-xml",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "shell-escape",
+ "tar",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "wiremock",
+]
+
+[[package]]
 name = "fastrand"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1798,34 +1826,6 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "tent-agent"
-version = "0.1.0"
-dependencies = [
- "assert_cmd",
- "base64",
- "bollard",
- "clap",
- "csv",
- "dotenvy",
- "futures",
- "predicates",
- "quick-xml",
- "regex",
- "reqwest",
- "serde",
- "serde_json",
- "serde_yaml",
- "shell-escape",
- "tar",
- "tempfile",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "wiremock",
 ]
 
 [[package]]

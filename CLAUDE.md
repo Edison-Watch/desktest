@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Tent** is a CLI tool for automated end-to-end testing of Linux desktop applications using LLM-powered agents. It spins up a Docker container with an XFCE desktop (Xvfb + x11vnc), deploys an app (AppImage, folder, or custom Docker image), then runs an OSWorld-style agent loop where the LLM interacts with the app via PyAutoGUI code execution and observes via screenshots + accessibility trees.
+**Eyetest** is a CLI tool for automated end-to-end testing of Linux desktop applications using LLM-powered agents. It spins up a Docker container with an XFCE desktop (Xvfb + x11vnc), deploys an app (AppImage, folder, or custom Docker image), then runs an OSWorld-style agent loop where the LLM interacts with the app via PyAutoGUI code execution and observes via screenshots + accessibility trees.
 
 **Tech stack:** Rust (edition 2024), Tokio async runtime, Docker (Bollard), multi-model LLM support (OpenAI, Anthropic, custom OpenAI-compatible endpoints).
 
@@ -28,7 +28,7 @@ cargo test -- --ignored --test-threads=1       # Integration tests (require Dock
 
 ### Key modules
 
-- `src/main.rs` — CLI (clap subcommands: run, suite, interactive, validate), orchestration
+- `src/main.rs` — CLI (clap subcommands: run, suite, interactive, validate, codify, review), orchestration
 - `src/task.rs` — Task JSON schema: `TaskDefinition`, `SetupStep`, `EvaluatorConfig`, `MetricConfig` with serde tagged enums
 - `src/config.rs` — Runtime config loading with cross-field validation (app_type determines required fields)
 - `src/docker.rs` — `DockerSession`: container lifecycle, file transfer (tar-based), app deployment, command execution, custom image validation
@@ -43,7 +43,9 @@ cargo test -- --ignored --test-threads=1       # Integration tests (require Dock
 - `src/provider/anthropic.rs` — Anthropic Claude implementation (Messages API with vision)
 - `src/provider/custom.rs` — Custom OpenAI-compatible endpoint implementation
 - `src/observation.rs` — Screenshot + accessibility tree capture with retry, trimming, configurable modes
-- `src/evaluator.rs` — Programmatic evaluation: file_compare, file_compare_semantic, command_output, file_exists, exit_code
+- `src/evaluator.rs` — Programmatic evaluation: file_compare, file_compare_semantic, command_output, file_exists, exit_code, script_replay
+- `src/codify.rs` — Convert trajectory.jsonl to deterministic Python replay scripts
+- `src/review.rs` — Generate self-contained HTML trajectory viewer
 - `src/results.rs` — Structured `results.json` output with `ResultsWriter`
 - `src/trajectory.rs` — Step-by-step `trajectory.jsonl` logging
 - `src/recording.rs` — Video recording via ffmpeg x11grab inside container
@@ -58,8 +60,13 @@ cargo test -- --ignored --test-threads=1       # Integration tests (require Dock
 
 Built from debian:bookworm-slim with Xvfb, XFCE4, x11vnc, xdotool, scrot, ffmpeg, Python3, PyAutoGUI, pyatspi, AT-SPI2, FUSE, GTK3 libs. Runs as non-root user "tester". Entrypoint starts display server, dbus, AT-SPI registry, desktop, VNC, then writes sentinel file.
 
+Docker images:
+- `eyetest-desktop:latest` — Base image (Dockerfile)
+- `eyetest-desktop:electron` — Extends base with Node.js 20 + Electron deps (Dockerfile.electron)
+
 Helper scripts:
 - `docker/get-a11y-tree.py` — Extracts linearized accessibility tree via pyatspi (TSV format)
 - `docker/execute-action.py` — Executes PyAutoGUI code from stdin, returns JSON result
+- `docker/screenshot_compare.py` — PIL-based screenshot comparison for visual assertions
 
 Default display resolution: 1920x1080.

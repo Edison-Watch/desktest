@@ -1,6 +1,6 @@
 # Examples
 
-Example task files and Dockerfiles for tent-agent.
+Example task files and Dockerfiles for eyetest.
 
 ## Task Files
 
@@ -10,8 +10,8 @@ A simple test that opens a text file in gedit, adds a line, and saves.
 Uses the `folder` app deploy type with a local application directory.
 
 ```bash
-tent run examples/gedit-save.json
-tent interactive examples/gedit-save.json
+eyetest run examples/gedit-save.json
+eyetest interactive examples/gedit-save.json
 ```
 
 ### `libreoffice-calc.json` — Custom Docker Image
@@ -24,11 +24,27 @@ Uses the `docker_image` app type with a pre-built custom image.
 docker build -t tent-libreoffice:latest -f examples/Dockerfile.libreoffice .
 
 # Run the test
-tent run examples/libreoffice-calc.json
+eyetest run examples/libreoffice-calc.json
 
 # Or interactively
-tent interactive examples/libreoffice-calc.json
+eyetest interactive examples/libreoffice-calc.json
 ```
+
+### `electron-todo.json` — Electron App (Folder Deploy)
+
+A minimal Electron todo app that demonstrates testing Electron applications.
+Uses the `folder` app deploy type with `electron: true` for Node.js support.
+
+```bash
+# Build the electron Docker image first
+docker build -t eyetest-desktop:latest docker/
+docker build -f docker/Dockerfile.electron -t eyetest-desktop:electron docker/
+
+# Run the test
+eyetest run examples/electron-todo.json
+```
+
+See [ELECTRON_QUICKSTART.md](ELECTRON_QUICKSTART.md) for a complete guide to testing Electron apps.
 
 ## Custom Docker Images
 
@@ -36,7 +52,7 @@ tent interactive examples/libreoffice-calc.json
 
 ### Required Dependencies
 
-Custom images must include these packages for tent-agent to work:
+Custom images must include these packages for eyetest to work:
 
 | Category | Packages |
 |----------|----------|
@@ -54,11 +70,11 @@ You must also copy the helper scripts from `docker/`:
 
 ### Validation
 
-tent-agent validates custom images at startup. If a required dependency is missing, it exits with code 2 and a clear error message.
+eyetest validates custom images at startup. If a required dependency is missing, it exits with code 2 and a clear error message.
 
 ```bash
 # Validate a task file without running
-tent validate examples/libreoffice-calc.json
+eyetest validate examples/libreoffice-calc.json
 ```
 
 ## Task JSON Schema

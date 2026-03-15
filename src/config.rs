@@ -79,12 +79,15 @@ pub struct Config {
 
     #[serde(default = "default_timeout")]
     pub startup_timeout_seconds: u64,
+
+    #[serde(default)]
+    pub electron: bool,
 }
 
 impl Config {
     /// Create a Config with sensible defaults for task-based runs.
     ///
-    /// Used when `tent run <task.json>` is invoked without a separate config file.
+    /// Used when `eyetest run <task.json>` is invoked without a separate config file.
     /// API key and provider are resolved from environment variables at provider creation time.
     pub fn from_task_defaults() -> Self {
         Config {
@@ -101,12 +104,13 @@ impl Config {
             app_dir: None,
             entrypoint: None,
             startup_timeout_seconds: default_timeout(),
+            electron: false,
         }
     }
 
     /// Populate app-related config fields from a task definition's AppConfig.
     ///
-    /// When running via `tent run <task.json>` without a separate config file,
+    /// When running via `eyetest run <task.json>` without a separate config file,
     /// the Config starts with default/None app fields. This method fills them
     /// from the task definition so that `deploy_app()` works correctly.
     pub fn apply_task_app(&mut self, app: &crate::task::AppConfig) {
@@ -115,10 +119,11 @@ impl Config {
                 self.app_type = AppType::Appimage;
                 self.app_path = Some(PathBuf::from(path));
             }
-            crate::task::AppConfig::Folder { dir, entrypoint } => {
+            crate::task::AppConfig::Folder { dir, entrypoint, electron } => {
                 self.app_type = AppType::Folder;
                 self.app_dir = Some(PathBuf::from(dir));
                 self.entrypoint = Some(entrypoint.clone());
+                self.electron = *electron;
             }
             crate::task::AppConfig::DockerImage { .. } => {
                 self.app_type = AppType::DockerImage;

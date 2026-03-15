@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "id": "electron-todo-add-item",
+  "instruction": "Add a todo item called 'Buy groceries' and verify it appears in the list",
+  "app": {
+    "type": "folder",
+    "dir": "./examples/electron-todo-app",
+    "entrypoint": "start.sh",
+    "electron": true
+  },
+  "evaluator": {
+    "mode": "hybrid",
+    "metrics": [
+      {
+        "type": "command_output",
+        "command": "find /home/tester -name todos.json -exec cat {} \\;",
+        "expected": "Buy groceries",
+        "match_mode": "contains"
+      }
+    ]
+  },
+  "timeout": 120,
+  "max_steps": 10
+}

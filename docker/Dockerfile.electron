@@ -1,0 +1,25 @@
+FROM eyetest-desktop:latest
+
+USER root
+
+# Install Node.js 20 LTS via NodeSource
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install Electron runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgbm1 \
+    libasound2 \
+    libxkbcommon0 \
+    libxshmfence1 \
+    libglu1-mesa \
+    libvulkan1 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Electron-specific environment variables
+ENV ELECTRON_DISABLE_GPU=1
+ENV ELECTRON_NO_SANDBOX=1
+
+USER tester
+WORKDIR /home/tester
