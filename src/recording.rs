@@ -258,7 +258,15 @@ fn wrap_text(s: &str, width: usize) -> Vec<String> {
     let mut lines = Vec::new();
     let mut current = String::new();
 
-    for word in s.split_whitespace() {
+    for raw_word in s.split_whitespace() {
+        // Truncate words longer than width to prevent line overflow
+        let word: &str = if raw_word.chars().count() > width {
+            let end = raw_word.char_indices().nth(width).map(|(i, _)| i).unwrap_or(raw_word.len());
+            &raw_word[..end]
+        } else {
+            raw_word
+        };
+
         if current.is_empty() {
             current.push_str(word);
         } else if current.chars().count() + 1 + word.chars().count() <= width {
