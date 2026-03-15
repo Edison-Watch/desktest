@@ -153,7 +153,7 @@ impl Recording {
         // Write via stdin to avoid shell escaping issues
         match session
             .exec_with_stdin(
-                &["bash", "-c", &format!("cat > {CONTAINER_CAPTION_PATH}")],
+                &["bash", "-c", &format!("cat > {CONTAINER_CAPTION_PATH}.tmp && mv {CONTAINER_CAPTION_PATH}.tmp {CONTAINER_CAPTION_PATH}")],
                 caption.as_bytes(),
             )
             .await
