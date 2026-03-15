@@ -33,7 +33,7 @@ impl Recording {
 
         // Create empty caption file for drawtext overlay
         let _ = session
-            .exec(&["bash", "-c", &format!("echo '' > {CONTAINER_CAPTION_PATH}")])
+            .exec(&["bash", "-c", &format!("printf '' > {CONTAINER_CAPTION_PATH}")])
             .await;
 
         // drawtext filter: bottom-left, white text with black outline + dark box, auto-reloads file
@@ -192,6 +192,9 @@ const CAPTION_LINE_WIDTH: usize = 120;
 /// Maximum number of thought lines shown in caption.
 const CAPTION_MAX_THOUGHT_LINES: usize = 3;
 
+/// Maximum number of action-code lines shown in caption.
+const CAPTION_MAX_ACTION_LINES: usize = 5;
+
 /// Format a multi-line caption from the agent's thought and action code.
 ///
 /// Layout (up to ~5 lines):
@@ -229,7 +232,8 @@ fn format_caption(step: usize, thought: Option<&str>, action_code: &[String]) ->
     }
 
     // Action lines: show each code block as "> <code>" with inline comments for intent
-    for block in action_code {
+    let mut action_line_count = 0;
+    'outer: for block in action_code {
         for code_line in block.lines() {
             let trimmed = code_line.trim();
             if trimmed.is_empty() {
@@ -239,6 +243,14 @@ fn format_caption(step: usize, thought: Option<&str>, action_code: &[String]) ->
             if trimmed.starts_with("time.sleep") || trimmed.starts_with("import time") {
                 continue;
             }
+            if action_line_count >= CAPTION_MAX_ACTION_LINES {
+                if let Some(last) = lines.last_mut() {
+                    if !last.ends_with("...") {
+                        last.push_str("...");
+                    }
+                }
+                break 'outer;
+            }
             let prefix = if trimmed.starts_with('#') { "  " } else { "> " };
             let prefixed = format!("{prefix}{trimmed}");
             if prefixed.chars().count() > CAPTION_LINE_WIDTH {
@@ -247,6 +259,7 @@ fn format_caption(step: usize, thought: Option<&str>, action_code: &[String]) ->
             } else {
                 lines.push(prefixed);
             }
+            action_line_count += 1;
         }
     }
 
