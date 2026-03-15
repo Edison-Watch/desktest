@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "id": "galculator-addition",
+  "instruction": "Using the galculator calculator app, compute 42 + 58 and verify the result shows 100.",
+  "app": {
+    "type": "docker_image",
+    "image": "llm-desktop-tester:latest",
+    "entrypoint_cmd": "galculator"
+  },
+  "evaluator": {
+    "mode": "llm",
+    "llm_judge_prompt": "Does the calculator display show the number 100 as the result? Answer pass or fail."
+  },
+  "timeout": 120
+}

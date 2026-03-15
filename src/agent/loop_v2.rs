@@ -15,6 +15,7 @@ use crate::docker::DockerSession;
 use crate::error::{AgentOutcome, AppError};
 use crate::observation::{self, Observation, ObservationConfig};
 use crate::provider::{ChatMessage, LlmProvider};
+use crate::recording::Recording;
 use crate::trajectory::TrajectoryLogger;
 
 /// Default maximum number of agent steps per test.
@@ -79,6 +80,7 @@ pub struct AgentLoopV2<'a> {
     context: ContextManager,
     config: AgentLoopV2Config,
     trajectory: Option<TrajectoryLogger>,
+    recording: Option<&'a Recording>,
 }
 
 impl<'a> AgentLoopV2<'a> {
@@ -91,6 +93,7 @@ impl<'a> AgentLoopV2<'a> {
         display_width: u32,
         display_height: u32,
         config: AgentLoopV2Config,
+        recording: Option<&'a Recording>,
     ) -> Self {
         let context = ContextManager::new(
             display_width,
@@ -114,6 +117,7 @@ impl<'a> AgentLoopV2<'a> {
             context,
             config,
             trajectory,
+            recording,
         }
     }
 
@@ -210,6 +214,9 @@ impl<'a> AgentLoopV2<'a> {
             // Parse response for special commands and code blocks
             let parsed = pyautogui::parse_response(&response_text);
             let code_blocks = parsed.code_blocks.clone();
+
+            // Update video caption with agent's thought before executing
+            self.update_caption(step_index, &response_text, &code_blocks).await;
 
             let turn_result = pyautogui::process_turn(
                 self.session,
@@ -332,7 +339,7 @@ impl<'a> AgentLoopV2<'a> {
     ///
     /// Reads a line from stdin after each step. Press Enter to continue, 'q' to quit.
     pub async fn run_step_by_step(&mut self) -> Result<AgentOutcome, AppError> {
-        let start_time = Instant::now();
+        let mut execution_elapsed = Duration::ZERO;
         let mut step_index: usize = 0;
 
         info!(
@@ -345,7 +352,7 @@ impl<'a> AgentLoopV2<'a> {
         let mut current_observation = self.capture_observation_for_step(0).await?;
 
         loop {
-            if start_time.elapsed() >= self.config.total_timeout {
+            if execution_elapsed >= self.config.total_timeout {
                 warn!("Total timeout exceeded after {} steps", step_index);
                 self.save_conversation_log();
                 return Ok(AgentOutcome {
@@ -370,7 +377,7 @@ impl<'a> AgentLoopV2<'a> {
 
             step_index += 1;
 
-            // Pause and wait for user input
+            // Pause and wait for user input (timeout does NOT tick during this wait)
             println!("\n--- Step {}/{} --- Press Enter to execute, 'q' to quit ---",
                 step_index, self.config.max_steps);
             let mut input = String::new();
@@ -387,6 +394,7 @@ impl<'a> AgentLoopV2<'a> {
                 }
             }
 
+            let step_start = Instant::now();
             info!("--- Executing step {}/{} ---", step_index, self.config.max_steps);
 
             // Build messages and call LLM
@@ -414,6 +422,9 @@ impl<'a> AgentLoopV2<'a> {
 
             let parsed = pyautogui::parse_response(&response_text);
             let code_blocks = parsed.code_blocks.clone();
+
+            // Update video caption with agent's thought before executing
+            self.update_caption(step_index, &response_text, &code_blocks).await;
 
             let turn_result = pyautogui::process_turn(
                 self.session,
@@ -464,6 +475,7 @@ impl<'a> AgentLoopV2<'a> {
                             error_feedback: None,
                         });
                         current_observation = self.capture_observation_for_step(step_index).await?;
+                        execution_elapsed += step_start.elapsed();
                         continue;
                     }
                 }
@@ -488,6 +500,7 @@ impl<'a> AgentLoopV2<'a> {
 
             // Capture new observation
             current_observation = self.capture_observation_for_step(step_index).await?;
+            execution_elapsed += step_start.elapsed();
         }
     }
 
@@ -512,6 +525,16 @@ impl<'a> AgentLoopV2<'a> {
                 raw_response,
             );
             trajectory.log_entry(&entry);
+        }
+    }
+
+    /// Update the video recording caption with the agent's current thought and actions.
+    async fn update_caption(&self, step: usize, response_text: &str, code_blocks: &[String]) {
+        if let Some(recording) = self.recording {
+            let thought = crate::trajectory::extract_thought(response_text, code_blocks);
+            recording
+                .update_caption(self.session, step, thought.as_deref(), code_blocks)
+                .await;
         }
     }
 

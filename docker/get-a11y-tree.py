@@ -13,51 +13,62 @@ except ImportError:
     sys.exit(1)
 
 
-ROLE_NAMES = {
-    pyatspi.ROLE_PUSH_BUTTON: "button",
-    pyatspi.ROLE_CHECK_BOX: "checkbox",
-    pyatspi.ROLE_RADIO_BUTTON: "radio",
-    pyatspi.ROLE_TEXT: "text",
-    pyatspi.ROLE_PASSWORD_TEXT: "password",
-    pyatspi.ROLE_COMBO_BOX: "combobox",
-    pyatspi.ROLE_LIST: "list",
-    pyatspi.ROLE_LIST_ITEM: "listitem",
-    pyatspi.ROLE_MENU: "menu",
-    pyatspi.ROLE_MENU_ITEM: "menuitem",
-    pyatspi.ROLE_MENU_BAR: "menubar",
-    pyatspi.ROLE_TAB: "tab",
-    pyatspi.ROLE_TAB_LIST: "tablist",
-    pyatspi.ROLE_TOOL_BAR: "toolbar",
-    pyatspi.ROLE_TREE: "tree",
-    pyatspi.ROLE_TREE_ITEM: "treeitem",
-    pyatspi.ROLE_TABLE: "table",
-    pyatspi.ROLE_TABLE_CELL: "tablecell",
-    pyatspi.ROLE_TABLE_ROW: "tablerow",
-    pyatspi.ROLE_SCROLL_BAR: "scrollbar",
-    pyatspi.ROLE_SLIDER: "slider",
-    pyatspi.ROLE_SPIN_BUTTON: "spinbutton",
-    pyatspi.ROLE_STATUS_BAR: "statusbar",
-    pyatspi.ROLE_LABEL: "label",
-    pyatspi.ROLE_LINK: "link",
-    pyatspi.ROLE_IMAGE: "image",
-    pyatspi.ROLE_PANEL: "panel",
-    pyatspi.ROLE_FRAME: "frame",
-    pyatspi.ROLE_DIALOG: "dialog",
-    pyatspi.ROLE_WINDOW: "window",
-    pyatspi.ROLE_FILLER: "filler",
-    pyatspi.ROLE_SEPARATOR: "separator",
-    pyatspi.ROLE_SCROLL_PANE: "scrollpane",
-    pyatspi.ROLE_PAGE_TAB: "pagetab",
-    pyatspi.ROLE_PAGE_TAB_LIST: "pagetablist",
-    pyatspi.ROLE_ENTRY: "entry",
-    pyatspi.ROLE_APPLICATION: "application",
-    pyatspi.ROLE_DOCUMENT_FRAME: "documentframe",
-    pyatspi.ROLE_TOGGLE_BUTTON: "togglebutton",
-    pyatspi.ROLE_ICON: "icon",
-    pyatspi.ROLE_HEADING: "heading",
-    pyatspi.ROLE_PARAGRAPH: "paragraph",
-    pyatspi.ROLE_SECTION: "section",
-}
+def _build_role_names():
+    """Build role-name mapping, skipping any constants missing from this pyatspi version."""
+    _entries = [
+        ("ROLE_PUSH_BUTTON", "button"),
+        ("ROLE_CHECK_BOX", "checkbox"),
+        ("ROLE_RADIO_BUTTON", "radio"),
+        ("ROLE_TEXT", "text"),
+        ("ROLE_PASSWORD_TEXT", "password"),
+        ("ROLE_COMBO_BOX", "combobox"),
+        ("ROLE_LIST", "list"),
+        ("ROLE_LIST_ITEM", "listitem"),
+        ("ROLE_MENU", "menu"),
+        ("ROLE_MENU_ITEM", "menuitem"),
+        ("ROLE_MENU_BAR", "menubar"),
+        ("ROLE_TAB", "tab"),
+        ("ROLE_TAB_LIST", "tablist"),
+        ("ROLE_TOOL_BAR", "toolbar"),
+        ("ROLE_TREE", "tree"),
+        ("ROLE_TREE_ITEM", "treeitem"),
+        ("ROLE_TABLE", "table"),
+        ("ROLE_TABLE_CELL", "tablecell"),
+        ("ROLE_TABLE_ROW", "tablerow"),
+        ("ROLE_SCROLL_BAR", "scrollbar"),
+        ("ROLE_SLIDER", "slider"),
+        ("ROLE_SPIN_BUTTON", "spinbutton"),
+        ("ROLE_STATUS_BAR", "statusbar"),
+        ("ROLE_LABEL", "label"),
+        ("ROLE_LINK", "link"),
+        ("ROLE_IMAGE", "image"),
+        ("ROLE_PANEL", "panel"),
+        ("ROLE_FRAME", "frame"),
+        ("ROLE_DIALOG", "dialog"),
+        ("ROLE_WINDOW", "window"),
+        ("ROLE_FILLER", "filler"),
+        ("ROLE_SEPARATOR", "separator"),
+        ("ROLE_SCROLL_PANE", "scrollpane"),
+        ("ROLE_PAGE_TAB", "pagetab"),
+        ("ROLE_PAGE_TAB_LIST", "pagetablist"),
+        ("ROLE_ENTRY", "entry"),
+        ("ROLE_APPLICATION", "application"),
+        ("ROLE_DOCUMENT_FRAME", "documentframe"),
+        ("ROLE_TOGGLE_BUTTON", "togglebutton"),
+        ("ROLE_ICON", "icon"),
+        ("ROLE_HEADING", "heading"),
+        ("ROLE_PARAGRAPH", "paragraph"),
+        ("ROLE_SECTION", "section"),
+    ]
+    result = {}
+    for attr_name, friendly_name in _entries:
+        role_const = getattr(pyatspi, attr_name, None)
+        if role_const is not None:
+            result[role_const] = friendly_name
+    return result
+
+
+ROLE_NAMES = _build_role_names()
 
 
 def get_role_name(accessible):
