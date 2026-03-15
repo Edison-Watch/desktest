@@ -18,10 +18,10 @@ try:
     import pyautogui
     pyautogui.FAILSAFE = False
     pyautogui.PAUSE = 0.1
-except ImportError:
+except Exception as e:
     result = {
         "success": False,
-        "error": "pyautogui not available",
+        "error": f"pyautogui not available: {e}",
         "duration_ms": 0,
     }
     print(json.dumps(result))

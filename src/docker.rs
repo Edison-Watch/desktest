@@ -167,30 +167,25 @@ impl DockerSession {
 
         let mut exposed_ports = std::collections::HashMap::new();
 
-        if let Some(vnc_port) = config.vnc_port {
+        // Always expose VNC port. Use the specified host port, or let Docker pick a random one.
+        {
             let exposed_port = format!("{container_vnc_port}/tcp");
             exposed_ports.insert(exposed_port.clone(), Default::default());
 
             let host_binding = PortBinding {
                 host_ip: Some(config.vnc_bind_addr.clone()),
-                host_port: Some(vnc_port.to_string()),
+                host_port: config.vnc_port.map(|p| p.to_string()),
             };
 
             let mut port_bindings = std::collections::HashMap::new();
             port_bindings.insert(exposed_port, Some(vec![host_binding]));
             host_config.port_bindings = Some(port_bindings);
-
-            info!("VNC will be available at {}:{}", config.vnc_bind_addr, vnc_port);
         }
 
         let container_config = ContainerConfig {
             image: Some(image_name.clone()),
             env: Some(env),
-            exposed_ports: if exposed_ports.is_empty() {
-                None
-            } else {
-                Some(exposed_ports)
-            },
+            exposed_ports: Some(exposed_ports),
             host_config: Some(host_config),
             ..Default::default()
         };
@@ -214,6 +209,15 @@ impl DockerSession {
             client,
             container_id,
         })
+    }
+
+    /// Query the actual host port mapped to VNC (container port 5900).
+    pub async fn vnc_host_port(&self) -> Option<u16> {
+        let info = self.client.inspect_container(&self.container_id, None).await.ok()?;
+        let ports = info.network_settings?.ports?;
+        let bindings = ports.get("5900/tcp")?.as_ref()?;
+        let port_str = bindings.first()?.host_port.as_ref()?;
+        port_str.parse().ok()
     }
 
     /// Required binaries that must exist in custom Docker images.

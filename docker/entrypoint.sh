@@ -7,6 +7,9 @@ VNC_PORT="${VNC_PORT:-5900}"
 
 export DISPLAY=:99
 
+# Create .Xauthority so python3-xlib (pip) does not crash
+touch "$HOME/.Xauthority"
+
 # Start Xvfb
 Xvfb :99 -screen 0 "${DISPLAY_WIDTH}x${DISPLAY_HEIGHT}x24" -ac &
 sleep 1
