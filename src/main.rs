@@ -661,7 +661,15 @@ async fn run_task_inner(
                 "Programmatic mode requires evaluator config (validated at task load time)",
             );
             let eval_result =
-                evaluator::run_evaluation(session, evaluator, artifacts_dir).await?;
+                evaluator::run_evaluation(session, evaluator, artifacts_dir).await;
+
+            // Stop recording unconditionally (before propagating any error)
+            if let Some(rec) = &recording {
+                rec.stop(session).await;
+                rec.collect(session, artifacts_dir).await;
+            }
+
+            let eval_result = eval_result?;
 
             print_validation_results(None, Some(&eval_result));
 
@@ -678,7 +686,15 @@ async fn run_task_inner(
         EvaluatorMode::Llm => {
             // LLM mode: run agent loop only, use agent verdict
             info!("Starting agent loop v2 (LLM-only evaluation)...");
-            let agent_outcome = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose, recording.as_ref()).await?;
+            let agent_loop_result = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose, recording.as_ref()).await;
+
+            // Stop recording unconditionally (before propagating any error)
+            if let Some(rec) = &recording {
+                rec.stop(session).await;
+                rec.collect(session, artifacts_dir).await;
+            }
+
+            let agent_outcome = agent_loop_result?;
 
             print_validation_results(Some(&agent_outcome), None);
 
@@ -691,7 +707,15 @@ async fn run_task_inner(
         EvaluatorMode::Hybrid => {
             // Hybrid mode: run agent loop AND programmatic evaluation, both must pass
             info!("Starting agent loop v2 (hybrid evaluation)...");
-            let agent_outcome = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose, recording.as_ref()).await?;
+            let agent_loop_result = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose, recording.as_ref()).await;
+
+            // Stop recording unconditionally (before propagating any error)
+            if let Some(rec) = &recording {
+                rec.stop(session).await;
+                rec.collect(session, artifacts_dir).await;
+            }
+
+            let agent_outcome = agent_loop_result?;
 
             info!("Agent loop complete, running programmatic evaluation...");
             let evaluator = task_def.evaluator.as_ref().expect(
@@ -715,12 +739,6 @@ async fn run_task_inner(
             })
         }
     };
-
-    // 9. Stop recording and collect the video file (regardless of test outcome)
-    if let Some(rec) = &recording {
-        rec.stop(session).await;
-        rec.collect(session, artifacts_dir).await;
-    }
 
     result
 }
@@ -1070,7 +1088,15 @@ async fn run_interactive_step_inner(
         recording.as_ref(),
     );
 
-    let agent_outcome = agent_loop.run_step_by_step().await?;
+    let agent_loop_result = agent_loop.run_step_by_step().await;
+
+    // Stop recording unconditionally (before propagating any error)
+    if let Some(rec) = &recording {
+        rec.stop(session).await;
+        rec.collect(session, artifacts_dir).await;
+    }
+
+    let agent_outcome = agent_loop_result?;
 
     // 6. Run evaluation if needed
     let eval_mode = task_def
@@ -1094,12 +1120,6 @@ async fn run_interactive_step_inner(
     };
 
     print_validation_results(Some(&agent_outcome), eval_result.as_ref());
-
-    // Stop recording
-    if let Some(rec) = &recording {
-        rec.stop(session).await;
-        rec.collect(session, artifacts_dir).await;
-    }
 
     Ok(TaskRunResult {
         outcome: AgentOutcome {
