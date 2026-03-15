@@ -239,9 +239,9 @@ fn format_caption(step: usize, thought: Option<&str>, action_code: &[String]) ->
             if trimmed.starts_with("time.sleep") || trimmed.starts_with("import time") {
                 continue;
             }
-            let prefix = if trimmed.starts_with('#') { "# " } else { "> " };
+            let prefix = if trimmed.starts_with('#') { "  " } else { "> " };
             let prefixed = format!("{prefix}{trimmed}");
-            if prefixed.len() > CAPTION_LINE_WIDTH {
+            if prefixed.chars().count() > CAPTION_LINE_WIDTH {
                 let truncated: String = prefixed.chars().take(CAPTION_LINE_WIDTH).collect();
                 lines.push(format!("{truncated}..."));
             } else {
@@ -261,7 +261,7 @@ fn wrap_text(s: &str, width: usize) -> Vec<String> {
     for word in s.split_whitespace() {
         if current.is_empty() {
             current.push_str(word);
-        } else if current.len() + 1 + word.len() <= width {
+        } else if current.chars().count() + 1 + word.chars().count() <= width {
             current.push(' ');
             current.push_str(word);
         } else {
@@ -352,7 +352,7 @@ mod tests {
     fn test_format_caption_multiline_code_block() {
         let code = "# Focus the window\npyautogui.click(100, 200)\npyautogui.press('enter')".to_string();
         let caption = format_caption(2, Some("Clicking"), &[code]);
-        assert!(caption.contains("# # Focus the window"));
+        assert!(caption.contains("  # Focus the window"));
         assert!(caption.contains("> pyautogui.click(100, 200)"));
         assert!(caption.contains("> pyautogui.press('enter')"));
     }
@@ -361,7 +361,7 @@ mod tests {
     fn test_format_caption_shows_comments_and_skips_blanks() {
         let code = "# click the button\n\npyautogui.click(100, 200)".to_string();
         let caption = format_caption(1, None, &[code]);
-        assert!(caption.contains("# # click the button"));
+        assert!(caption.contains("  # click the button"));
         assert!(caption.contains("> pyautogui.click(100, 200)"));
     }
 
