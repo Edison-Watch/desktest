@@ -143,8 +143,12 @@ impl Recording {
             return;
         }
 
-        // Escape % to %% for ffmpeg drawtext which interprets %{expr} sequences
-        let caption = format_caption(step, thought, action_code).replace('%', "%%");
+        // Escape for ffmpeg drawtext which interprets special sequences in textfile:
+        // - % → %% (prevents %{expr} expansion)
+        // - \ → \\ (prevents \n, \t, etc. being interpreted as escape sequences)
+        let caption = format_caption(step, thought, action_code)
+            .replace('\\', "\\\\")
+            .replace('%', "%%");
 
         // Write via stdin to avoid shell escaping issues
         match session
