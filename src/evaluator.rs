@@ -124,8 +124,8 @@ async fn evaluate_metric(
         MetricConfig::ExitCode { command, expected } => {
             evaluate_exit_code(session, command, *expected).await
         }
-        MetricConfig::ScriptReplay { script_path } => {
-            evaluate_script_replay(session, script_path).await
+        MetricConfig::ScriptReplay { script_path, screenshots_dir } => {
+            evaluate_script_replay(session, script_path, screenshots_dir.as_deref()).await
         }
     }
 }
@@ -386,15 +386,29 @@ async fn evaluate_exit_code(
 }
 
 /// script_replay: Copy a Python script into the container, run it, check for REPLAY_COMPLETE.
+/// If `screenshots_dir` is provided, copies that directory into the container so that
+/// screenshot comparison assertions can find their expected files.
 async fn evaluate_script_replay(
     session: &DockerSession,
     script_path: &str,
+    screenshots_dir: Option<&str>,
 ) -> Result<MetricResult, AppError> {
     let host_path = std::path::Path::new(script_path);
     if !host_path.exists() {
         return Err(AppError::Config(format!(
             "Replay script not found: {script_path}"
         )));
+    }
+
+    // Copy expected screenshots into container (for --with-screenshots scripts)
+    if let Some(dir) = screenshots_dir {
+        let dir_path = std::path::Path::new(dir);
+        if dir_path.exists() {
+            session.copy_into(dir_path, "/home/tester/").await?;
+            info!("Copied screenshots from {} into container", dir);
+        } else {
+            warn!("Screenshots directory not found: {dir}");
+        }
     }
 
     // Copy script into container
@@ -943,6 +957,7 @@ mod tests {
         assert_eq!(
             metric_type_name(&MetricConfig::ScriptReplay {
                 script_path: String::new(),
+                screenshots_dir: None,
             }),
             "script_replay"
         );

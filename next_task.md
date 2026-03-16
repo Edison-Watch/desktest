@@ -61,20 +61,6 @@ Identified during PR #5 review (sentry). Pre-existing pattern across all evaluat
 
 ---
 
-# Next Task: `--with-screenshots` generates scripts referencing files that don't exist in the container
+# ~~RESOLVED: `--with-screenshots` generates scripts referencing files that don't exist in the container~~
 
-## Problem
-
-**File:** `src/codify.rs` (line ~117-133)
-
-When `eyetest codify --with-screenshots` generates a replay script, it embeds screenshot comparison assertions using `screenshot_path` from trajectory entries (e.g., `step_001.png`). These are host-local artifact-relative paths. When the script runs inside the Docker container via `evaluate_script_replay`, only the script itself is copied in — the expected screenshot files are never transferred. The `screenshot-compare` invocation always fails because `--expected` references a non-existent file.
-
-## Fix Options
-
-1. Have `evaluate_script_replay` also copy referenced screenshot files into the container (requires parsing the script or passing metadata)
-2. Embed expected screenshots as base64 data directly in the generated Python script so it's fully self-contained
-3. At minimum, emit a warning when `--with-screenshots` is used, documenting that manual file setup is needed
-
-## Context
-
-Identified during PR #5 review (devin-ai-integration). Phase 6 (Visual Assertions) was marked "Optional" in the original design.
+**Resolved** — `ScriptReplay` now accepts an optional `screenshots_dir` field. When provided, `evaluate_script_replay` copies that directory into the container before running the script. Users set `"screenshots_dir": "./test-results/"` in their task JSON to include expected screenshots.

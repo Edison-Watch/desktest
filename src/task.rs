@@ -184,6 +184,9 @@ pub enum MetricConfig {
     ScriptReplay {
         /// Path to the Python script on the host.
         script_path: String,
+        /// Optional directory containing expected screenshots (copied into container).
+        #[serde(default)]
+        screenshots_dir: Option<String>,
     },
 }
 
@@ -379,7 +382,7 @@ impl TaskDefinition {
                             )));
                         }
                     }
-                    MetricConfig::ScriptReplay { script_path } => {
+                    MetricConfig::ScriptReplay { script_path, .. } => {
                         if script_path.is_empty() {
                             return Err(AppError::Config(format!(
                                 "Metric {i} (script_replay): 'script_path' must not be empty."
