@@ -658,13 +658,17 @@ impl DockerSession {
         let mut args: Vec<&str> = vec![app_path];
         if is_appimage {
             args.push("--appimage-extract-and-run");
+            // Chromium/Electron sandbox doesn't work in containers
+            args.push("--no-sandbox");
+            if is_electron {
+                args.push("--disable-gpu");
+                args.push("--force-renderer-accessibility");
+            }
         }
-        // Chromium/Electron sandbox doesn't work in containers
-        args.push("--no-sandbox");
-        if is_electron {
-            args.push("--disable-gpu");
-            args.push("--force-renderer-accessibility");
-        }
+        // For folder-type apps, flags are not appended here because app_path
+        // is a shell script (e.g. start.sh), not the Electron binary directly.
+        // Electron flags must be included in the script itself. The Dockerfile.electron
+        // sets ELECTRON_DISABLE_GPU=1 and ELECTRON_NO_SANDBOX=1 as env vars.
 
         self.exec_detached_with_log(&args, "/tmp/app.log").await?;
         info!("Launched app: {app_path}");
