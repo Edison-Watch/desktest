@@ -53,7 +53,8 @@ RUN useradd -m -s /bin/bash tester
 # Install helper scripts
 COPY get-a11y-tree.py /usr/local/bin/get-a11y-tree
 COPY execute-action.py /usr/local/bin/execute-action
-RUN chmod +x /usr/local/bin/get-a11y-tree /usr/local/bin/execute-action
+COPY screenshot_compare.py /usr/local/bin/screenshot-compare
+RUN chmod +x /usr/local/bin/get-a11y-tree /usr/local/bin/execute-action /usr/local/bin/screenshot-compare
 
 # Startup script
 COPY entrypoint.sh /entrypoint.sh

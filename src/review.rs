@@ -64,7 +64,9 @@ fn build_steps_json(entries: &[TrajectoryRecord], artifacts_dir: &Path) -> Strin
         })
         .collect();
 
-    serde_json::to_string(&steps).unwrap_or_else(|_| "[]".to_string())
+    serde_json::to_string(&steps)
+        .unwrap_or_else(|_| "[]".to_string())
+        .replace("</", "<\\/")
 }
 
 /// Build the complete HTML document.
