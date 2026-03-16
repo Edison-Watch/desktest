@@ -653,18 +653,16 @@ impl DockerSession {
     /// Launch the app inside the container (non-blocking).
     /// App stdout/stderr is captured to /tmp/app.log for debugging.
     /// AppImages are launched with --appimage-extract-and-run to avoid FUSE issues in containers.
-    /// All apps get --no-sandbox since Chromium's sandbox doesn't work in containers.
-    /// For AppImage Electron deploys, --disable-gpu and --force-renderer-accessibility are also added.
-    /// For folder deploys, these flags are passed as positional args to the script — scripts
-    /// that forward "$@" to Electron will receive them automatically.
+    /// AppImages are launched with --appimage-extract-and-run to avoid FUSE issues.
+    /// Electron apps get --no-sandbox, --disable-gpu, and --force-renderer-accessibility.
+    /// Non-Electron apps receive no extra flags to avoid "unrecognised option" errors.
     pub async fn launch_app(&self, app_path: &str, is_appimage: bool, is_electron: bool) -> Result<(), AppError> {
         let mut args: Vec<&str> = vec![app_path];
         if is_appimage {
             args.push("--appimage-extract-and-run");
         }
-        // Chromium/Electron sandbox doesn't work in containers
-        args.push("--no-sandbox");
         if is_electron {
+            args.push("--no-sandbox");
             args.push("--disable-gpu");
             args.push("--force-renderer-accessibility");
         }

@@ -9,7 +9,7 @@ import sys
 
 def compare_images(expected_path, actual_path, threshold):
     try:
-        from PIL import Image
+        from PIL import Image, ImageChops, ImageStat
     except ImportError:
         print("ERROR: Pillow not installed. Install with: pip3 install Pillow")
         sys.exit(2)
@@ -21,20 +21,14 @@ def compare_images(expected_path, actual_path, threshold):
         print(f"FAIL: Image sizes differ ({img1.size} vs {img2.size})")
         return False
 
-    # Per-channel pixel-level similarity (mean absolute error across RGB)
-    pixels1 = list(img1.getdata())  # list of (R, G, B) tuples
-    pixels2 = list(img2.getdata())
-
-    total_pixels = len(pixels1)
-    if total_pixels == 0:
+    if img1.size[0] == 0 or img1.size[1] == 0:
         print("FAIL: Empty images")
         return False
 
-    diff_sum = sum(
-        abs(p1[0] - p2[0]) + abs(p1[1] - p2[1]) + abs(p1[2] - p2[2])
-        for p1, p2 in zip(pixels1, pixels2)
-    )
-    mae = diff_sum / (total_pixels * 3 * 255.0)
+    # Per-channel MAE using PIL's C extension (fast, no Python-level pixel iteration)
+    diff = ImageChops.difference(img1, img2)
+    stat = ImageStat.Stat(diff)
+    mae = sum(stat.mean) / (len(stat.mean) * 255.0)
     similarity = 1.0 - mae
 
     print(f"Similarity: {similarity:.4f} (threshold: {threshold})")
