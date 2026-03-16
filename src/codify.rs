@@ -95,6 +95,7 @@ pub fn generate_replay_script(
             .thought
             .as_deref()
             .unwrap_or("Execute action")
+            .replace('\\', "\\\\")
             .replace("\"\"\"", "'''");
 
         script.push_str(&format!("def {fn_name}():\n"));
