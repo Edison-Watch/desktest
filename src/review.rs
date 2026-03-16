@@ -198,6 +198,8 @@ function copyCodifyCommand() {{
       const btn = document.querySelector('.codify-btn');
       btn.textContent = 'Copied!';
       setTimeout(() => btn.textContent = 'Copy codify command', 2000);
+    }}).catch(() => {{
+      prompt('Copy this command:', cmd);
     }});
   }} else {{
     prompt('Copy this command:', cmd);

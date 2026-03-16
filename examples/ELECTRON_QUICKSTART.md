@@ -60,7 +60,7 @@ Package your app as an AppImage using `electron-builder`:
 }
 ```
 
-Then use `app.type = "appimage"` in your task JSON (no `electron: true` needed — AppImage handles everything).
+Then use `app.type = "appimage"` with `"electron": true` in your task JSON. This ensures `--no-sandbox`, `--disable-gpu`, and `--force-renderer-accessibility` are passed to the binary, and the `eyetest-desktop:electron` image is used.
 
 ### Option C: Custom Docker Image
 
