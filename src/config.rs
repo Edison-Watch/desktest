@@ -118,6 +118,7 @@ impl Config {
             crate::task::AppConfig::Appimage { path } => {
                 self.app_type = AppType::Appimage;
                 self.app_path = Some(PathBuf::from(path));
+                self.electron = false;
             }
             crate::task::AppConfig::Folder { dir, entrypoint, electron } => {
                 self.app_type = AppType::Folder;
@@ -127,6 +128,7 @@ impl Config {
             }
             crate::task::AppConfig::DockerImage { .. } => {
                 self.app_type = AppType::DockerImage;
+                self.electron = false;
             }
         }
     }
