@@ -653,7 +653,8 @@ impl DockerSession {
     /// Launch the app inside the container (non-blocking).
     /// App stdout/stderr is captured to /tmp/app.log for debugging.
     /// AppImages are launched with --appimage-extract-and-run to avoid FUSE issues in containers.
-    /// All apps get --no-sandbox since Chromium's sandbox doesn't work in containers.
+    /// For AppImage deploys, --no-sandbox (and optional Electron flags) are appended automatically.
+    /// For folder deploys, the entrypoint script must include these flags itself.
     pub async fn launch_app(&self, app_path: &str, is_appimage: bool, is_electron: bool) -> Result<(), AppError> {
         let mut args: Vec<&str> = vec![app_path];
         if is_appimage {
@@ -667,8 +668,8 @@ impl DockerSession {
         }
         // For folder-type apps, flags are not appended here because app_path
         // is a shell script (e.g. start.sh), not the Electron binary directly.
-        // Electron flags must be included in the script itself. The Dockerfile.electron
-        // sets ELECTRON_DISABLE_GPU=1 and ELECTRON_NO_SANDBOX=1 as env vars.
+        // Electron flags must be included in the script itself (see examples/electron-todo-app/start.sh).
+        // Dockerfile.electron only adds Node.js and Electron runtime deps — no env vars are set.
 
         self.exec_detached_with_log(&args, "/tmp/app.log").await?;
         info!("Launched app: {app_path}");

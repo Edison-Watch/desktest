@@ -99,9 +99,11 @@ pub fn generate_replay_script(
             .replace("\"\"\"", "'''")
             .to_string();
         // Prevent trailing " from merging with closing """ to form """"
-        while docstring.ends_with('"') {
-            docstring.truncate(docstring.len() - 1);
-            docstring.push_str("\\\"");
+        // Strip trailing quotes and append a space to separate from closing """
+        if docstring.ends_with('"') {
+            let trimmed = docstring.trim_end_matches('"');
+            let quote_count = docstring.len() - trimmed.len();
+            docstring = format!("{}{} ", trimmed, "\"".repeat(quote_count));
         }
 
         script.push_str(&format!("def {fn_name}():\n"));
