@@ -159,7 +159,11 @@ function selectStep(index) {{
   document.querySelector(`.step-item[data-index="${{index}}"]`).classList.add('active');
 
   const s = STEPS[index];
-  let html = `<div class="detail-header"><h2>Step ${{s.step}}</h2><span class="badge ${{badgeClass(s.result)}}">${{escapeHtml(s.result)}}</span><span style="color:#484f58;font-size:13px">${{escapeHtml(s.timestamp)}}</span></div>`;
+  let html = '';
+  if (HAS_RECORDING) {{
+    html += '<div class="recording-note">A session recording (recording.mp4) is available in the artifacts directory.</div>';
+  }}
+  html += `<div class="detail-header"><h2>Step ${{s.step}}</h2><span class="badge ${{badgeClass(s.result)}}">${{escapeHtml(s.result)}}</span><span style="color:#484f58;font-size:13px">${{escapeHtml(s.timestamp)}}</span></div>`;
 
   if (s.screenshot) {{
     html += `<img class="screenshot" src="data:image/png;base64,${{s.screenshot}}" alt="Step ${{s.step}} screenshot">`;
@@ -198,11 +202,6 @@ function copyCodifyCommand() {{
   }} else {{
     prompt('Copy this command:', cmd);
   }}
-}}
-
-if (HAS_RECORDING) {{
-  mainPanel.insertAdjacentHTML('beforebegin',
-    '<div class="recording-note">A session recording (recording.mp4) is available in the artifacts directory.</div>');
 }}
 
 if (STEPS.length > 0) selectStep(0);
