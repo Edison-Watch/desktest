@@ -113,21 +113,11 @@ pub fn generate_replay_script(
         script.push_str(&format!("def {fn_name}():\n"));
         script.push_str(&format!("    \"\"\"{docstring}\"\"\"\n"));
 
-        // Indent each line of action code (strip trailing blank lines)
-        for line in entry.action_code.trim_end_matches('\n').lines() {
-            if line.trim().is_empty() {
-                script.push_str("\n");
-            } else {
-                script.push_str(&format!("    {line}\n"));
-            }
-        }
-        script.push('\n');
-
-        // Optional screenshot assertion
+        // Screenshot assertion BEFORE action (trajectory screenshots are pre-action observations)
         if with_screenshots {
             if let Some(screenshot) = &entry.screenshot_path {
                 script.push_str(&format!(
-                    "    # Screenshot assertion (threshold: {threshold})\n"
+                    "    # Verify pre-action screen state (threshold: {threshold})\n"
                 ));
                 script.push_str(
                     "    time.sleep(0.5)  # Wait for UI to settle\n"
@@ -139,7 +129,6 @@ pub fn generate_replay_script(
                     "    subprocess.run(['python3', '/usr/local/bin/screenshot-compare',\n"
                 );
                 // Build container path: /home/tester/<dir_name>/<filename>
-                // Falls back to /home/tester/<filename> if dir name couldn't be resolved
                 let container_screenshot = if let Some(dir_name) = screenshots_dir_name {
                     format!("/home/tester/{dir_name}/{screenshot}")
                 } else {
@@ -149,6 +138,15 @@ pub fn generate_replay_script(
                 script.push_str(&format!(
                     "        '--expected', '{screenshot_escaped}', '--actual', '/tmp/_replay_actual.png', '--threshold', '{threshold}'], check=True)\n"
                 ));
+            }
+        }
+
+        // Action code (strip trailing blank lines)
+        for line in entry.action_code.trim_end_matches('\n').lines() {
+            if line.trim().is_empty() {
+                script.push_str("\n");
+            } else {
+                script.push_str(&format!("    {line}\n"));
             }
         }
 
