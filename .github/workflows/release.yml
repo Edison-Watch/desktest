@@ -41,7 +41,7 @@ jobs:
 
       - name: Run tests
         if: "!contains(matrix.target, 'aarch64-unknown-linux')"
-        run: cargo test --release
+        run: cargo test --release --target ${{ matrix.target }}
 
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}

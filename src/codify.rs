@@ -113,8 +113,8 @@ pub fn generate_replay_script(
         script.push_str(&format!("def {fn_name}():\n"));
         script.push_str(&format!("    \"\"\"{docstring}\"\"\"\n"));
 
-        // Indent each line of action code
-        for line in entry.action_code.lines() {
+        // Indent each line of action code (strip trailing blank lines)
+        for line in entry.action_code.trim_end_matches('\n').lines() {
             if line.trim().is_empty() {
                 script.push_str("\n");
             } else {
