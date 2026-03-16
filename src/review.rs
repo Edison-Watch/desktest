@@ -192,6 +192,11 @@ function copyCodifyCommand() {{
   }});
 }}
 
+if (HAS_RECORDING) {{
+  mainPanel.insertAdjacentHTML('afterbegin',
+    '<div class="recording-note">A session recording (recording.mp4) is available in the artifacts directory.</div>');
+}}
+
 if (STEPS.length > 0) selectStep(0);
 </script>
 </body>

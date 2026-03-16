@@ -422,8 +422,18 @@ async fn run_legacy(cli: Cli) -> Result<AgentOutcome, AppError> {
         .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
 
     // 4. Create and start Docker container
+    if config.electron {
+        let client = bollard::Docker::connect_with_local_defaults()
+            .map_err(|e| AppError::Infra(format!("Cannot connect to Docker: {e}")))?;
+        docker::DockerSession::ensure_electron_image(&client, false).await?;
+    }
+    let effective_image = if config.electron {
+        Some(docker::IMAGE_NAME_ELECTRON)
+    } else {
+        None
+    };
     info!("Creating Docker container...");
-    let session = docker::DockerSession::create(&config, None).await?;
+    let session = docker::DockerSession::create(&config, effective_image).await?;
 
     // Run the main logic, racing against Ctrl+C.
     // No matter how we exit (success, error, or signal), cleanup always runs.

@@ -116,10 +116,10 @@ Create `my-test.json`:
 ```
 
 The `"electron": true` flag tells eyetest to:
-1. Use the `eyetest-desktop:electron` Docker image (which has Node.js and sets `ELECTRON_DISABLE_GPU=1`, `ELECTRON_NO_SANDBOX=1`)
-2. For AppImage deploys, pass `--disable-gpu` and `--force-renderer-accessibility` flags directly
+1. Use the `eyetest-desktop:electron` Docker image (which has Node.js and Electron runtime dependencies)
+2. For AppImage deploys, pass `--no-sandbox --disable-gpu --force-renderer-accessibility` flags directly to the binary
 
-**Important for folder deploys:** Since `start.sh` is a shell script, Electron flags must be included in your script directly (e.g., `npx electron . --no-sandbox --disable-gpu --force-renderer-accessibility`). The Docker image env vars handle `--no-sandbox` and `--disable-gpu`, but `--force-renderer-accessibility` has no env var equivalent and must be in your script for the accessibility tree to work.
+**Important for folder deploys:** Since `start.sh` is a shell script (not the Electron binary), you must include all Electron flags in your script directly: `npx electron . --no-sandbox --disable-gpu --force-renderer-accessibility`. Electron does not support env vars for these options — they must be CLI flags.
 
 ## Step 4: Run the Test
 
