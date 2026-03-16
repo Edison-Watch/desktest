@@ -122,8 +122,9 @@ pub fn generate_replay_script(
                 script.push_str(
                     "    subprocess.run(['python3', '/usr/local/bin/screenshot-compare',\n"
                 );
+                let screenshot_escaped = screenshot.replace('\\', "\\\\").replace('\'', "\\'");
                 script.push_str(&format!(
-                    "        '--expected', '{screenshot}', '--actual', '/tmp/_replay_actual.png', '--threshold', '{threshold}'], check=True)\n"
+                    "        '--expected', '{screenshot_escaped}', '--actual', '/tmp/_replay_actual.png', '--threshold', '{threshold}'], check=True)\n"
                 ));
             }
         }

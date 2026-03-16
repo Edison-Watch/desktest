@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare two screenshots using structural similarity (SSIM).
+"""Compare two screenshots using pixel-level similarity (MAE).
 
 Usage: screenshot-compare --expected <path> --actual <path> [--threshold 0.95]
 Exit code 0 if similarity >= threshold, 1 otherwise.
@@ -10,8 +10,6 @@ import sys
 def compare_images(expected_path, actual_path, threshold):
     try:
         from PIL import Image
-        import struct
-        import zlib
     except ImportError:
         print("ERROR: Pillow not installed. Install with: pip3 install Pillow")
         sys.exit(2)
