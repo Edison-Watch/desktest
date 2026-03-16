@@ -139,10 +139,11 @@ pub fn generate_replay_script(
                     "    subprocess.run(['python3', '/usr/local/bin/screenshot-compare',\n"
                 );
                 // Build container path: /home/tester/<dir_name>/<filename>
+                // Falls back to /home/tester/<filename> if dir name couldn't be resolved
                 let container_screenshot = if let Some(dir_name) = screenshots_dir_name {
                     format!("/home/tester/{dir_name}/{screenshot}")
                 } else {
-                    screenshot.clone()
+                    format!("/home/tester/{screenshot}")
                 };
                 let screenshot_escaped = container_screenshot.replace('\\', "\\\\").replace('\'', "\\'");
                 script.push_str(&format!(
