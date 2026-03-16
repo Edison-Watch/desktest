@@ -4,7 +4,7 @@
   "description": "A minimal Electron todo app for eyetest testing",
   "main": "main.js",
   "scripts": {
-    "start": "electron . --no-sandbox --disable-gpu"
+    "start": "electron . --no-sandbox --disable-gpu --force-renderer-accessibility"
   },
   "dependencies": {
     "electron": "^33.0.0"

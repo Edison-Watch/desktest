@@ -184,6 +184,10 @@ function escapeHtml(text) {{
 
 function copyCodifyCommand() {{
   const checked = [...document.querySelectorAll('#checkbox-list input:checked')].map(cb => cb.value);
+  if (checked.length === 0) {{
+    alert('Select at least one step to include.');
+    return;
+  }}
   const cmd = `eyetest codify trajectory.jsonl --steps ${{checked.join(',')}}`;
   navigator.clipboard.writeText(cmd).then(() => {{
     const btn = document.querySelector('.codify-btn');
@@ -193,7 +197,7 @@ function copyCodifyCommand() {{
 }}
 
 if (HAS_RECORDING) {{
-  mainPanel.insertAdjacentHTML('afterbegin',
+  mainPanel.insertAdjacentHTML('beforebegin',
     '<div class="recording-note">A session recording (recording.mp4) is available in the artifacts directory.</div>');
 }}
 
