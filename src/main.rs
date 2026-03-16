@@ -159,7 +159,7 @@ EXAMPLES:
         #[arg(long, default_value_t = false)]
         with_screenshots: bool,
 
-        /// SSIM threshold for screenshot comparison (0.0-1.0)
+        /// Pixel similarity threshold for screenshot comparison (MAE-based, 0.0-1.0)
         #[arg(long, default_value_t = 0.95)]
         threshold: f64,
 

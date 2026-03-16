@@ -50,7 +50,7 @@ pub fn load_trajectory(path: &Path) -> Result<Vec<TrajectoryRecord>, AppError> {
 /// - `steps`: optional filter — only include these step numbers (1-indexed)
 /// - `delay`: seconds to wait between steps
 /// - `with_screenshots`: if true, add screenshot comparison assertions
-/// - `threshold`: SSIM threshold for screenshot comparison (0.0-1.0)
+/// - `threshold`: pixel similarity threshold for screenshot comparison (MAE-based, 0.0-1.0)
 /// * `screenshots_dir_name`: when `with_screenshots` is true, the directory name
 ///   under `/home/tester/` where expected screenshots will be found in the container.
 ///   Defaults to the current directory if None.
