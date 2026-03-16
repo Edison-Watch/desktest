@@ -96,7 +96,9 @@ pub fn generate_replay_script(
             .as_deref()
             .unwrap_or("Execute action")
             .replace('\\', "\\\\")
-            .replace("\"\"\"", "'''");
+            .replace("\"\"\"", "'''")
+            .trim_end_matches('"')
+            .to_string();
 
         script.push_str(&format!("def {fn_name}():\n"));
         script.push_str(&format!("    \"\"\"{docstring}\"\"\"\n"));
