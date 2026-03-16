@@ -91,12 +91,18 @@ pub fn generate_replay_script(
     // Generate step functions
     for entry in &filtered {
         let fn_name = format!("step_{:03}", entry.step);
-        let docstring = entry
+        let mut docstring = entry
             .thought
             .as_deref()
             .unwrap_or("Execute action")
             .replace('\\', "\\\\")
-            .replace("\"\"\"", "'''");
+            .replace("\"\"\"", "'''")
+            .to_string();
+        // Prevent trailing " from merging with closing """ to form """"
+        while docstring.ends_with('"') {
+            docstring.truncate(docstring.len() - 1);
+            docstring.push_str("\\\"");
+        }
 
         script.push_str(&format!("def {fn_name}():\n"));
         script.push_str(&format!("    \"\"\"{docstring}\"\"\"\n"));
