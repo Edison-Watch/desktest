@@ -654,17 +654,18 @@ impl DockerSession {
     /// App stdout/stderr is captured to /tmp/app.log for debugging.
     /// AppImages are launched with --appimage-extract-and-run to avoid FUSE issues in containers.
     /// AppImages are launched with --appimage-extract-and-run to avoid FUSE issues.
-    /// Electron apps get --no-sandbox, --disable-gpu, and --force-renderer-accessibility.
-    /// Non-Electron apps receive no extra flags to avoid "unrecognised option" errors.
+    /// For AppImage Electron deploys, --no-sandbox --disable-gpu --force-renderer-accessibility
+    /// are appended directly to the binary. For folder deploys, the entrypoint script must
+    /// include these flags itself (see examples/electron-todo-app/start.sh).
     pub async fn launch_app(&self, app_path: &str, is_appimage: bool, is_electron: bool) -> Result<(), AppError> {
         let mut args: Vec<&str> = vec![app_path];
         if is_appimage {
             args.push("--appimage-extract-and-run");
-        }
-        if is_electron {
-            args.push("--no-sandbox");
-            args.push("--disable-gpu");
-            args.push("--force-renderer-accessibility");
+            if is_electron {
+                args.push("--no-sandbox");
+                args.push("--disable-gpu");
+                args.push("--force-renderer-accessibility");
+            }
         }
 
         self.exec_detached_with_log(&args, "/tmp/app.log").await?;

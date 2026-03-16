@@ -454,10 +454,19 @@ async fn run_legacy(cli: Cli) -> Result<AgentOutcome, AppError> {
     std::fs::create_dir_all(&artifacts_dir)
         .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
 
-    // 4. Create and start Docker container
-    let effective_image = resolve_image_name(&config, None).await?;
+    // 4. Create and start Docker container (inside select! so Ctrl+C works during image build)
     info!("Creating Docker container...");
-    let session = docker::DockerSession::create(&config, effective_image).await?;
+    let session = tokio::select! {
+        biased;
+        _ = tokio::signal::ctrl_c() => {
+            eprintln!("\nInterrupted (Ctrl+C) during container setup");
+            return Err(AppError::Infra("Interrupted by user".into()));
+        }
+        r = async {
+            let effective_image = resolve_image_name(&config, None).await?;
+            docker::DockerSession::create(&config, effective_image).await
+        } => r?,
+    };
 
     // Run the main logic, racing against Ctrl+C.
     // No matter how we exit (success, error, or signal), cleanup always runs.
@@ -602,9 +611,7 @@ pub(crate) async fn run_task(
         _ => None,
     };
 
-    let effective_image = resolve_image_name(&config, custom_image).await?;
-
-    // Create and start Docker container (inside select! so Ctrl+C works during image pull)
+    // Build electron image + create container (inside select! so Ctrl+C works)
     info!("Creating Docker container...");
     let session = tokio::select! {
         biased;
@@ -612,7 +619,10 @@ pub(crate) async fn run_task(
             eprintln!("\nInterrupted (Ctrl+C) during container setup");
             return Err(AppError::Infra("Interrupted by user".into()));
         }
-        r = docker::DockerSession::create(&config, effective_image) => r?,
+        r = async {
+            let effective_image = resolve_image_name(&config, custom_image).await?;
+            docker::DockerSession::create(&config, effective_image).await
+        } => r?,
     };
 
     // Validate custom image (after session exists so we can clean up on failure)
@@ -980,10 +990,18 @@ async fn run_interactive_pause(
         _ => None,
     };
 
-    let effective_image = resolve_image_name(&config, custom_image).await?;
-
     info!("Creating Docker container...");
-    let session = docker::DockerSession::create(&config, effective_image).await?;
+    let session = tokio::select! {
+        biased;
+        _ = tokio::signal::ctrl_c() => {
+            eprintln!("\nInterrupted (Ctrl+C) during container setup");
+            return Err(AppError::Infra("Interrupted by user".into()));
+        }
+        r = async {
+            let effective_image = resolve_image_name(&config, custom_image).await?;
+            docker::DockerSession::create(&config, effective_image).await
+        } => r?,
+    };
 
     if custom_image.is_some() {
         if let Err(e) = session.validate_custom_image().await {
@@ -1092,10 +1110,18 @@ async fn run_interactive_step(
         _ => None,
     };
 
-    let effective_image = resolve_image_name(&config, custom_image).await?;
-
     info!("Creating Docker container...");
-    let session = docker::DockerSession::create(&config, effective_image).await?;
+    let session = tokio::select! {
+        biased;
+        _ = tokio::signal::ctrl_c() => {
+            eprintln!("\nInterrupted (Ctrl+C) during container setup");
+            return Err(AppError::Infra("Interrupted by user".into()));
+        }
+        r = async {
+            let effective_image = resolve_image_name(&config, custom_image).await?;
+            docker::DockerSession::create(&config, effective_image).await
+        } => r?,
+    };
 
     if custom_image.is_some() {
         if let Err(e) = session.validate_custom_image().await {
