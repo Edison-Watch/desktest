@@ -9,8 +9,8 @@ function createWindow() {
     width: 800,
     height: 600,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
+      nodeIntegration: true,       // NOTE: insecure; acceptable only in isolated test containers
+      contextIsolation: false,     // NOTE: insecure; acceptable only in isolated test containers
     },
   });
 

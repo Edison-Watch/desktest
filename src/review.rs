@@ -131,6 +131,7 @@ const checkboxList = document.getElementById('checkbox-list');
 const mainPanel = document.getElementById('main-panel');
 
 function badgeClass(result) {{
+  if (!result) return 'fail';
   if (result === 'success') return 'success';
   if (result === 'done') return 'done';
   if (result.startsWith('error') || result === 'fail') return 'error';
