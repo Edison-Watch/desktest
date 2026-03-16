@@ -189,11 +189,15 @@ function copyCodifyCommand() {{
     return;
   }}
   const cmd = `eyetest codify trajectory.jsonl --steps ${{checked.join(',')}}`;
-  navigator.clipboard.writeText(cmd).then(() => {{
-    const btn = document.querySelector('.codify-btn');
-    btn.textContent = 'Copied!';
-    setTimeout(() => btn.textContent = 'Copy codify command', 2000);
-  }});
+  if (navigator.clipboard) {{
+    navigator.clipboard.writeText(cmd).then(() => {{
+      const btn = document.querySelector('.codify-btn');
+      btn.textContent = 'Copied!';
+      setTimeout(() => btn.textContent = 'Copy codify command', 2000);
+    }});
+  }} else {{
+    prompt('Copy this command:', cmd);
+  }}
 }}
 
 if (HAS_RECORDING) {{
