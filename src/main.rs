@@ -326,7 +326,14 @@ async fn main() {
 
                 // Derive screenshots dir name from trajectory's parent directory
                 let screenshots_dir_name = if *with_screenshots {
-                    trajectory.parent()
+                    let parent = trajectory.parent().unwrap_or(std::path::Path::new("."));
+                    let resolved = if parent.as_os_str().is_empty() {
+                        std::env::current_dir().ok()
+                    } else {
+                        std::fs::canonicalize(parent).ok()
+                    };
+                    resolved
+                        .as_deref()
                         .and_then(|p| p.file_name())
                         .map(|n| n.to_string_lossy().to_string())
                 } else {
