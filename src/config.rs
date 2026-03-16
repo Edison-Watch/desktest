@@ -115,10 +115,10 @@ impl Config {
     /// from the task definition so that `deploy_app()` works correctly.
     pub fn apply_task_app(&mut self, app: &crate::task::AppConfig) {
         match app {
-            crate::task::AppConfig::Appimage { path } => {
+            crate::task::AppConfig::Appimage { path, electron } => {
                 self.app_type = AppType::Appimage;
                 self.app_path = Some(PathBuf::from(path));
-                self.electron = false;
+                self.electron = *electron;
             }
             crate::task::AppConfig::Folder { dir, entrypoint, electron } => {
                 self.app_type = AppType::Folder;

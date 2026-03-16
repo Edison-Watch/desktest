@@ -400,6 +400,22 @@ fn load_config_or_defaults(config_flag: &Option<std::path::PathBuf>) -> Config {
     }
 }
 
+/// Resolve the Docker image to use, building the electron image if needed.
+/// Returns the electron image name when `config.electron` is true and no custom image is set.
+async fn resolve_image_name<'a>(
+    config: &Config,
+    custom_image: Option<&'a str>,
+) -> Result<Option<&'a str>, AppError> {
+    if config.electron && custom_image.is_none() {
+        let client = bollard::Docker::connect_with_local_defaults()
+            .map_err(|e| AppError::Infra(format!("Cannot connect to Docker: {e}")))?;
+        docker::DockerSession::ensure_electron_image(&client, false).await?;
+        // Safety: IMAGE_NAME_ELECTRON is a &'static str, coerce to 'a
+        return Ok(Some(docker::IMAGE_NAME_ELECTRON));
+    }
+    Ok(custom_image)
+}
+
 async fn run_legacy(cli: Cli) -> Result<AgentOutcome, AppError> {
     // 1. Validate config
     let config_path = cli.config_pos.ok_or_else(|| {
@@ -422,16 +438,7 @@ async fn run_legacy(cli: Cli) -> Result<AgentOutcome, AppError> {
         .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
 
     // 4. Create and start Docker container
-    if config.electron {
-        let client = bollard::Docker::connect_with_local_defaults()
-            .map_err(|e| AppError::Infra(format!("Cannot connect to Docker: {e}")))?;
-        docker::DockerSession::ensure_electron_image(&client, false).await?;
-    }
-    let effective_image = if config.electron {
-        Some(docker::IMAGE_NAME_ELECTRON)
-    } else {
-        None
-    };
+    let effective_image = resolve_image_name(&config, None).await?;
     info!("Creating Docker container...");
     let session = docker::DockerSession::create(&config, effective_image).await?;
 
@@ -578,19 +585,7 @@ pub(crate) async fn run_task(
         _ => None,
     };
 
-    // Build electron image if needed (before container creation)
-    if config.electron && custom_image.is_none() {
-        let client = bollard::Docker::connect_with_local_defaults()
-            .map_err(|e| AppError::Infra(format!("Cannot connect to Docker: {e}")))?;
-        docker::DockerSession::ensure_electron_image(&client, false).await?;
-    }
-
-    // Use electron base image when electron flag is set and no custom image
-    let effective_image = if config.electron && custom_image.is_none() {
-        Some(docker::IMAGE_NAME_ELECTRON)
-    } else {
-        custom_image
-    };
+    let effective_image = resolve_image_name(&config, custom_image).await?;
 
     // Create and start Docker container (inside select! so Ctrl+C works during image pull)
     info!("Creating Docker container...");
@@ -968,18 +963,7 @@ async fn run_interactive_pause(
         _ => None,
     };
 
-    // Build electron image if needed
-    if config.electron && custom_image.is_none() {
-        let client = bollard::Docker::connect_with_local_defaults()
-            .map_err(|e| AppError::Infra(format!("Cannot connect to Docker: {e}")))?;
-        docker::DockerSession::ensure_electron_image(&client, false).await?;
-    }
-
-    let effective_image = if config.electron && custom_image.is_none() {
-        Some(docker::IMAGE_NAME_ELECTRON)
-    } else {
-        custom_image
-    };
+    let effective_image = resolve_image_name(&config, custom_image).await?;
 
     info!("Creating Docker container...");
     let session = docker::DockerSession::create(&config, effective_image).await?;
@@ -1091,18 +1075,7 @@ async fn run_interactive_step(
         _ => None,
     };
 
-    // Build electron image if needed
-    if config.electron && custom_image.is_none() {
-        let client = bollard::Docker::connect_with_local_defaults()
-            .map_err(|e| AppError::Infra(format!("Cannot connect to Docker: {e}")))?;
-        docker::DockerSession::ensure_electron_image(&client, false).await?;
-    }
-
-    let effective_image = if config.electron && custom_image.is_none() {
-        Some(docker::IMAGE_NAME_ELECTRON)
-    } else {
-        custom_image
-    };
+    let effective_image = resolve_image_name(&config, custom_image).await?;
 
     info!("Creating Docker container...");
     let session = docker::DockerSession::create(&config, effective_image).await?;

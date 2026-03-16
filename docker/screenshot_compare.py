@@ -14,15 +14,15 @@ def compare_images(expected_path, actual_path, threshold):
         print("ERROR: Pillow not installed. Install with: pip3 install Pillow")
         sys.exit(2)
 
-    img1 = Image.open(expected_path).convert('L')
-    img2 = Image.open(actual_path).convert('L')
+    img1 = Image.open(expected_path).convert('RGB')
+    img2 = Image.open(actual_path).convert('RGB')
 
     if img1.size != img2.size:
         print(f"FAIL: Image sizes differ ({img1.size} vs {img2.size})")
         return False
 
-    # Simple pixel-level similarity (mean absolute error)
-    pixels1 = list(img1.getdata())
+    # Per-channel pixel-level similarity (mean absolute error across RGB)
+    pixels1 = list(img1.getdata())  # list of (R, G, B) tuples
     pixels2 = list(img2.getdata())
 
     total_pixels = len(pixels1)
@@ -30,8 +30,11 @@ def compare_images(expected_path, actual_path, threshold):
         print("FAIL: Empty images")
         return False
 
-    diff_sum = sum(abs(p1 - p2) for p1, p2 in zip(pixels1, pixels2))
-    mae = diff_sum / (total_pixels * 255.0)
+    diff_sum = sum(
+        abs(p1[0] - p2[0]) + abs(p1[1] - p2[1]) + abs(p1[2] - p2[2])
+        for p1, p2 in zip(pixels1, pixels2)
+    )
+    mae = diff_sum / (total_pixels * 3 * 255.0)
     similarity = 1.0 - mae
 
     print(f"Similarity: {similarity:.4f} (threshold: {threshold})")

@@ -57,6 +57,8 @@ pub enum AppConfig {
     /// Deploy an AppImage file into the container.
     Appimage {
         path: String,
+        #[serde(default)]
+        electron: bool,
     },
     /// Deploy a folder-based app into the container.
     Folder {
