@@ -51,12 +51,16 @@ pub fn load_trajectory(path: &Path) -> Result<Vec<TrajectoryRecord>, AppError> {
 /// - `delay`: seconds to wait between steps
 /// - `with_screenshots`: if true, add screenshot comparison assertions
 /// - `threshold`: SSIM threshold for screenshot comparison (0.0-1.0)
+/// * `screenshots_dir_name`: when `with_screenshots` is true, the directory name
+///   under `/home/tester/` where expected screenshots will be found in the container.
+///   Defaults to the current directory if None.
 pub fn generate_replay_script(
     entries: &[TrajectoryRecord],
     steps: Option<&[usize]>,
     delay: f64,
     with_screenshots: bool,
     threshold: f64,
+    screenshots_dir_name: Option<&str>,
 ) -> (String, usize) {
     let mut script = String::new();
 
@@ -134,7 +138,13 @@ pub fn generate_replay_script(
                 script.push_str(
                     "    subprocess.run(['python3', '/usr/local/bin/screenshot-compare',\n"
                 );
-                let screenshot_escaped = screenshot.replace('\\', "\\\\").replace('\'', "\\'");
+                // Build container path: /home/tester/<dir_name>/<filename>
+                let container_screenshot = if let Some(dir_name) = screenshots_dir_name {
+                    format!("/home/tester/{dir_name}/{screenshot}")
+                } else {
+                    screenshot.clone()
+                };
+                let screenshot_escaped = container_screenshot.replace('\\', "\\\\").replace('\'', "\\'");
                 script.push_str(&format!(
                     "        '--expected', '{screenshot_escaped}', '--actual', '/tmp/_replay_actual.png', '--threshold', '{threshold}'], check=True)\n"
                 ));
@@ -227,7 +237,7 @@ mod tests {
     #[test]
     fn test_generate_replay_basic() {
         let entries = sample_entries();
-        let (script, _count) = generate_replay_script(&entries, None, 0.5, false, 0.95);
+        let (script, _count) = generate_replay_script(&entries, None, 0.5, false, 0.95, None);
         assert!(script.contains("#!/usr/bin/env python3"));
         assert!(script.contains("def step_001():"));
         assert!(script.contains("def step_002():"));
@@ -240,7 +250,7 @@ mod tests {
     #[test]
     fn test_generate_replay_filtered_steps() {
         let entries = sample_entries();
-        let (script, _count) = generate_replay_script(&entries, Some(&[2]), 1.0, false, 0.95);
+        let (script, _count) = generate_replay_script(&entries, Some(&[2]), 1.0, false, 0.95, None);
         assert!(!script.contains("def step_001():"));
         assert!(script.contains("def step_002():"));
     }
@@ -248,7 +258,7 @@ mod tests {
     #[test]
     fn test_generate_replay_with_screenshots() {
         let entries = sample_entries();
-        let (script, _count) = generate_replay_script(&entries, None, 0.5, true, 0.95);
+        let (script, _count) = generate_replay_script(&entries, None, 0.5, true, 0.95, Some("artifacts"));
         assert!(script.contains("import subprocess"));
         assert!(script.contains("screenshot-compare"));
     }
@@ -273,7 +283,7 @@ mod tests {
     #[test]
     fn test_empty_action_code_filtered() {
         let entries = sample_entries();
-        let (script, _count) = generate_replay_script(&entries, None, 0.5, false, 0.95);
+        let (script, _count) = generate_replay_script(&entries, None, 0.5, false, 0.95, None);
         // Step 3 has empty action_code, should be filtered out
         assert!(!script.contains("def step_003():"));
     }

@@ -324,12 +324,22 @@ async fn main() {
                     None => None,
                 };
 
+                // Derive screenshots dir name from trajectory's parent directory
+                let screenshots_dir_name = if *with_screenshots {
+                    trajectory.parent()
+                        .and_then(|p| p.file_name())
+                        .map(|n| n.to_string_lossy().to_string())
+                } else {
+                    None
+                };
+
                 let (script, included_count) = codify::generate_replay_script(
                     &entries,
                     step_filter.as_deref(),
                     *delay,
                     *with_screenshots,
                     *threshold,
+                    screenshots_dir_name.as_deref(),
                 );
 
                 match std::fs::write(output, &script) {
