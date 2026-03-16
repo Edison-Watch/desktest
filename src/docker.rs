@@ -653,23 +653,21 @@ impl DockerSession {
     /// Launch the app inside the container (non-blocking).
     /// App stdout/stderr is captured to /tmp/app.log for debugging.
     /// AppImages are launched with --appimage-extract-and-run to avoid FUSE issues in containers.
-    /// For AppImage deploys, --no-sandbox (and optional Electron flags) are appended automatically.
-    /// For folder deploys, the entrypoint script must include these flags itself.
+    /// All apps get --no-sandbox since Chromium's sandbox doesn't work in containers.
+    /// For AppImage Electron deploys, --disable-gpu and --force-renderer-accessibility are also added.
+    /// For folder deploys, these flags are passed as positional args to the script — scripts
+    /// that forward "$@" to Electron will receive them automatically.
     pub async fn launch_app(&self, app_path: &str, is_appimage: bool, is_electron: bool) -> Result<(), AppError> {
         let mut args: Vec<&str> = vec![app_path];
         if is_appimage {
             args.push("--appimage-extract-and-run");
-            // Chromium/Electron sandbox doesn't work in containers
-            args.push("--no-sandbox");
-            if is_electron {
-                args.push("--disable-gpu");
-                args.push("--force-renderer-accessibility");
-            }
         }
-        // For folder-type apps, flags are not appended here because app_path
-        // is a shell script (e.g. start.sh), not the Electron binary directly.
-        // Electron flags must be included in the script itself (see examples/electron-todo-app/start.sh).
-        // Dockerfile.electron only adds Node.js and Electron runtime deps — no env vars are set.
+        // Chromium/Electron sandbox doesn't work in containers
+        args.push("--no-sandbox");
+        if is_electron {
+            args.push("--disable-gpu");
+            args.push("--force-renderer-accessibility");
+        }
 
         self.exec_detached_with_log(&args, "/tmp/app.log").await?;
         info!("Launched app: {app_path}");

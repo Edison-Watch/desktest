@@ -126,6 +126,9 @@ pub fn generate_replay_script(
                     "    # Screenshot assertion (threshold: {threshold})\n"
                 ));
                 script.push_str(
+                    "    time.sleep(0.5)  # Wait for UI to settle\n"
+                );
+                script.push_str(
                     "    subprocess.run(['scrot', '/tmp/_replay_actual.png'], check=True)\n"
                 );
                 script.push_str(
