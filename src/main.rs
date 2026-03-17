@@ -935,15 +935,17 @@ async fn build_agent_loop_config(
             Err(e) => {
                 // Use the cap (60s) as fallback — if the probe timed out, 15s would
                 // guarantee every subsequent extraction also times out
-                info!("A11y probe failed ({e}), using maximum 60s timeout as fallback");
+                tracing::warn!("A11y probe failed ({e}), using maximum 60s timeout as fallback");
                 Duration::from_secs(60)
             }
         }
     };
     obs_config.a11y_timeout = a11y_timeout;
 
-    // Compute adjusted total timeout to account for per-step observation overhead
-    // 1.0s accounts for fixed per-step overhead (screenshot capture)
+    // Compute adjusted total timeout to account for per-step observation overhead.
+    // Uses the a11y timeout ceiling (not measured time) intentionally — this is the
+    // worst-case wait per step, so total_timeout must budget for it.
+    // 1.0s accounts for fixed per-step overhead (screenshot capture).
     let per_step_overhead = obs_config.sleep_after_action + 1.0 + a11y_timeout.as_secs_f64();
     let base_timeout = task_def.timeout;
     let adjusted_total = base_timeout as f64 + (per_step_overhead * max_steps as f64);
