@@ -28,14 +28,21 @@ pub fn generate_review_html(
     // Load screenshots as base64
     let steps_json = build_steps_json(&entries, artifacts_dir);
 
-    // Embed recording as base64 if present
+    // Embed recording as base64 if present and under 50 MB
     let recording_b64 = {
         let recording_path = artifacts_dir.join("recording.mp4");
         if recording_path.exists() {
-            std::fs::read(&recording_path).ok().map(|bytes| {
-                use base64::Engine;
-                base64::engine::general_purpose::STANDARD.encode(&bytes)
-            })
+            const MAX_EMBED_BYTES: u64 = 50 * 1024 * 1024;
+            let size = std::fs::metadata(&recording_path).map(|m| m.len()).unwrap_or(0);
+            if size <= MAX_EMBED_BYTES {
+                std::fs::read(&recording_path).ok().map(|bytes| {
+                    use base64::Engine;
+                    base64::engine::general_purpose::STANDARD.encode(&bytes)
+                })
+            } else {
+                info!("Recording too large to embed ({:.1} MB > 50 MB), skipping", size as f64 / 1_048_576.0);
+                None
+            }
         } else {
             None
         }
@@ -124,7 +131,6 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, s
 .codify-btn {{ display: block; width: 100%; margin-top: 12px; padding: 8px; background: #238636; color: white; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 600; }}
 .codify-btn:hover {{ background: #2ea043; }}
 .empty {{ display: flex; align-items: center; justify-content: center; height: 100%; color: #484f58; font-size: 16px; }}
-.recording-note {{ margin-bottom: 16px; padding: 12px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; color: #8b949e; font-size: 13px; }}
 .recording-item {{ padding: 12px 16px; border-bottom: 1px solid #21262d; cursor: pointer; transition: background 0.15s; font-weight: 600; font-size: 13px; color: #d2a8ff; display: flex; align-items: center; gap: 8px; }}
 .recording-item:hover {{ background: #1c2128; }}
 .recording-item.active {{ background: #1f6feb22; border-left: 3px solid #1f6feb; }}
