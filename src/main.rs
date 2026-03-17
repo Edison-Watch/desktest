@@ -900,6 +900,71 @@ async fn run_task_inner(
     result
 }
 
+/// Build an AgentLoopV2Config from a task definition, probing the a11y tree
+/// timing if no explicit override is set.
+async fn build_agent_loop_config(
+    task_def: &task::TaskDefinition,
+    session: &docker::DockerSession,
+    debug: bool,
+    verbose: bool,
+) -> agent::loop_v2::AgentLoopV2Config {
+    let max_a11y_nodes = task_def.max_a11y_nodes.unwrap_or(10_000);
+    let max_steps = task_def.max_steps as usize;
+
+    let mut obs_config = observation::ObservationConfig::default();
+    obs_config.max_a11y_nodes = max_a11y_nodes;
+
+    // Determine a11y timeout: explicit override or probe
+    let a11y_timeout = if let Some(secs) = task_def.a11y_timeout_secs {
+        info!("Using explicit a11y timeout: {secs}s");
+        Duration::from_secs(secs)
+    } else {
+        match observation::probe_a11y_timing(session, max_a11y_nodes, obs_config.max_a11y_tokens).await {
+            Ok(measured) => {
+                let timeout = measured
+                    .mul_f64(1.5)
+                    .max(Duration::from_secs(15))
+                    .min(Duration::from_secs(60));
+                info!(
+                    "A11y probe: extraction took {:.1}s, setting timeout to {:.1}s",
+                    measured.as_secs_f64(),
+                    timeout.as_secs_f64()
+                );
+                timeout
+            }
+            Err(e) => {
+                // Use the cap (60s) as fallback — if the probe timed out, 15s would
+                // guarantee every subsequent extraction also times out
+                tracing::warn!("A11y probe failed ({e}), using maximum 60s timeout as fallback");
+                Duration::from_secs(60)
+            }
+        }
+    };
+    obs_config.a11y_timeout = a11y_timeout;
+
+    // Compute adjusted total timeout to account for per-step observation overhead.
+    // Uses the a11y timeout ceiling (not measured time) intentionally — this is the
+    // worst-case wait per step, so total_timeout must budget for it.
+    // 1.0s accounts for fixed per-step overhead (screenshot capture).
+    let per_step_overhead = obs_config.sleep_after_action + 1.0 + a11y_timeout.as_secs_f64();
+    let base_timeout = task_def.timeout;
+    let adjusted_total = base_timeout as f64 + (per_step_overhead * max_steps as f64);
+    let total_timeout = Duration::from_secs_f64(adjusted_total);
+    info!(
+        "Total timeout: {:.0}s (base {base_timeout}s + {:.1}s overhead/step × {max_steps} steps)",
+        adjusted_total, per_step_overhead
+    );
+
+    agent::loop_v2::AgentLoopV2Config {
+        max_steps,
+        total_timeout,
+        observation_config: obs_config,
+        debug,
+        verbose,
+        ..Default::default()
+    }
+}
+
 /// Run the v2 agent loop (used by LLM and hybrid modes).
 async fn run_agent_loop(
     task_def: &task::TaskDefinition,
@@ -917,11 +982,7 @@ async fn run_agent_loop(
         &config.api_base_url,
     )?;
 
-    let loop_config = agent::loop_v2::AgentLoopV2Config {
-        debug,
-        verbose,
-        ..Default::default()
-    };
+    let loop_config = build_agent_loop_config(task_def, session, debug, verbose).await;
     let mut agent_loop = agent::loop_v2::AgentLoopV2::new(
         llm_client,
         session,
@@ -1244,11 +1305,7 @@ async fn run_interactive_step_inner(
         &config.api_base_url,
     )?;
 
-    let loop_config = agent::loop_v2::AgentLoopV2Config {
-        debug,
-        verbose,
-        ..Default::default()
-    };
+    let loop_config = build_agent_loop_config(&task_def, session, debug, verbose).await;
     let mut agent_loop = agent::loop_v2::AgentLoopV2::new(
         llm_client,
         session,

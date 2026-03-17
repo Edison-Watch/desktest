@@ -4,6 +4,7 @@
 Columns: tag, name, text, class, description, position, size
 """
 
+import argparse
 import sys
 
 try:
@@ -103,9 +104,14 @@ def escape_tsv(value):
     return value.replace("\t", " ").replace("\n", "\\n").replace("\r", "")
 
 
-def walk_tree(accessible, rows, depth=0, max_depth=30):
-    """Recursively walk the accessibility tree and collect rows."""
+def walk_tree(accessible, rows, depth=0, max_depth=30, max_nodes=0):
+    """Recursively walk the accessibility tree and collect rows.
+
+    If max_nodes > 0, stop collecting once len(rows) >= max_nodes.
+    """
     if depth > max_depth:
+        return
+    if max_nodes > 0 and len(rows) >= max_nodes:
         return
 
     try:
@@ -128,17 +134,36 @@ def walk_tree(accessible, rows, depth=0, max_depth=30):
         rows.append(row)
 
         for i in range(accessible.childCount):
+            if max_nodes > 0 and len(rows) >= max_nodes:
+                return
             try:
                 child = accessible.getChildAtIndex(i)
                 if child is not None:
-                    walk_tree(child, rows, depth + 1, max_depth)
+                    walk_tree(child, rows, depth + 1, max_depth, max_nodes)
             except Exception:
                 continue
     except Exception:
         return
 
 
+def nonnegative_int(value):
+    """Argparse type validator: accepts integers >= 0."""
+    ivalue = int(value)
+    if ivalue < 0:
+        raise argparse.ArgumentTypeError(f"--max-nodes must be >= 0, got {value}")
+    return ivalue
+
+
 def main():
+    parser = argparse.ArgumentParser(description="Extract accessibility tree via AT-SPI")
+    parser.add_argument(
+        "--max-nodes",
+        type=nonnegative_int,
+        default=0,
+        help="Maximum number of nodes to extract (0 = unlimited, default: 0)",
+    )
+    args = parser.parse_args()
+
     # Print header
     print("tag\tname\ttext\tclass\tdescription\tposition\tsize")
 
@@ -146,10 +171,12 @@ def main():
     rows = []
 
     for i in range(desktop.childCount):
+        if args.max_nodes > 0 and len(rows) >= args.max_nodes:
+            break
         try:
             app = desktop.getChildAtIndex(i)
             if app is not None:
-                walk_tree(app, rows)
+                walk_tree(app, rows, max_nodes=args.max_nodes)
         except Exception:
             continue
 
