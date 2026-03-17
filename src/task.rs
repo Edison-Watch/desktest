@@ -114,6 +114,10 @@ pub struct EvaluatorConfig {
     /// How to combine multiple metrics: "and" (all must pass) or "or" (any must pass).
     #[serde(default = "default_conjunction")]
     pub conjunction: Conjunction,
+
+    /// Per-execution timeout in seconds for evaluator commands (default: 120).
+    #[serde(default)]
+    pub eval_timeout_secs: Option<u64>,
 }
 
 fn default_conjunction() -> Conjunction {
