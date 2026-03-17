@@ -32,7 +32,8 @@ pub fn generate_review_html(
     let has_recording = artifacts_dir.join("recording.mp4").exists();
 
     let trajectory_path_json = serde_json::to_string(&trajectory_path.to_string_lossy().as_ref())
-        .unwrap_or_else(|_| "\"trajectory.jsonl\"".to_string());
+        .unwrap_or_else(|_| "\"trajectory.jsonl\"".to_string())
+        .replace("</", "<\\/");
     let html = build_html(&steps_json, has_recording, &trajectory_path_json);
 
     std::fs::write(output_path, &html)
