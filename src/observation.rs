@@ -278,10 +278,11 @@ pub(crate) fn trim_a11y_tree(text: &str, max_tokens: usize) -> String {
 pub async fn probe_a11y_timing(
     session: &DockerSession,
     max_a11y_nodes: usize,
+    max_tokens: usize,
 ) -> Result<Duration, AppError> {
     let start = std::time::Instant::now();
     let probe_timeout = Duration::from_secs(60);
-    let _ = extract_a11y_tree(session, 10_000, probe_timeout, max_a11y_nodes).await?;
+    let _ = extract_a11y_tree(session, max_tokens, probe_timeout, max_a11y_nodes).await?;
     Ok(start.elapsed())
 }
 

@@ -275,6 +275,18 @@ impl TaskDefinition {
             return Err(AppError::Config("Task 'max_steps' must be > 0.".into()));
         }
 
+        if let Some(0) = self.a11y_timeout_secs {
+            return Err(AppError::Config(
+                "Task 'a11y_timeout_secs' must be > 0 if specified.".into(),
+            ));
+        }
+
+        if let Some(0) = self.max_a11y_nodes {
+            return Err(AppError::Config(
+                "Task 'max_a11y_nodes' must be > 0 if specified.".into(),
+            ));
+        }
+
         // Validate setup steps
         for (i, step) in self.config.iter().enumerate() {
             match step {
@@ -884,6 +896,50 @@ mod tests {
 
         let err = TaskDefinition::parse_and_validate(json).unwrap_err();
         assert!(err.to_string().contains("max_steps"));
+    }
+
+    #[test]
+    fn test_reject_zero_a11y_timeout_secs() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "test",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "a11y_timeout_secs": 0
+        }"#;
+
+        let err = TaskDefinition::parse_and_validate(json).unwrap_err();
+        assert!(err.to_string().contains("a11y_timeout_secs"));
+    }
+
+    #[test]
+    fn test_reject_zero_max_a11y_nodes() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "test",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "max_a11y_nodes": 0
+        }"#;
+
+        let err = TaskDefinition::parse_and_validate(json).unwrap_err();
+        assert!(err.to_string().contains("max_a11y_nodes"));
+    }
+
+    #[test]
+    fn test_valid_a11y_overrides() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "test",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "a11y_timeout_secs": 30,
+            "max_a11y_nodes": 5000
+        }"#;
+
+        let task = TaskDefinition::parse_and_validate(json).unwrap();
+        assert_eq!(task.a11y_timeout_secs, Some(30));
+        assert_eq!(task.max_a11y_nodes, Some(5000));
     }
 
     #[test]
