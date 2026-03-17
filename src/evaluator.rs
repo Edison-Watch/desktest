@@ -449,7 +449,14 @@ async fn evaluate_script_replay(
     if let Some(dir) = screenshots_dir {
         let dir_path = std::path::Path::new(dir);
         if dir_path.exists() {
-            session.copy_into(dir_path, "/home/tester/").await?;
+            tokio::time::timeout(eval_timeout, session.copy_into(dir_path, "/home/tester/"))
+                .await
+                .map_err(|_| {
+                    AppError::Agent(format!(
+                        "Evaluation copy_into timed out after {}s: screenshots dir",
+                        eval_timeout.as_secs()
+                    ))
+                })??;
             info!("Copied screenshots from {} into container", dir);
         } else {
             warn!("Screenshots directory not found: {dir}");
@@ -457,7 +464,14 @@ async fn evaluate_script_replay(
     }
 
     // Copy script into container
-    session.copy_into(host_path, "/home/tester/").await?;
+    tokio::time::timeout(eval_timeout, session.copy_into(host_path, "/home/tester/"))
+        .await
+        .map_err(|_| {
+            AppError::Agent(format!(
+                "Evaluation copy_into timed out after {}s: {script_path}",
+                eval_timeout.as_secs()
+            ))
+        })??;
 
     let script_name = host_path
         .file_name()
