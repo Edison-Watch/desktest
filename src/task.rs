@@ -37,6 +37,14 @@ pub struct TaskDefinition {
     #[serde(default = "default_max_steps")]
     pub max_steps: u32,
 
+    /// Optional explicit a11y extraction timeout in seconds. Skips probe if set.
+    #[serde(default)]
+    pub a11y_timeout_secs: Option<u64>,
+
+    /// Optional max a11y tree nodes to extract (default: 10000).
+    #[serde(default)]
+    pub max_a11y_nodes: Option<usize>,
+
     /// Optional metadata (tags, author, etc.).
     #[serde(default)]
     pub metadata: serde_json::Value,

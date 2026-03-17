@@ -48,6 +48,10 @@ pub struct ObservationConfig {
     pub max_a11y_tokens: usize,
     /// Seconds to pause after an action before capturing observation. Default: 2.0.
     pub sleep_after_action: f64,
+    /// Timeout for a11y tree extraction. Default: 15s.
+    pub a11y_timeout: Duration,
+    /// Maximum number of a11y tree nodes to extract (0 = unlimited). Default: 10_000.
+    pub max_a11y_nodes: usize,
 }
 
 impl Default for ObservationConfig {
@@ -56,6 +60,8 @@ impl Default for ObservationConfig {
             observation_type: ObservationType::default(),
             max_a11y_tokens: 10_000,
             sleep_after_action: 2.0,
+            a11y_timeout: Duration::from_secs(15),
+            max_a11y_nodes: 10_000,
         }
     }
 }
@@ -94,7 +100,7 @@ pub async fn capture_observation(
             })
         }
         ObservationType::A11yTree => {
-            let a11y_text = extract_a11y_tree(session, config.max_a11y_tokens).await;
+            let a11y_text = extract_a11y_tree(session, config.max_a11y_tokens, config.a11y_timeout, config.max_a11y_nodes).await;
             match a11y_text {
                 Ok(text) => Ok(Observation {
                     screenshot_path: None,
@@ -114,7 +120,7 @@ pub async fn capture_observation(
             // Capture screenshot and a11y tree in parallel
             let (screenshot_result, a11y_result) = tokio::join!(
                 capture_screenshot_with_retry(session, artifacts_dir, step_index),
-                extract_a11y_tree(session, config.max_a11y_tokens),
+                extract_a11y_tree(session, config.max_a11y_tokens, config.a11y_timeout, config.max_a11y_nodes),
             );
 
             let (path, data_url) = screenshot_result?;
@@ -200,13 +206,22 @@ async fn capture_screenshot_once(
 async fn extract_a11y_tree(
     session: &DockerSession,
     max_tokens: usize,
+    a11y_timeout: Duration,
+    max_a11y_nodes: usize,
 ) -> Result<String, AppError> {
+    let mut cmd: Vec<&str> = vec!["/usr/local/bin/get-a11y-tree"];
+    let max_nodes_str = max_a11y_nodes.to_string();
+    if max_a11y_nodes > 0 {
+        cmd.push("--max-nodes");
+        cmd.push(&max_nodes_str);
+    }
+    let timeout_secs = a11y_timeout.as_secs();
     let output = tokio::time::timeout(
-        Duration::from_secs(15),
-        session.exec(&["/usr/local/bin/get-a11y-tree"]),
+        a11y_timeout,
+        session.exec(&cmd),
     )
     .await
-    .map_err(|_| AppError::Infra("A11y tree extraction timed out after 15s".into()))?
+    .map_err(|_| AppError::Infra(format!("A11y tree extraction timed out after {timeout_secs}s")))?
     .map_err(|e| AppError::Infra(format!("A11y tree extraction failed: {e}")))?;
 
     let trimmed = output.trim();
@@ -255,6 +270,21 @@ pub(crate) fn trim_a11y_tree(text: &str, max_tokens: usize) -> String {
     }
 }
 
+/// Probe the a11y tree extraction to measure how long it takes.
+///
+/// Runs one extraction with a generous 60s timeout and returns the measured
+/// wall-clock duration. This is used at startup to adaptively set the a11y
+/// timeout for the agent loop.
+pub async fn probe_a11y_timing(
+    session: &DockerSession,
+    max_a11y_nodes: usize,
+) -> Result<Duration, AppError> {
+    let start = std::time::Instant::now();
+    let probe_timeout = Duration::from_secs(60);
+    let _ = extract_a11y_tree(session, 10_000, probe_timeout, max_a11y_nodes).await?;
+    Ok(start.elapsed())
+}
+
 /// Save an a11y tree to a file in the artifacts directory.
 pub async fn save_a11y_tree(
     artifacts_dir: &Path,
@@ -283,6 +313,8 @@ mod tests {
         assert_eq!(config.observation_type, ObservationType::ScreenshotA11yTree);
         assert_eq!(config.max_a11y_tokens, 10_000);
         assert_eq!(config.sleep_after_action, 2.0);
+        assert_eq!(config.a11y_timeout, Duration::from_secs(15));
+        assert_eq!(config.max_a11y_nodes, 10_000);
     }
 
     #[test]
@@ -427,10 +459,14 @@ mod tests {
             observation_type: ObservationType::Screenshot,
             max_a11y_tokens: 5_000,
             sleep_after_action: 1.0,
+            a11y_timeout: Duration::from_secs(30),
+            max_a11y_nodes: 5_000,
         };
         assert_eq!(config.observation_type, ObservationType::Screenshot);
         assert_eq!(config.max_a11y_tokens, 5_000);
         assert_eq!(config.sleep_after_action, 1.0);
+        assert_eq!(config.a11y_timeout, Duration::from_secs(30));
+        assert_eq!(config.max_a11y_nodes, 5_000);
     }
 
     #[test]
