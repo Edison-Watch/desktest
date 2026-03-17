@@ -58,9 +58,3 @@ Wrap `exec_with_exit_code` calls with `tokio::time::timeout`, or add a timeout p
 ## Context
 
 Identified during PR #5 review (sentry). Pre-existing pattern across all evaluator metrics.
-
----
-
-# ~~RESOLVED: `--with-screenshots` generates scripts referencing files that don't exist in the container~~
-
-**Resolved** — `ScriptReplay` now accepts an optional `screenshots_dir` field. When provided, `evaluate_script_replay` copies that directory into the container before running the script. Users set `"screenshots_dir": "./test-results/"` in their task JSON to include expected screenshots.
