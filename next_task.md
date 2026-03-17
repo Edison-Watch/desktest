@@ -38,3 +38,23 @@ Apply the same pattern in both `run_task_inner` and `run_interactive_step_inner`
 ## Context
 
 Identified during PR #3 review (devin-ai-integration). This is a pre-existing issue but was made more impactful by moving recording start to after app launch.
+
+---
+
+# Next Task: Add per-execution timeout to `evaluate_script_replay`
+
+## Problem
+
+**File:** `src/evaluator.rs` (line ~408-414)
+
+The `evaluate_script_replay` function executes user scripts via `exec_with_exit_code` without a timeout. If the script hangs (infinite loop, waiting for an unmet condition), the process blocks indefinitely. This applies to all evaluator metrics (`command_output`, `exit_code`, etc.) — none have per-exec timeouts.
+
+The task-level `timeout` field provides a coarse safety net by killing the container, but individual evaluation steps should also be time-bounded.
+
+## Fix
+
+Wrap `exec_with_exit_code` calls with `tokio::time::timeout`, or add a timeout parameter to the exec methods in `DockerSession`.
+
+## Context
+
+Identified during PR #5 review (sentry). Pre-existing pattern across all evaluator metrics.

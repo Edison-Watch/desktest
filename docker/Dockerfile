@@ -45,7 +45,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install PyAutoGUI via pip (not available as a Debian package)
-RUN pip3 install --no-cache-dir --break-system-packages pyautogui
+RUN pip3 install --no-cache-dir --break-system-packages pyautogui Pillow
 
 # Create a non-root user for the desktop session
 RUN useradd -m -s /bin/bash tester
@@ -53,7 +53,8 @@ RUN useradd -m -s /bin/bash tester
 # Install helper scripts
 COPY get-a11y-tree.py /usr/local/bin/get-a11y-tree
 COPY execute-action.py /usr/local/bin/execute-action
-RUN chmod +x /usr/local/bin/get-a11y-tree /usr/local/bin/execute-action
+COPY screenshot_compare.py /usr/local/bin/screenshot-compare
+RUN chmod +x /usr/local/bin/get-a11y-tree /usr/local/bin/execute-action /usr/local/bin/screenshot-compare
 
 # Startup script
 COPY entrypoint.sh /entrypoint.sh

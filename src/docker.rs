@@ -17,7 +17,8 @@ use tracing::{debug, info};
 use crate::config::Config;
 use crate::error::AppError;
 
-pub const IMAGE_NAME: &str = "llm-desktop-tester:latest";
+pub const IMAGE_NAME: &str = "eyetest-desktop:latest";
+pub const IMAGE_NAME_ELECTRON: &str = "eyetest-desktop:electron";
 
 pub struct DockerSession {
     client: Docker,
@@ -63,6 +64,46 @@ impl DockerSession {
         }
 
         info!("Docker image {IMAGE_NAME} built successfully");
+        Ok(())
+    }
+
+    /// Build the Electron Docker image from docker/Dockerfile.electron if it doesn't already exist.
+    pub async fn ensure_electron_image(client: &Docker, force_rebuild: bool) -> Result<(), AppError> {
+        if !force_rebuild {
+            if client.inspect_image(IMAGE_NAME_ELECTRON).await.is_ok() {
+                debug!("Image {IMAGE_NAME_ELECTRON} already exists, skipping build");
+                return Ok(());
+            }
+        }
+
+        // Ensure base image exists first
+        Self::ensure_image(client, false).await?;
+
+        info!("Building Docker image {IMAGE_NAME_ELECTRON}...");
+
+        let docker_dir = Self::find_docker_context()?;
+        let tar_bytes = Self::create_tar_context(&docker_dir)?;
+
+        let options = BuildImageOptions {
+            t: IMAGE_NAME_ELECTRON.to_string(),
+            dockerfile: "Dockerfile.electron".to_string(),
+            rm: true,
+            ..Default::default()
+        };
+
+        let mut stream = client.build_image(options, None, Some(tar_bytes.into()));
+
+        while let Some(result) = stream.next().await {
+            let info = result.map_err(AppError::Docker)?;
+            if let Some(stream_text) = &info.stream {
+                debug!("{}", stream_text.trim_end());
+            }
+            if let Some(err) = &info.error {
+                return Err(AppError::Infra(format!("Docker build error: {err}")));
+            }
+        }
+
+        info!("Docker image {IMAGE_NAME_ELECTRON} built successfully");
         Ok(())
     }
 
@@ -114,7 +155,7 @@ impl DockerSession {
     /// Create and start a container from the test image.
     ///
     /// When `custom_image` is `Some`, use that pre-built image instead of the
-    /// built-in `llm-desktop-tester` base image. The custom image is NOT built —
+    /// built-in `eyetest-desktop` base image. The custom image is NOT built —
     /// it must already exist locally or be pullable by Docker.
     pub async fn create(config: &Config, custom_image: Option<&str>) -> Result<Self, AppError> {
         let client =
@@ -612,14 +653,23 @@ impl DockerSession {
     /// Launch the app inside the container (non-blocking).
     /// App stdout/stderr is captured to /tmp/app.log for debugging.
     /// AppImages are launched with --appimage-extract-and-run to avoid FUSE issues in containers.
-    /// All apps get --no-sandbox since Chromium's sandbox doesn't work in containers.
-    pub async fn launch_app(&self, app_path: &str, is_appimage: bool) -> Result<(), AppError> {
+    /// AppImages and Electron apps get --no-sandbox (Chromium's sandbox doesn't work in containers).
+    /// Electron apps additionally get --disable-gpu and --force-renderer-accessibility.
+    /// For folder deploys, these flags are passed as positional args — scripts that forward
+    /// "$@" to the binary will receive them; others can safely ignore them.
+    pub async fn launch_app(&self, app_path: &str, is_appimage: bool, is_electron: bool) -> Result<(), AppError> {
         let mut args: Vec<&str> = vec![app_path];
         if is_appimage {
             args.push("--appimage-extract-and-run");
         }
-        // Chromium/Electron sandbox doesn't work in containers
-        args.push("--no-sandbox");
+        // Chromium/CEF sandbox doesn't work in containers
+        if is_appimage || is_electron {
+            args.push("--no-sandbox");
+        }
+        if is_electron {
+            args.push("--disable-gpu");
+            args.push("--force-renderer-accessibility");
+        }
 
         self.exec_detached_with_log(&args, "/tmp/app.log").await?;
         info!("Launched app: {app_path}");
@@ -673,6 +723,7 @@ mod tests {
             app_dir: None,
             entrypoint: None,
             startup_timeout_seconds: 30,
+            electron: false,
         }
     }
 
@@ -778,6 +829,6 @@ mod tests {
 
     #[test]
     fn test_image_name_constant() {
-        assert_eq!(IMAGE_NAME, "llm-desktop-tester:latest");
+        assert_eq!(IMAGE_NAME, "eyetest-desktop:latest");
     }
 }

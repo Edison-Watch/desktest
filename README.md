@@ -1,8 +1,8 @@
-# Tent - Desktop App Test Runner
+# Eyetest - Desktop App Test Runner
 
-Tent is a CLI tool for automated end-to-end testing of Linux desktop applications using LLM-powered agents. It spins up a disposable Docker container with a virtual desktop, deploys your app, and runs an agent that interacts with it like a real user — clicking, typing, and reading the screen. Deterministic programmatic checks then validate correctness.
+Eyetest is a CLI tool for automated end-to-end testing of Linux desktop applications using LLM-powered agents. It spins up a disposable Docker container with a virtual desktop, deploys your app, and runs an agent that interacts with it like a real user — clicking, typing, and reading the screen. Deterministic programmatic checks then validate correctness.
 
-> **Warning:** Tent is beta software under active development. APIs, task schema, and CLI flags may change between releases.
+> **Warning:** Eyetest is beta software under active development. APIs, task schema, and CLI flags may change between releases.
 
 ## Features
 
@@ -16,6 +16,16 @@ Tent is a CLI tool for automated end-to-end testing of Linux desktop application
 - **Custom Docker images**: bring your own image for apps with complex dependencies
 - **Interactive mode**: step through agent actions one at a time for debugging
 
+## Developer Workflow
+
+```
+1. EXPLORE   →  eyetest run task.json         # LLM agent explores your app
+2. REVIEW    →  eyetest review test-results/   # Inspect trajectory in web viewer
+3. CODIFY    →  eyetest codify trajectory.jsonl # Convert to deterministic script
+4. REPLAY    →  eyetest run replay-task.json   # Run codified test (no LLM)
+5. CI        →  Run codified tests on every commit
+```
+
 ## Architecture
 
 ```
@@ -23,7 +33,7 @@ Developer writes task.json
         │
         ▼
    ┌─────────┐
-   │ tent CLI │  validate / run / suite / interactive
+   │ eyetest CLI │  validate / run / suite / interactive
    └────┬─────┘
         │
         ▼
@@ -84,13 +94,15 @@ cargo run -- interactive elcalc-test.json --step
 ## CLI
 
 ```
-tent [OPTIONS] <COMMAND>
+eyetest [OPTIONS] <COMMAND>
 
 Commands:
   run           Run a single test from a task JSON file
   suite         Run all *.json task files in a directory
   interactive   Start container and pause for debugging
   validate      Check task JSON against schema without running
+  codify        Convert trajectory to deterministic Python replay script
+  review        Generate web-based trajectory review viewer
 
 Options:
   --config <FILE>    Config JSON file (optional; API key can come from env vars)
@@ -131,6 +143,8 @@ See `examples/` for more examples including folder deploys and custom Docker ima
 | `folder` | Deploy a directory with an entrypoint script |
 | `docker_image` | Use a pre-built custom Docker image |
 
+> **Electron apps**: Add `"electron": true` to your app config to use the `eyetest-desktop:electron` image with Node.js pre-installed. See [examples/ELECTRON_QUICKSTART.md](examples/ELECTRON_QUICKSTART.md).
+
 ### Evaluation Metrics
 
 | Metric | Description |
@@ -140,6 +154,7 @@ See `examples/` for more examples including folder deploys and custom Docker ima
 | `command_output` | Run a command, check stdout (contains, equals, regex) |
 | `file_exists` | Check if a file exists (or doesn't) in the container |
 | `exit_code` | Run a command, check its exit code |
+| `script_replay` | Run a Python replay script, check for REPLAY_COMPLETE + exit 0 |
 
 ## Artifacts
 

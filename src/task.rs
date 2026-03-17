@@ -57,11 +57,15 @@ pub enum AppConfig {
     /// Deploy an AppImage file into the container.
     Appimage {
         path: String,
+        #[serde(default)]
+        electron: bool,
     },
     /// Deploy a folder-based app into the container.
     Folder {
         dir: String,
         entrypoint: String,
+        #[serde(default)]
+        electron: bool,
     },
     /// Use a pre-built custom Docker image.
     DockerImage {
@@ -112,7 +116,7 @@ fn default_conjunction() -> Conjunction {
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EvaluatorMode {
-    /// Only agent verdict (existing tent-agent behavior).
+    /// Only agent verdict (existing eyetest behavior).
     Llm,
     /// Setup steps only + programmatic metrics (no agent loop).
     Programmatic,
@@ -175,6 +179,14 @@ pub enum MetricConfig {
         command: String,
         /// Expected exit code.
         expected: i32,
+    },
+    /// Run a Python replay script inside the container.
+    ScriptReplay {
+        /// Path to the Python script on the host.
+        script_path: String,
+        /// Optional directory containing expected screenshots (copied into container).
+        #[serde(default)]
+        screenshots_dir: Option<String>,
     },
 }
 
@@ -367,6 +379,13 @@ impl TaskDefinition {
                         if command.is_empty() {
                             return Err(AppError::Config(format!(
                                 "Metric {i} (exit_code): 'command' must not be empty."
+                            )));
+                        }
+                    }
+                    MetricConfig::ScriptReplay { script_path, .. } => {
+                        if script_path.is_empty() {
+                            return Err(AppError::Config(format!(
+                                "Metric {i} (script_replay): 'script_path' must not be empty."
                             )));
                         }
                     }
@@ -774,6 +793,53 @@ mod tests {
                 }
                 _ => panic!("Expected CommandOutput"),
             }
+        }
+    }
+
+    #[test]
+    fn test_parse_electron_folder_app() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "electron-test",
+            "instruction": "Open the Electron app",
+            "app": {
+                "type": "folder",
+                "dir": "/apps/myelectronapp",
+                "entrypoint": "myelectronapp",
+                "electron": true
+            }
+        }"#;
+
+        let task = TaskDefinition::parse_and_validate(json).unwrap();
+        match &task.app {
+            AppConfig::Folder { dir, entrypoint, electron } => {
+                assert_eq!(dir, "/apps/myelectronapp");
+                assert_eq!(entrypoint, "myelectronapp");
+                assert!(electron);
+            }
+            _ => panic!("Expected Folder app config"),
+        }
+    }
+
+    #[test]
+    fn test_parse_folder_app_electron_defaults_false() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "folder-test",
+            "instruction": "Open the app",
+            "app": {
+                "type": "folder",
+                "dir": "/apps/myapp",
+                "entrypoint": "myapp"
+            }
+        }"#;
+
+        let task = TaskDefinition::parse_and_validate(json).unwrap();
+        match &task.app {
+            AppConfig::Folder { electron, .. } => {
+                assert!(!electron);
+            }
+            _ => panic!("Expected Folder app config"),
         }
     }
 

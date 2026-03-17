@@ -124,6 +124,9 @@ async fn evaluate_metric(
         MetricConfig::ExitCode { command, expected } => {
             evaluate_exit_code(session, command, *expected).await
         }
+        MetricConfig::ScriptReplay { script_path, screenshots_dir } => {
+            evaluate_script_replay(session, script_path, screenshots_dir.as_deref()).await
+        }
     }
 }
 
@@ -135,6 +138,7 @@ fn metric_type_name(metric: &MetricConfig) -> &'static str {
         MetricConfig::CommandOutput { .. } => "command_output",
         MetricConfig::FileExists { .. } => "file_exists",
         MetricConfig::ExitCode { .. } => "exit_code",
+        MetricConfig::ScriptReplay { .. } => "script_replay",
     }
 }
 
@@ -377,6 +381,68 @@ async fn evaluate_exit_code(
         metric: "exit_code".to_string(),
         expected: expected.to_string(),
         actual: actual_code.to_string(),
+        detail,
+    })
+}
+
+/// script_replay: Copy a Python script into the container, run it, check for REPLAY_COMPLETE.
+/// If `screenshots_dir` is provided, copies that directory into the container so that
+/// screenshot comparison assertions can find their expected files.
+async fn evaluate_script_replay(
+    session: &DockerSession,
+    script_path: &str,
+    screenshots_dir: Option<&str>,
+) -> Result<MetricResult, AppError> {
+    let host_path = std::path::Path::new(script_path);
+    if !host_path.exists() {
+        return Err(AppError::Config(format!(
+            "Replay script not found: {script_path}"
+        )));
+    }
+
+    // Copy expected screenshots into container (for --with-screenshots scripts)
+    if let Some(dir) = screenshots_dir {
+        let dir_path = std::path::Path::new(dir);
+        if dir_path.exists() {
+            session.copy_into(dir_path, "/home/tester/").await?;
+            info!("Copied screenshots from {} into container", dir);
+        } else {
+            warn!("Screenshots directory not found: {dir}");
+        }
+    }
+
+    // Copy script into container
+    session.copy_into(host_path, "/home/tester/").await?;
+
+    let script_name = host_path
+        .file_name()
+        .ok_or_else(|| AppError::Infra("No filename in script_path".into()))?
+        .to_string_lossy();
+
+    let container_script = format!("/home/tester/{script_name}");
+
+    // Make executable and run
+    session.exec(&["chmod", "+x", &container_script]).await?;
+    let (output, exit_code) = session
+        .exec_with_exit_code(&["python3", &container_script])
+        .await?;
+
+    let has_complete = output.contains("REPLAY_COMPLETE");
+    let passed = exit_code == 0 && has_complete;
+
+    let detail = if passed {
+        "Replay script completed successfully".to_string()
+    } else if exit_code != 0 {
+        format!("Replay script exited with code {exit_code}")
+    } else {
+        "Replay script did not output REPLAY_COMPLETE".to_string()
+    };
+
+    Ok(MetricResult {
+        passed,
+        metric: "script_replay".to_string(),
+        expected: "exit_code=0, REPLAY_COMPLETE in output".to_string(),
+        actual: format!("exit_code={exit_code}, complete={has_complete}"),
         detail,
     })
 }
@@ -887,6 +953,13 @@ mod tests {
                 expected: 0,
             }),
             "exit_code"
+        );
+        assert_eq!(
+            metric_type_name(&MetricConfig::ScriptReplay {
+                script_path: String::new(),
+                screenshots_dir: None,
+            }),
+            "script_replay"
         );
     }
 

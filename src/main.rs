@@ -1,5 +1,6 @@
 mod agent;
 mod artifacts;
+mod codify;
 mod config;
 mod docker;
 mod error;
@@ -10,6 +11,7 @@ mod provider;
 mod readiness;
 mod recording;
 mod results;
+mod review;
 mod screenshot;
 mod setup;
 mod suite;
@@ -25,20 +27,20 @@ use tracing::info;
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "tent",
+    name = "eyetest",
     about = "LLM-powered desktop app tester",
     after_help = "\
 EXAMPLES:
   Legacy mode (backward compatible):
-    tent config.json instructions.md
-    tent --interactive config.json instructions.md
+    eyetest config.json instructions.md
+    eyetest --interactive config.json instructions.md
 
   Subcommand mode:
-    tent run task.json
-    tent run task.json --config config.json --output ./results
-    tent suite ./tests --filter gedit
-    tent interactive task.json
-    tent validate task.json"
+    eyetest run task.json
+    eyetest run task.json --config config.json --output ./results
+    eyetest suite ./tests --filter gedit
+    eyetest interactive task.json
+    eyetest validate task.json"
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -80,8 +82,8 @@ pub enum Command {
     /// Validate a task JSON file against the schema without running anything
     #[command(after_help = "\
 EXAMPLES:
-  tent validate task.json
-  tent validate tests/gedit-save.json")]
+  eyetest validate task.json
+  eyetest validate tests/gedit-save.json")]
     Validate {
         /// Path to the task JSON file to validate
         task: std::path::PathBuf,
@@ -90,10 +92,10 @@ EXAMPLES:
     /// Run a single test from a task JSON file
     #[command(after_help = "\
 EXAMPLES:
-  tent run task.json
-  tent run task.json --config config.json
-  tent run task.json --output ./my-results --verbose
-  tent run task.json --no-recording --debug")]
+  eyetest run task.json
+  eyetest run task.json --config config.json
+  eyetest run task.json --output ./my-results --verbose
+  eyetest run task.json --no-recording --debug")]
     Run {
         /// Path to the task JSON file
         task: std::path::PathBuf,
@@ -102,9 +104,9 @@ EXAMPLES:
     /// Run a suite of tests from a directory of task JSON files
     #[command(after_help = "\
 EXAMPLES:
-  tent suite ./tests
-  tent suite ./tests --filter gedit
-  tent suite ./tests --config config.json --output ./results")]
+  eyetest suite ./tests
+  eyetest suite ./tests --filter gedit
+  eyetest suite ./tests --config config.json --output ./results")]
     Suite {
         /// Path to the directory containing task JSON files
         dir: std::path::PathBuf,
@@ -117,10 +119,10 @@ EXAMPLES:
     /// Start a container with a task for interactive development and debugging
     #[command(after_help = "\
 EXAMPLES:
-  tent interactive task.json                   # Start container, run setup, pause
-  tent interactive task.json --step            # Run agent one step at a time
-  tent interactive task.json --validate-only   # Skip agent, run evaluation only
-  tent interactive task.json --config c.json   # Use custom config")]
+  eyetest interactive task.json                   # Start container, run setup, pause
+  eyetest interactive task.json --step            # Run agent one step at a time
+  eyetest interactive task.json --validate-only   # Skip agent, run evaluation only
+  eyetest interactive task.json --config c.json   # Use custom config")]
     Interactive {
         /// Path to the task JSON file
         task: std::path::PathBuf,
@@ -132,6 +134,57 @@ EXAMPLES:
         /// Skip agent loop, run programmatic evaluation only
         #[arg(long, default_value_t = false)]
         validate_only: bool,
+    },
+
+    /// Convert a trajectory into a deterministic Python replay script
+    #[command(after_help = "\
+EXAMPLES:
+  eyetest codify test-results/trajectory.jsonl
+  eyetest codify test-results/trajectory.jsonl --output replay.py
+  eyetest codify test-results/trajectory.jsonl --steps 1,2,5,6
+  eyetest codify test-results/trajectory.jsonl --with-screenshots --threshold 0.95")]
+    Codify {
+        /// Path to trajectory.jsonl file
+        trajectory: std::path::PathBuf,
+
+        /// Output Python script path (default: replay.py)
+        #[arg(long, default_value = "replay.py")]
+        output: std::path::PathBuf,
+
+        /// Only include these step numbers (comma-separated, 1-indexed)
+        #[arg(long)]
+        steps: Option<String>,
+
+        /// Add screenshot comparison assertions
+        #[arg(long, default_value_t = false)]
+        with_screenshots: bool,
+
+        /// Pixel similarity threshold for screenshot comparison (MAE-based, 0.0-1.0)
+        #[arg(long, default_value_t = 0.95)]
+        threshold: f64,
+
+        /// Delay in seconds between replay steps
+        #[arg(long, default_value_t = 0.5)]
+        delay: f64,
+    },
+
+    /// Generate a web-based trajectory review viewer
+    #[command(after_help = "\
+EXAMPLES:
+  eyetest review test-results/
+  eyetest review test-results/ --output review.html
+  eyetest review test-results/ --open")]
+    Review {
+        /// Path to artifacts directory containing trajectory.jsonl
+        artifacts_dir: std::path::PathBuf,
+
+        /// Output HTML file path (default: review.html)
+        #[arg(long, default_value = "review.html")]
+        output: std::path::PathBuf,
+
+        /// Open the generated HTML file in the default browser
+        #[arg(long, default_value_t = false)]
+        open: bool,
     },
 }
 
@@ -251,6 +304,85 @@ async fn main() {
                     }
                 }
             }
+            Command::Codify { trajectory, output, steps, with_screenshots, threshold, delay } => {
+                let entries = match codify::load_trajectory(trajectory) {
+                    Ok(e) => e,
+                    Err(e) => {
+                        eprintln!("Error loading trajectory: {e}");
+                        std::process::exit(e.exit_code());
+                    }
+                };
+
+                let step_filter = match steps {
+                    Some(s) => match codify::parse_steps(s) {
+                        Ok(v) => Some(v),
+                        Err(e) => {
+                            eprintln!("Error parsing steps: {e}");
+                            std::process::exit(2);
+                        }
+                    },
+                    None => None,
+                };
+
+                // Derive screenshots dir name from trajectory's parent directory
+                let screenshots_dir_name = if *with_screenshots {
+                    let parent = trajectory.parent().unwrap_or(std::path::Path::new("."));
+                    let resolved = if parent.as_os_str().is_empty() {
+                        std::env::current_dir().ok()
+                    } else {
+                        std::fs::canonicalize(parent).ok()
+                    };
+                    let name = resolved
+                        .as_deref()
+                        .and_then(|p| p.file_name())
+                        .map(|n| n.to_string_lossy().to_string());
+                    if name.is_none() {
+                        eprintln!("Warning: could not derive screenshots directory name from trajectory path; assertions will reference /home/tester/<filename> directly");
+                    }
+                    name
+                } else {
+                    None
+                };
+
+                let (script, included_count) = codify::generate_replay_script(
+                    &entries,
+                    step_filter.as_deref(),
+                    *delay,
+                    *with_screenshots,
+                    *threshold,
+                    screenshots_dir_name.as_deref(),
+                );
+
+                match std::fs::write(output, &script) {
+                    Ok(()) => {
+                        println!("Replay script written to {}", output.display());
+                        println!("  {} steps included (of {} total)", included_count, entries.len());
+                        std::process::exit(0);
+                    }
+                    Err(e) => {
+                        eprintln!("Error writing script: {e}");
+                        std::process::exit(3);
+                    }
+                }
+            }
+            Command::Review { artifacts_dir, output, open } => {
+                match review::generate_review_html(artifacts_dir, output) {
+                    Ok(()) => {
+                        println!("Review HTML written to {}", output.display());
+                        if *open {
+                            #[cfg(target_os = "macos")]
+                            let _ = std::process::Command::new("open").arg(output).spawn();
+                            #[cfg(target_os = "linux")]
+                            let _ = std::process::Command::new("xdg-open").arg(output).spawn();
+                        }
+                        std::process::exit(0);
+                    }
+                    Err(e) => {
+                        eprintln!("Error generating review: {e}");
+                        std::process::exit(e.exit_code());
+                    }
+                }
+            }
         }
     }
 
@@ -289,16 +421,32 @@ fn load_config_or_defaults(config_flag: &Option<std::path::PathBuf>) -> Config {
     }
 }
 
+/// Resolve the Docker image to use, building the electron image if needed.
+/// Returns the electron image name when `config.electron` is true and no custom image is set.
+async fn resolve_image_name<'a>(
+    config: &Config,
+    custom_image: Option<&'a str>,
+) -> Result<Option<&'a str>, AppError> {
+    if config.electron && custom_image.is_none() {
+        let client = bollard::Docker::connect_with_local_defaults()
+            .map_err(|e| AppError::Infra(format!("Cannot connect to Docker: {e}")))?;
+        docker::DockerSession::ensure_electron_image(&client, false).await?;
+        // Safety: IMAGE_NAME_ELECTRON is a &'static str, coerce to 'a
+        return Ok(Some(docker::IMAGE_NAME_ELECTRON));
+    }
+    Ok(custom_image)
+}
+
 async fn run_legacy(cli: Cli) -> Result<AgentOutcome, AppError> {
     // 1. Validate config
     let config_path = cli.config_pos.ok_or_else(|| {
-        AppError::Config("Missing config file argument. Usage: tent <config.json> <instructions.md>\n\nOr use subcommands: tent run <task.json>, tent suite <dir>, tent interactive <task.json>, tent validate <task.json>".into())
+        AppError::Config("Missing config file argument. Usage: eyetest <config.json> <instructions.md>\n\nOr use subcommands: eyetest run <task.json>, eyetest suite <dir>, eyetest interactive <task.json>, eyetest validate <task.json>".into())
     })?;
     let config = Config::load_and_validate(&config_path)?;
 
     // 2. Read instructions
     let instructions_path = cli.instructions.ok_or_else(|| {
-        AppError::Config("Missing instructions file argument. Usage: tent <config.json> <instructions.md>".into())
+        AppError::Config("Missing instructions file argument. Usage: eyetest <config.json> <instructions.md>".into())
     })?;
     let instructions = std::fs::read_to_string(&instructions_path)
         .map_err(|e| AppError::Config(format!("Cannot read instructions file: {e}")))?;
@@ -310,9 +458,19 @@ async fn run_legacy(cli: Cli) -> Result<AgentOutcome, AppError> {
     std::fs::create_dir_all(&artifacts_dir)
         .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
 
-    // 4. Create and start Docker container
+    // 4. Create and start Docker container (inside select! so Ctrl+C works during image build)
     info!("Creating Docker container...");
-    let session = docker::DockerSession::create(&config, None).await?;
+    let session = tokio::select! {
+        biased;
+        _ = tokio::signal::ctrl_c() => {
+            eprintln!("\nInterrupted (Ctrl+C) during container setup");
+            return Err(AppError::Infra("Interrupted by user".into()));
+        }
+        r = async {
+            let effective_image = resolve_image_name(&config, None).await?;
+            docker::DockerSession::create(&config, effective_image).await
+        } => r?,
+    };
 
     // Run the main logic, racing against Ctrl+C.
     // No matter how we exit (success, error, or signal), cleanup always runs.
@@ -359,7 +517,7 @@ async fn run_inner(
 
     let is_appimage = matches!(config.app_type, crate::config::AppType::Appimage);
     info!("Launching app: {app_path}");
-    session.launch_app(&app_path, is_appimage).await?;
+    session.launch_app(&app_path, is_appimage, config.electron).await?;
 
     // Give the app a moment to start (or crash)
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -388,7 +546,7 @@ async fn run_inner(
     readiness::wait_for_app_window(session, &baseline_windows, timeout, debug).await?;
 
     // 8. Print VNC info
-    if let Some(port) = session.vnc_host_port().await {
+    if let Some(port) = config.vnc_port {
         println!("VNC available at {}:{}", config.vnc_bind_addr, port);
     }
 
@@ -457,7 +615,7 @@ pub(crate) async fn run_task(
         _ => None,
     };
 
-    // Create and start Docker container (inside select! so Ctrl+C works during image pull)
+    // Build electron image + create container (inside select! so Ctrl+C works)
     info!("Creating Docker container...");
     let session = tokio::select! {
         biased;
@@ -465,7 +623,10 @@ pub(crate) async fn run_task(
             eprintln!("\nInterrupted (Ctrl+C) during container setup");
             return Err(AppError::Infra("Interrupted by user".into()));
         }
-        r = docker::DockerSession::create(&config, custom_image) => r?,
+        r = async {
+            let effective_image = resolve_image_name(&config, custom_image).await?;
+            docker::DockerSession::create(&config, effective_image).await
+        } => r?,
     };
 
     // Validate custom image (after session exists so we can clean up on failure)
@@ -606,7 +767,7 @@ async fn run_task_inner(
 
         let is_appimage = matches!(config.app_type, crate::config::AppType::Appimage);
         info!("Launching app: {app_path}");
-        session.launch_app(&app_path, is_appimage).await?;
+        session.launch_app(&app_path, is_appimage, config.electron).await?;
 
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
@@ -634,7 +795,7 @@ async fn run_task_inner(
     }
 
     // 6. Print VNC info
-    if let Some(port) = session.vnc_host_port().await {
+    if let Some(port) = config.vnc_port {
         println!("VNC available at {}:{}", config.vnc_bind_addr, port);
     }
 
@@ -834,7 +995,17 @@ async fn run_interactive_pause(
     };
 
     info!("Creating Docker container...");
-    let session = docker::DockerSession::create(&config, custom_image).await?;
+    let session = tokio::select! {
+        biased;
+        _ = tokio::signal::ctrl_c() => {
+            eprintln!("\nInterrupted (Ctrl+C) during container setup");
+            return Err(AppError::Infra("Interrupted by user".into()));
+        }
+        r = async {
+            let effective_image = resolve_image_name(&config, custom_image).await?;
+            docker::DockerSession::create(&config, effective_image).await
+        } => r?,
+    };
 
     if custom_image.is_some() {
         if let Err(e) = session.validate_custom_image().await {
@@ -900,12 +1071,12 @@ async fn run_interactive_pause_inner(
         let app_path = session.deploy_app(config).await?;
         let is_appimage = matches!(config.app_type, crate::config::AppType::Appimage);
         info!("Launching app: {app_path}");
-        session.launch_app(&app_path, is_appimage).await?;
+        session.launch_app(&app_path, is_appimage, config.electron).await?;
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
 
     // 4. Print VNC info and container info
-    if let Some(port) = session.vnc_host_port().await {
+    if let Some(port) = config.vnc_port {
         println!("VNC available at {}:{}", config.vnc_bind_addr, port);
     }
 
@@ -944,7 +1115,17 @@ async fn run_interactive_step(
     };
 
     info!("Creating Docker container...");
-    let session = docker::DockerSession::create(&config, custom_image).await?;
+    let session = tokio::select! {
+        biased;
+        _ = tokio::signal::ctrl_c() => {
+            eprintln!("\nInterrupted (Ctrl+C) during container setup");
+            return Err(AppError::Infra("Interrupted by user".into()));
+        }
+        r = async {
+            let effective_image = resolve_image_name(&config, custom_image).await?;
+            docker::DockerSession::create(&config, effective_image).await
+        } => r?,
+    };
 
     if custom_image.is_some() {
         if let Err(e) = session.validate_custom_image().await {
@@ -1039,14 +1220,14 @@ async fn run_interactive_step_inner(
         let baseline_windows = readiness::get_stable_window_list(session).await?;
         let is_appimage = matches!(config.app_type, crate::config::AppType::Appimage);
         info!("Launching app: {app_path}");
-        session.launch_app(&app_path, is_appimage).await?;
+        session.launch_app(&app_path, is_appimage, config.electron).await?;
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         info!("Waiting for app window...");
         readiness::wait_for_app_window(session, &baseline_windows, timeout, debug).await?;
     }
 
     // Print VNC info
-    if let Some(port) = session.vnc_host_port().await {
+    if let Some(port) = config.vnc_port {
         println!("VNC available at {}:{}", config.vnc_bind_addr, port);
     }
 

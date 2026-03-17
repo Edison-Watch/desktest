@@ -1,7 +1,11 @@
 [package]
-name = "tent-agent"
-version = "0.1.0"
+name = "eyetest"
+version = "0.2.0"
 edition = "2024"
+
+[[bin]]
+name = "eyetest"
+path = "src/main.rs"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }

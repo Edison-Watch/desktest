@@ -1,0 +1,12 @@
+{
+  "name": "electron-todo-app",
+  "version": "1.0.0",
+  "description": "A minimal Electron todo app for eyetest testing",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron . --no-sandbox --disable-gpu --force-renderer-accessibility"
+  },
+  "dependencies": {
+    "electron": "^33.0.0"
+  }
+}
