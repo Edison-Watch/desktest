@@ -28,13 +28,30 @@ pub fn generate_review_html(
     // Load screenshots as base64
     let steps_json = build_steps_json(&entries, artifacts_dir);
 
-    // Check for recording
-    let has_recording = artifacts_dir.join("recording.mp4").exists();
+    // Embed recording as base64 if present and under 50 MB
+    let recording_b64 = {
+        let recording_path = artifacts_dir.join("recording.mp4");
+        if recording_path.exists() {
+            const MAX_EMBED_BYTES: u64 = 50 * 1024 * 1024;
+            let size = std::fs::metadata(&recording_path).map(|m| m.len()).unwrap_or(0);
+            if size <= MAX_EMBED_BYTES {
+                std::fs::read(&recording_path).ok().map(|bytes| {
+                    use base64::Engine;
+                    base64::engine::general_purpose::STANDARD.encode(&bytes)
+                })
+            } else {
+                info!("Recording too large to embed ({:.1} MB > 50 MB), skipping", size as f64 / 1_048_576.0);
+                None
+            }
+        } else {
+            None
+        }
+    };
 
     let trajectory_path_json = serde_json::to_string(&trajectory_path.to_string_lossy().as_ref())
         .unwrap_or_else(|_| "\"trajectory.jsonl\"".to_string())
         .replace("</", "<\\/");
-    let html = build_html(&steps_json, has_recording, &trajectory_path_json);
+    let html = build_html(&steps_json, &recording_b64, &trajectory_path_json);
 
     std::fs::write(output_path, &html)
         .map_err(|e| AppError::Infra(format!("Cannot write review HTML: {e}")))?;
@@ -73,7 +90,12 @@ fn build_steps_json(entries: &[TrajectoryRecord], artifacts_dir: &Path) -> Strin
 }
 
 /// Build the complete HTML document.
-fn build_html(steps_json: &str, has_recording: bool, trajectory_path_json: &str) -> String {
+fn build_html(steps_json: &str, recording_b64: &Option<String>, trajectory_path_json: &str) -> String {
+    let has_recording = recording_b64.is_some();
+    let recording_data_uri = recording_b64
+        .as_ref()
+        .map(|b64| format!("data:video/mp4;base64,{b64}"))
+        .unwrap_or_default();
     format!(r##"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -109,12 +131,18 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, s
 .codify-btn {{ display: block; width: 100%; margin-top: 12px; padding: 8px; background: #238636; color: white; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 600; }}
 .codify-btn:hover {{ background: #2ea043; }}
 .empty {{ display: flex; align-items: center; justify-content: center; height: 100%; color: #484f58; font-size: 16px; }}
-.recording-note {{ margin-bottom: 16px; padding: 12px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; color: #8b949e; font-size: 13px; }}
+.recording-item {{ padding: 12px 16px; border-bottom: 1px solid #21262d; cursor: pointer; transition: background 0.15s; font-weight: 600; font-size: 13px; color: #d2a8ff; display: flex; align-items: center; gap: 8px; }}
+.recording-item:hover {{ background: #1c2128; }}
+.recording-item.active {{ background: #1f6feb22; border-left: 3px solid #1f6feb; }}
+.recording-item svg {{ width: 16px; height: 16px; fill: currentColor; }}
+.video-container {{ max-width: 100%; }}
+.video-container video {{ width: 100%; border-radius: 8px; border: 1px solid #30363d; }}
 </style>
 </head>
 <body>
 <div class="sidebar">
   <h2>Steps</h2>
+  <div id="recording-entry"></div>
   <div id="step-list"></div>
   <div class="codify-bar">
     <div id="checkbox-list"></div>
@@ -128,11 +156,22 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, s
 <script>
 const STEPS = {steps_json};
 const HAS_RECORDING = {has_recording};
+const RECORDING_URI = "{recording_data_uri}";
 const TRAJECTORY_PATH = {trajectory_path_json};
 
 const stepList = document.getElementById('step-list');
 const checkboxList = document.getElementById('checkbox-list');
 const mainPanel = document.getElementById('main-panel');
+const recordingEntry = document.getElementById('recording-entry');
+
+if (HAS_RECORDING) {{
+  const div = document.createElement('div');
+  div.className = 'recording-item';
+  div.id = 'recording-nav';
+  div.innerHTML = '<svg viewBox="0 0 16 16"><path d="M1 4.804a1 1 0 0 1 1.53-.848l2.972 1.86A1 1 0 0 1 6 6.68v2.64a1 1 0 0 1-.498.864l-2.972 1.86A1 1 0 0 1 1 11.196V4.804zM7.5 4A1.5 1.5 0 0 1 9 5.5v5A1.5 1.5 0 0 1 7.5 12H14.5A1.5 1.5 0 0 0 16 10.5v-5A1.5 1.5 0 0 0 14.5 4H7.5z"/></svg> Recording';
+  div.addEventListener('click', () => showRecording());
+  recordingEntry.appendChild(div);
+}}
 
 function badgeClass(result) {{
   if (!result) return 'fail';
@@ -159,15 +198,21 @@ STEPS.forEach((s, i) => {{
   checkboxList.appendChild(label);
 }});
 
+function showRecording() {{
+  document.querySelectorAll('.step-item').forEach(el => el.classList.remove('active'));
+  const nav = document.getElementById('recording-nav');
+  if (nav) nav.classList.add('active');
+  mainPanel.innerHTML = `<div class="detail-header"><h2>Session Recording</h2></div><div class="video-container"><video controls autoplay muted><source src="${{RECORDING_URI}}" type="video/mp4">Your browser does not support video playback.</video></div>`;
+}}
+
 function selectStep(index) {{
   document.querySelectorAll('.step-item').forEach(el => el.classList.remove('active'));
+  const nav = document.getElementById('recording-nav');
+  if (nav) nav.classList.remove('active');
   document.querySelector(`.step-item[data-index="${{index}}"]`).classList.add('active');
 
   const s = STEPS[index];
   let html = '';
-  if (HAS_RECORDING) {{
-    html += '<div class="recording-note">A session recording (recording.mp4) is available in the artifacts directory.</div>';
-  }}
   html += `<div class="detail-header"><h2>Step ${{s.step}}</h2><span class="badge ${{badgeClass(s.result)}}">${{escapeHtml(s.result)}}</span><span style="color:#484f58;font-size:13px">${{escapeHtml(s.timestamp)}}</span></div>`;
 
   if (s.screenshot) {{
@@ -215,7 +260,7 @@ function copyCodifyCommand() {{
 if (STEPS.length > 0) selectStep(0);
 </script>
 </body>
-</html>"##, steps_json = steps_json, has_recording = if has_recording { "true" } else { "false" }, trajectory_path_json = trajectory_path_json)
+</html>"##, steps_json = steps_json, has_recording = if has_recording { "true" } else { "false" }, recording_data_uri = recording_data_uri, trajectory_path_json = trajectory_path_json)
 }
 
 #[cfg(test)]
@@ -224,7 +269,7 @@ mod tests {
 
     #[test]
     fn test_build_html_contains_structure() {
-        let html = build_html("[]", false, "\"trajectory.jsonl\"");
+        let html = build_html("[]", &None, "\"trajectory.jsonl\"");
         assert!(html.contains("<!DOCTYPE html>"));
         assert!(html.contains("eyetest"));
         assert!(html.contains("Trajectory Review"));

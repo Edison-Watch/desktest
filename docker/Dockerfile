@@ -62,5 +62,6 @@ RUN chmod +x /entrypoint.sh
 
 USER tester
 WORKDIR /home/tester
+RUN touch /home/tester/.Xauthority
 
 ENTRYPOINT ["/entrypoint.sh"]
