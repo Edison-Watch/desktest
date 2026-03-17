@@ -60,6 +60,8 @@ impl Recording {
                     &drawtext_filter,
                     "-c:v",
                     "libx264",
+                    "-pix_fmt",
+                    "yuv420p",
                     "-preset",
                     "ultrafast",
                     "-movflags",

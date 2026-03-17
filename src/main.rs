@@ -173,7 +173,7 @@ EXAMPLES:
 EXAMPLES:
   eyetest review test-results/
   eyetest review test-results/ --output review.html
-  eyetest review test-results/ --open")]
+  eyetest review test-results/ --no-open")]
     Review {
         /// Path to artifacts directory containing trajectory.jsonl
         artifacts_dir: std::path::PathBuf,
@@ -182,9 +182,9 @@ EXAMPLES:
         #[arg(long, default_value = "review.html")]
         output: std::path::PathBuf,
 
-        /// Open the generated HTML file in the default browser
+        /// Do not open the generated HTML file in the default browser
         #[arg(long, default_value_t = false)]
-        open: bool,
+        no_open: bool,
     },
 }
 
@@ -365,11 +365,11 @@ async fn main() {
                     }
                 }
             }
-            Command::Review { artifacts_dir, output, open } => {
+            Command::Review { artifacts_dir, output, no_open } => {
                 match review::generate_review_html(artifacts_dir, output) {
                     Ok(()) => {
                         println!("Review HTML written to {}", output.display());
-                        if *open {
+                        if !*no_open {
                             #[cfg(target_os = "macos")]
                             let _ = std::process::Command::new("open").arg(output).spawn();
                             #[cfg(target_os = "linux")]
@@ -629,14 +629,6 @@ pub(crate) async fn run_task(
         } => r?,
     };
 
-    // Validate custom image (after session exists so we can clean up on failure)
-    if custom_image.is_some() {
-        if let Err(e) = session.validate_custom_image().await {
-            let _ = session.cleanup().await;
-            return Err(e);
-        }
-    }
-
     let test_id = task_def.id.clone();
 
     let result = tokio::select! {
@@ -712,6 +704,12 @@ async fn run_task_inner(
     info!("Waiting for desktop to be ready...");
     readiness::wait_for_desktop(session, timeout, debug).await?;
 
+    // 1b. Validate custom image dependencies (after desktop is ready so X11-dependent imports work)
+    let is_docker_image = matches!(task_def.app, task::AppConfig::DockerImage { .. });
+    if is_docker_image {
+        session.validate_custom_image().await?;
+    }
+
     // 2. Run setup steps from task definition (after desktop readiness, before app launch)
     if !task_def.config.is_empty() {
         info!("Running {} setup steps...", task_def.config.len());
@@ -719,8 +717,6 @@ async fn run_task_inner(
     }
 
     // 3. Deploy and launch app
-    let is_docker_image = matches!(task_def.app, task::AppConfig::DockerImage { .. });
-
     if is_docker_image {
         // Custom Docker image: no deployment needed, launch via entrypoint_cmd if provided
         info!("Custom Docker image: skipping app deployment");
@@ -1007,13 +1003,6 @@ async fn run_interactive_pause(
         } => r?,
     };
 
-    if custom_image.is_some() {
-        if let Err(e) = session.validate_custom_image().await {
-            let _ = session.cleanup().await;
-            return Err(e);
-        }
-    }
-
     let result = tokio::select! {
         biased;
         _ = tokio::signal::ctrl_c() => {
@@ -1048,6 +1037,12 @@ async fn run_interactive_pause_inner(
     info!("Waiting for desktop to be ready...");
     readiness::wait_for_desktop(session, timeout, debug).await?;
 
+    // 1b. Validate custom image dependencies (after desktop is ready)
+    let is_docker_image = matches!(task_def.app, task::AppConfig::DockerImage { .. });
+    if is_docker_image {
+        session.validate_custom_image().await?;
+    }
+
     // 2. Run setup steps
     if !task_def.config.is_empty() {
         info!("Running {} setup steps...", task_def.config.len());
@@ -1055,8 +1050,6 @@ async fn run_interactive_pause_inner(
     }
 
     // 3. Deploy and launch app
-    let is_docker_image = matches!(task_def.app, task::AppConfig::DockerImage { .. });
-
     if is_docker_image {
         info!("Custom Docker image: skipping app deployment");
         if let task::AppConfig::DockerImage { entrypoint_cmd, .. } = &task_def.app {
@@ -1127,13 +1120,6 @@ async fn run_interactive_step(
         } => r?,
     };
 
-    if custom_image.is_some() {
-        if let Err(e) = session.validate_custom_image().await {
-            let _ = session.cleanup().await;
-            return Err(e);
-        }
-    }
-
     let test_id = task_def.id.clone();
     let timeout = Duration::from_secs(config.startup_timeout_seconds);
 
@@ -1194,6 +1180,12 @@ async fn run_interactive_step_inner(
     info!("Waiting for desktop to be ready...");
     readiness::wait_for_desktop(session, timeout, debug).await?;
 
+    // 1b. Validate custom image dependencies (after desktop is ready)
+    let is_docker_image = matches!(task_def.app, task::AppConfig::DockerImage { .. });
+    if is_docker_image {
+        session.validate_custom_image().await?;
+    }
+
     // 2. Run setup steps
     if !task_def.config.is_empty() {
         info!("Running {} setup steps...", task_def.config.len());
@@ -1201,7 +1193,6 @@ async fn run_interactive_step_inner(
     }
 
     // 3. Deploy and launch app (same as run_task_inner)
-    let is_docker_image = matches!(task_def.app, task::AppConfig::DockerImage { .. });
     if is_docker_image {
         info!("Custom Docker image: skipping app deployment");
         if let task::AppConfig::DockerImage { entrypoint_cmd, .. } = &task_def.app {

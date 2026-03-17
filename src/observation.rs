@@ -201,10 +201,13 @@ async fn extract_a11y_tree(
     session: &DockerSession,
     max_tokens: usize,
 ) -> Result<String, AppError> {
-    let output = session
-        .exec(&["/usr/local/bin/get-a11y-tree"])
-        .await
-        .map_err(|e| AppError::Infra(format!("A11y tree extraction failed: {e}")))?;
+    let output = tokio::time::timeout(
+        Duration::from_secs(15),
+        session.exec(&["/usr/local/bin/get-a11y-tree"]),
+    )
+    .await
+    .map_err(|_| AppError::Infra("A11y tree extraction timed out after 15s".into()))?
+    .map_err(|e| AppError::Infra(format!("A11y tree extraction failed: {e}")))?;
 
     let trimmed = output.trim();
     if trimmed.is_empty() {
