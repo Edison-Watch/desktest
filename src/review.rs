@@ -31,7 +31,9 @@ pub fn generate_review_html(
     // Check for recording
     let has_recording = artifacts_dir.join("recording.mp4").exists();
 
-    let html = build_html(&steps_json, has_recording);
+    let trajectory_path_json = serde_json::to_string(&trajectory_path.to_string_lossy().as_ref())
+        .unwrap_or_else(|_| "\"trajectory.jsonl\"".to_string());
+    let html = build_html(&steps_json, has_recording, &trajectory_path_json);
 
     std::fs::write(output_path, &html)
         .map_err(|e| AppError::Infra(format!("Cannot write review HTML: {e}")))?;
@@ -70,7 +72,7 @@ fn build_steps_json(entries: &[TrajectoryRecord], artifacts_dir: &Path) -> Strin
 }
 
 /// Build the complete HTML document.
-fn build_html(steps_json: &str, has_recording: bool) -> String {
+fn build_html(steps_json: &str, has_recording: bool, trajectory_path_json: &str) -> String {
     format!(r##"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -125,6 +127,7 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, s
 <script>
 const STEPS = {steps_json};
 const HAS_RECORDING = {has_recording};
+const TRAJECTORY_PATH = {trajectory_path_json};
 
 const stepList = document.getElementById('step-list');
 const checkboxList = document.getElementById('checkbox-list');
@@ -193,7 +196,7 @@ function copyCodifyCommand() {{
     alert('Select at least one step to include.');
     return;
   }}
-  const cmd = `eyetest codify trajectory.jsonl --steps ${{checked.join(',')}}`;
+  const cmd = `eyetest codify ${{TRAJECTORY_PATH}} --steps ${{checked.join(',')}}`;
   if (navigator.clipboard) {{
     navigator.clipboard.writeText(cmd).then(() => {{
       const btn = document.querySelector('.codify-btn');
@@ -210,7 +213,7 @@ function copyCodifyCommand() {{
 if (STEPS.length > 0) selectStep(0);
 </script>
 </body>
-</html>"##, steps_json = steps_json, has_recording = if has_recording { "true" } else { "false" })
+</html>"##, steps_json = steps_json, has_recording = if has_recording { "true" } else { "false" }, trajectory_path_json = trajectory_path_json)
 }
 
 #[cfg(test)]
@@ -219,7 +222,7 @@ mod tests {
 
     #[test]
     fn test_build_html_contains_structure() {
-        let html = build_html("[]", false);
+        let html = build_html("[]", false, "\"trajectory.jsonl\"");
         assert!(html.contains("<!DOCTYPE html>"));
         assert!(html.contains("eyetest"));
         assert!(html.contains("Trajectory Review"));

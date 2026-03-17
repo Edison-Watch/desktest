@@ -89,7 +89,17 @@ pub fn generate_replay_script(
                 e.result == "success" || e.result == "done"
             }
         })
-        .filter(|e| !e.action_code.trim().is_empty())
+        .filter(|e| {
+            let keep = !e.action_code.trim().is_empty();
+            if !keep {
+                if let Some(step_filter) = steps {
+                    if step_filter.contains(&e.step) {
+                        eprintln!("Warning: step {} has empty action_code and will be skipped", e.step);
+                    }
+                }
+            }
+            keep
+        })
         .collect();
 
     // Deduplicate by step number (keep last entry for each step)
