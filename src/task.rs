@@ -343,6 +343,12 @@ impl TaskDefinition {
                 EvaluatorMode::Llm => {}
             }
 
+            if let Some(0) = evaluator.eval_timeout_secs {
+                return Err(AppError::Config(
+                    "Evaluator 'eval_timeout_secs' must be > 0 if specified.".into(),
+                ));
+            }
+
             // Validate individual metrics
             for (i, metric) in evaluator.metrics.iter().enumerate() {
                 match metric {
@@ -972,5 +978,41 @@ mod tests {
             }
             _ => panic!("Expected CommandOutput"),
         }
+    }
+
+    #[test]
+    fn test_reject_zero_eval_timeout_secs() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "test",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "evaluator": {
+                "mode": "programmatic",
+                "metrics": [{"type": "file_exists", "path": "/tmp/a"}],
+                "eval_timeout_secs": 0
+            }
+        }"#;
+
+        let err = TaskDefinition::parse_and_validate(json).unwrap_err();
+        assert!(err.to_string().contains("eval_timeout_secs"));
+    }
+
+    #[test]
+    fn test_valid_eval_timeout_secs() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "test",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "evaluator": {
+                "mode": "programmatic",
+                "metrics": [{"type": "file_exists", "path": "/tmp/a"}],
+                "eval_timeout_secs": 60
+            }
+        }"#;
+
+        let task = TaskDefinition::parse_and_validate(json).unwrap();
+        assert_eq!(task.evaluator.unwrap().eval_timeout_secs, Some(60));
     }
 }

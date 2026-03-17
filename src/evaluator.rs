@@ -116,12 +116,12 @@ async fn evaluate_metric(
             actual_path,
             expected_path,
             compare_mode,
-        } => evaluate_file_compare(session, actual_path, expected_path, compare_mode, artifacts_dir).await,
+        } => evaluate_file_compare(session, actual_path, expected_path, compare_mode, artifacts_dir, eval_timeout).await,
         MetricConfig::FileCompareSemantic {
             actual_path,
             expected_path,
             format,
-        } => evaluate_file_compare_semantic(session, actual_path, expected_path, format, artifacts_dir).await,
+        } => evaluate_file_compare_semantic(session, actual_path, expected_path, format, artifacts_dir, eval_timeout).await,
         MetricConfig::CommandOutput {
             command,
             expected,
@@ -159,14 +159,23 @@ async fn evaluate_file_compare(
     expected_path: &str,
     compare_mode: &CompareMode,
     artifacts_dir: &Path,
+    eval_timeout: Duration,
 ) -> Result<MetricResult, AppError> {
     // Copy the actual file from the container to a temp location
     let temp_actual = artifacts_dir.join("eval_actual_file");
-    session.copy_from(actual_path, &temp_actual).await.map_err(|e| {
-        AppError::Infra(format!(
-            "Failed to copy file '{actual_path}' from container: {e}"
-        ))
-    })?;
+    tokio::time::timeout(eval_timeout, session.copy_from(actual_path, &temp_actual))
+        .await
+        .map_err(|_| {
+            AppError::Agent(format!(
+                "Evaluation copy_from timed out after {}s: {actual_path}",
+                eval_timeout.as_secs()
+            ))
+        })?
+        .map_err(|e| {
+            AppError::Infra(format!(
+                "Failed to copy file '{actual_path}' from container: {e}"
+            ))
+        })?;
 
     let actual_bytes = std::fs::read(&temp_actual)
         .map_err(|e| AppError::Infra(format!("Failed to read copied file: {e}")))?;
@@ -217,14 +226,23 @@ async fn evaluate_file_compare_semantic(
     expected_path: &str,
     format: &SemanticFormat,
     artifacts_dir: &Path,
+    eval_timeout: Duration,
 ) -> Result<MetricResult, AppError> {
     // Copy the actual file from the container
     let temp_actual = artifacts_dir.join("eval_semantic_actual");
-    session.copy_from(actual_path, &temp_actual).await.map_err(|e| {
-        AppError::Infra(format!(
-            "Failed to copy file '{actual_path}' from container: {e}"
-        ))
-    })?;
+    tokio::time::timeout(eval_timeout, session.copy_from(actual_path, &temp_actual))
+        .await
+        .map_err(|_| {
+            AppError::Agent(format!(
+                "Evaluation copy_from timed out after {}s: {actual_path}",
+                eval_timeout.as_secs()
+            ))
+        })?
+        .map_err(|e| {
+            AppError::Infra(format!(
+                "Failed to copy file '{actual_path}' from container: {e}"
+            ))
+        })?;
 
     let actual_str = std::fs::read_to_string(&temp_actual)
         .map_err(|e| AppError::Infra(format!("Failed to read copied file: {e}")))?;
