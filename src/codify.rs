@@ -119,6 +119,8 @@ pub fn generate_replay_script(
             .unwrap_or("Execute action")
             .replace('\\', "\\\\")
             .replace("\"\"\"", "'''")
+            .replace('\n', " ")
+            .replace('\r', "")
             .to_string();
         // Prevent trailing " from merging with closing """ to form """"
         // Strip trailing quotes and append a space to separate from closing """

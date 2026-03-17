@@ -45,7 +45,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install PyAutoGUI via pip (not available as a Debian package)
-RUN pip3 install --no-cache-dir --break-system-packages pyautogui
+RUN pip3 install --no-cache-dir --break-system-packages pyautogui Pillow
 
 # Create a non-root user for the desktop session
 RUN useradd -m -s /bin/bash tester
