@@ -41,6 +41,9 @@ def main():
     parser.add_argument('--actual', required=True, help='Path to actual screenshot')
     parser.add_argument('--threshold', type=float, default=0.95, help='Similarity threshold (0-1)')
     args = parser.parse_args()
+    if not (0.0 <= args.threshold <= 1.0):
+        print(f"ERROR: --threshold must be between 0.0 and 1.0, got {args.threshold}")
+        sys.exit(2)
 
     passed = compare_images(args.expected, args.actual, args.threshold)
     sys.exit(0 if passed else 1)

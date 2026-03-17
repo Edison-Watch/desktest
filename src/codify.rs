@@ -160,6 +160,7 @@ pub fn generate_replay_script(
         }
 
         // Action code (strip trailing blank lines)
+        // NOTE: action code may contain return/sys.exit() which would short-circuit the step
         for line in entry.action_code.trim_end_matches('\n').lines() {
             if line.trim().is_empty() {
                 script.push_str("\n");

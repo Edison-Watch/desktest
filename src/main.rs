@@ -332,10 +332,14 @@ async fn main() {
                     } else {
                         std::fs::canonicalize(parent).ok()
                     };
-                    resolved
+                    let name = resolved
                         .as_deref()
                         .and_then(|p| p.file_name())
-                        .map(|n| n.to_string_lossy().to_string())
+                        .map(|n| n.to_string_lossy().to_string());
+                    if name.is_none() {
+                        eprintln!("Warning: could not derive screenshots directory name from trajectory path; assertions will reference /home/tester/<filename> directly");
+                    }
+                    name
                 } else {
                     None
                 };
