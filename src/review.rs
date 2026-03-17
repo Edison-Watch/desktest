@@ -196,7 +196,8 @@ function copyCodifyCommand() {{
     alert('Select at least one step to include.');
     return;
   }}
-  const cmd = `eyetest codify ${{TRAJECTORY_PATH}} --steps ${{checked.join(',')}}`;
+  const quotedPath = "'" + TRAJECTORY_PATH.replace(/'/g, "'\\''") + "'";
+  const cmd = `eyetest codify ${{quotedPath}} --steps ${{checked.join(',')}}`;
   if (navigator.clipboard) {{
     navigator.clipboard.writeText(cmd).then(() => {{
       const btn = document.querySelector('.codify-btn');
