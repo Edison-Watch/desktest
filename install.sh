@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # eyetest installer — downloads the latest release binary for your platform.
-# Usage: curl -fsSL https://raw.githubusercontent.com/Edison-Watch/eyetest/master/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/Edison-Watch/tent-agent/master/install.sh | bash
 
 REPO="${EYETEST_REPO:-Edison-Watch/tent-agent}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
