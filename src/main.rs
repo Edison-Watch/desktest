@@ -909,15 +909,17 @@ async fn build_agent_loop_config(
     verbose: bool,
 ) -> agent::loop_v2::AgentLoopV2Config {
     let max_a11y_nodes = task_def.max_a11y_nodes.unwrap_or(10_000);
-    let max_a11y_tokens = observation::ObservationConfig::default().max_a11y_tokens;
     let max_steps = task_def.max_steps as usize;
+
+    let mut obs_config = observation::ObservationConfig::default();
+    obs_config.max_a11y_nodes = max_a11y_nodes;
 
     // Determine a11y timeout: explicit override or probe
     let a11y_timeout = if let Some(secs) = task_def.a11y_timeout_secs {
         info!("Using explicit a11y timeout: {secs}s");
         Duration::from_secs(secs)
     } else {
-        match observation::probe_a11y_timing(session, max_a11y_nodes, max_a11y_tokens).await {
+        match observation::probe_a11y_timing(session, max_a11y_nodes, obs_config.max_a11y_tokens).await {
             Ok(measured) => {
                 let timeout = measured
                     .mul_f64(1.5)
@@ -931,17 +933,17 @@ async fn build_agent_loop_config(
                 timeout
             }
             Err(e) => {
-                info!("A11y probe failed ({e}), using default 15s timeout");
-                Duration::from_secs(15)
+                // Use the cap (60s) as fallback — if the probe timed out, 15s would
+                // guarantee every subsequent extraction also times out
+                info!("A11y probe failed ({e}), using maximum 60s timeout as fallback");
+                Duration::from_secs(60)
             }
         }
     };
-
-    let mut obs_config = observation::ObservationConfig::default();
     obs_config.a11y_timeout = a11y_timeout;
-    obs_config.max_a11y_nodes = max_a11y_nodes;
 
     // Compute adjusted total timeout to account for per-step observation overhead
+    // 1.0s accounts for fixed per-step overhead (screenshot capture)
     let per_step_overhead = obs_config.sleep_after_action + 1.0 + a11y_timeout.as_secs_f64();
     let base_timeout = task_def.timeout;
     let adjusted_total = base_timeout as f64 + (per_step_overhead * max_steps as f64);

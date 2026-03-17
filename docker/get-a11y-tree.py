@@ -148,9 +148,15 @@ def walk_tree(accessible, rows, depth=0, max_depth=30, max_nodes=0):
 
 def main():
     parser = argparse.ArgumentParser(description="Extract accessibility tree via AT-SPI")
+    def nonnegative_int(value):
+        ivalue = int(value)
+        if ivalue < 0:
+            raise argparse.ArgumentTypeError(f"--max-nodes must be >= 0, got {value}")
+        return ivalue
+
     parser.add_argument(
         "--max-nodes",
-        type=int,
+        type=nonnegative_int,
         default=0,
         help="Maximum number of nodes to extract (0 = unlimited, default: 0)",
     )
