@@ -92,6 +92,14 @@ pub fn generate_replay_script(
         .filter(|e| !e.action_code.trim().is_empty())
         .collect();
 
+    // Deduplicate by step number (keep last entry for each step)
+    let mut seen = std::collections::HashMap::new();
+    for entry in &filtered {
+        seen.insert(entry.step, *entry);
+    }
+    let mut filtered: Vec<&TrajectoryRecord> = seen.into_values().collect();
+    filtered.sort_by_key(|e| e.step);
+
     // Generate step functions
     for entry in &filtered {
         let fn_name = format!("step_{:03}", entry.step);

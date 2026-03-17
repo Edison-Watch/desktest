@@ -64,7 +64,8 @@ if [ -n "$EXPECTED" ]; then
   fi
   echo "Checksum verified."
 else
-  echo "Warning: Could not verify checksum (not found in SHA256SUMS.txt)"
+  echo "Error: Checksum for eyetest-${LATEST}-${TARGET}.tar.gz not found in SHA256SUMS.txt"
+  exit 1
 fi
 
 # Install
