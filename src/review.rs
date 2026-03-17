@@ -202,7 +202,7 @@ function showRecording() {{
   document.querySelectorAll('.step-item').forEach(el => el.classList.remove('active'));
   const nav = document.getElementById('recording-nav');
   if (nav) nav.classList.add('active');
-  mainPanel.innerHTML = `<div class="detail-header"><h2>Session Recording</h2></div><div class="video-container"><video controls autoplay><source src="${{RECORDING_URI}}" type="video/mp4">Your browser does not support video playback.</video></div>`;
+  mainPanel.innerHTML = `<div class="detail-header"><h2>Session Recording</h2></div><div class="video-container"><video controls autoplay muted><source src="${{RECORDING_URI}}" type="video/mp4">Your browser does not support video playback.</video></div>`;
 }}
 
 function selectStep(index) {{
