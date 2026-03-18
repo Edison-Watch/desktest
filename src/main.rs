@@ -248,8 +248,10 @@ async fn main() {
                     let handle = monitor::MonitorHandle::new(32);
                     if let Some(_server) = monitor_server::start_monitor_server(handle.clone(), cli.monitor_port).await {
                         println!("Monitor dashboard: http://localhost:{}", cli.monitor_port);
+                        Some(handle)
+                    } else {
+                        None
                     }
-                    Some(handle)
                 } else {
                     None
                 };
@@ -271,8 +273,10 @@ async fn main() {
                     let handle = monitor::MonitorHandle::new(32);
                     if let Some(_server) = monitor_server::start_monitor_server(handle.clone(), cli.monitor_port).await {
                         println!("Monitor dashboard: http://localhost:{}", cli.monitor_port);
+                        Some(handle)
+                    } else {
+                        None
                     }
-                    Some(handle)
                 } else {
                     None
                 };
@@ -877,6 +881,16 @@ async fn run_task_inner(
 
             print_validation_results(None, Some(&eval_result));
 
+            // Publish TestComplete for programmatic mode (no agent loop to emit it)
+            if let Some(m) = monitor {
+                m.send(monitor::MonitorEvent::TestComplete {
+                    test_id: task_def.id.clone(),
+                    passed: eval_result.passed,
+                    reasoning: format_evaluation_reasoning(None, Some(&eval_result)),
+                    duration_ms: 0,
+                });
+            }
+
             Ok(TaskRunResult {
                 outcome: AgentOutcome {
                     passed: eval_result.passed,
@@ -931,6 +945,17 @@ async fn run_task_inner(
             let both_passed = agent_outcome.passed && eval_result.passed;
 
             print_validation_results(Some(&agent_outcome), Some(&eval_result));
+
+            // Publish corrected TestComplete with hybrid verdict (overrides the
+            // premature one from the agent loop which only had the agent's verdict)
+            if let Some(m) = monitor {
+                m.send(monitor::MonitorEvent::TestComplete {
+                    test_id: task_def.id.clone(),
+                    passed: both_passed,
+                    reasoning: format_evaluation_reasoning(Some(&agent_outcome), Some(&eval_result)),
+                    duration_ms: 0,
+                });
+            }
 
             Ok(TaskRunResult {
                 outcome: AgentOutcome {
