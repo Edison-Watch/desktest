@@ -111,7 +111,11 @@ def _safe_builtins():
     def _restricted_import(name, globals=None, locals=None, fromlist=(), level=0):
         if name not in _allowed_modules:
             raise ImportError(f"Import of '{name}' is not allowed in this sandbox")
-        return _real_import(name, globals, locals, fromlist, level)
+        mod = _real_import(name, globals, locals, fromlist, level)
+        # Sanitize returned modules to prevent __builtins__ leakage via re-import.
+        # `import X` (fromlist=()) returns the module directly; `from X import Y`
+        # (non-empty fromlist) also returns the module, so sanitize in both cases.
+        return _sanitize_module(mod)
 
     safe["__import__"] = _restricted_import
     return safe
