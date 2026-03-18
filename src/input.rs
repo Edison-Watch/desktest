@@ -1,6 +1,12 @@
 /// Pure functions that build xdotool command arrays.
 /// These are executed inside the container via `DockerSession::exec`.
 
+/// Returns true if the token is a valid xdotool key name or modifier.
+/// Only alphanumeric characters and underscores are allowed.
+fn is_valid_xdotool_token(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
 pub fn build_move_mouse(x: i32, y: i32) -> Vec<String> {
     vec![
         "xdotool".into(),
@@ -84,6 +90,21 @@ pub fn build_type(text: &str) -> Vec<String> {
 /// - `hold_ms`: how long to hold the key in milliseconds (0 = tap)
 /// - `modifiers`: optional modifier keys like "ctrl", "alt", "shift", "super"
 pub fn build_key_press(key: &str, hold_ms: i32, modifiers: Option<&[&str]>) -> Vec<String> {
+    // Validate key and modifiers to prevent shell injection.
+    // Valid xdotool tokens contain only alphanumeric chars and underscores.
+    if !is_valid_xdotool_token(key) {
+        tracing::warn!("Rejected invalid xdotool key name: {:?}", key);
+        return vec!["true".into()]; // safe no-op
+    }
+    if let Some(mods) = modifiers {
+        for m in mods {
+            if !is_valid_xdotool_token(m) {
+                tracing::warn!("Rejected invalid xdotool modifier: {:?}", m);
+                return vec!["true".into()]; // safe no-op
+            }
+        }
+    }
+
     let key_combo = match modifiers {
         Some(mods) if !mods.is_empty() => {
             let mut combo = mods.join("+");
@@ -95,18 +116,20 @@ pub fn build_key_press(key: &str, hold_ms: i32, modifiers: Option<&[&str]>) -> V
     };
 
     if hold_ms <= 0 {
-        // Simple key tap
+        // Simple key tap — array form, no shell involved
         vec!["xdotool".into(), "key".into(), key_combo]
     } else {
-        // Hold: keydown, sleep, keyup
-        // xdotool doesn't have a native hold duration, so we chain commands via bash
+        // Hold: keydown, sleep, keyup via bash.
+        // Defense-in-depth: escape the combo even though validation above
+        // ensures it only contains safe characters.
+        let escaped_combo = shell_escape::escape(key_combo.into());
         let sleep_secs = hold_ms as f64 / 1000.0;
         vec![
             "bash".into(),
             "-c".into(),
             format!(
                 "xdotool keydown {combo} && sleep {sleep:.3} && xdotool keyup {combo}",
-                combo = key_combo,
+                combo = escaped_combo,
                 sleep = sleep_secs
             ),
         ]
@@ -230,5 +253,43 @@ mod tests {
         assert_eq!(cmd[0], "bash");
         assert!(cmd[2].contains("keydown ctrl+a"));
         assert!(cmd[2].contains("keyup ctrl+a"));
+    }
+
+    #[test]
+    fn test_key_press_rejects_shell_injection_in_key() {
+        // Malicious key name with command substitution
+        let cmd = build_key_press("a$(whoami)", 100, None);
+        assert_eq!(cmd, vec!["true"]); // no-op
+    }
+
+    #[test]
+    fn test_key_press_rejects_shell_injection_in_modifier() {
+        let cmd = build_key_press("a", 100, Some(&["ctrl;rm -rf /"]));
+        assert_eq!(cmd, vec!["true"]); // no-op
+    }
+
+    #[test]
+    fn test_key_press_rejects_empty_key() {
+        let cmd = build_key_press("", 0, None);
+        assert_eq!(cmd, vec!["true"]); // no-op
+    }
+
+    #[test]
+    fn test_key_press_rejects_special_chars_in_tap_mode() {
+        // Even in tap mode (no shell), reject invalid keys for consistency
+        let cmd = build_key_press("key`id`", 0, None);
+        assert_eq!(cmd, vec!["true"]); // no-op
+    }
+
+    #[test]
+    fn test_valid_xdotool_token() {
+        assert!(is_valid_xdotool_token("Return"));
+        assert!(is_valid_xdotool_token("ctrl"));
+        assert!(is_valid_xdotool_token("F12"));
+        assert!(is_valid_xdotool_token("KP_Enter"));
+        assert!(!is_valid_xdotool_token(""));
+        assert!(!is_valid_xdotool_token("a$(whoami)"));
+        assert!(!is_valid_xdotool_token("ctrl;rm"));
+        assert!(!is_valid_xdotool_token("key+combo")); // + not allowed in individual tokens
     }
 }

@@ -37,6 +37,41 @@ except ImportError:
     pyperclip = None
 
 
+def _safe_builtins():
+    """Return a restricted dict of Python builtins safe for LLM-generated code.
+
+    Excludes dangerous functions like __import__, open, exec, eval, compile,
+    getattr, setattr, delattr, and type to prevent sandbox escapes.
+    """
+    import builtins
+
+    allowed = [
+        # Output
+        "print",
+        # Type constructors & conversions
+        "int", "float", "str", "bool", "list", "dict", "tuple", "set",
+        "frozenset", "bytes", "bytearray", "complex",
+        # Iteration & sequences
+        "len", "range", "enumerate", "zip", "sorted", "reversed",
+        "min", "max", "sum", "any", "all", "map", "filter",
+        "iter", "next", "slice",
+        # Math
+        "abs", "round", "pow", "divmod",
+        # String/char utilities
+        "repr", "format", "chr", "ord", "hex", "oct", "bin",
+        # Introspection (safe subset)
+        "isinstance", "issubclass", "callable", "hash", "id",
+        # OOP primitives
+        "super", "object", "property", "staticmethod", "classmethod",
+        # Exception types
+        "Exception", "ValueError", "TypeError", "AttributeError",
+        "KeyError", "IndexError", "RuntimeError", "StopIteration",
+        "NotImplementedError", "ArithmeticError", "ZeroDivisionError",
+        "OverflowError", "NameError", "OSError", "IOError",
+    ]
+    return {name: getattr(builtins, name) for name in allowed if hasattr(builtins, name)}
+
+
 def main():
     code = sys.stdin.read()
     if not code.strip():
@@ -51,7 +86,7 @@ def main():
     namespace = {
         "pyautogui": pyautogui,
         "time": time,
-        "__builtins__": __builtins__,
+        "__builtins__": _safe_builtins(),
     }
     if pyperclip is not None:
         namespace["pyperclip"] = pyperclip
