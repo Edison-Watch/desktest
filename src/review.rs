@@ -48,13 +48,21 @@ pub fn generate_review_html(
         }
     };
 
-    // Load task.json if present in artifacts
+    // Load task.json if present in artifacts, validating as JSON before embedding
     let task_json = {
         let task_path = artifacts_dir.join("task.json");
         if task_path.exists() {
             std::fs::read_to_string(&task_path)
                 .ok()
-                .unwrap_or_else(|| "null".to_string())
+                .and_then(|s| {
+                    serde_json::from_str::<serde_json::Value>(&s)
+                        .ok()
+                        .map(|v| serde_json::to_string(&v).unwrap_or_else(|_| "null".to_string()))
+                })
+                .unwrap_or_else(|| {
+                    info!("task.json is malformed, skipping task embedding");
+                    "null".to_string()
+                })
         } else {
             "null".to_string()
         }
@@ -205,7 +213,24 @@ mod tests {
         let html = std::fs::read_to_string(&output).unwrap();
         assert!(html.contains("test-task-42"));
         assert!(html.contains("Open the file and save it"));
-        assert!(html.contains("\"id\": \"test-task-42\""));
+        assert!(html.contains("\"id\":\"test-task-42\""));
+    }
+
+    #[test]
+    fn test_generate_review_html_with_malformed_task() {
+        let dir = tempfile::tempdir().unwrap();
+        let trajectory = dir.path().join("trajectory.jsonl");
+        std::fs::write(&trajectory, "{\"step\":1,\"timestamp\":\"2026-01-01T00:00:00Z\",\"action_code\":\"pyautogui.click(100,200)\",\"result\":\"success\"}\n").unwrap();
+
+        // Write a malformed task.json
+        std::fs::write(dir.path().join("task.json"), "{broken json").unwrap();
+
+        let output = dir.path().join("review.html");
+        generate_review_html(dir.path(), &output).unwrap();
+
+        let html = std::fs::read_to_string(&output).unwrap();
+        // Should fall back to null, not inject broken content
+        assert!(html.contains("TASK_JSON = /*__TASK_JSON__*/null"));
     }
 
     #[test]
