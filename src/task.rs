@@ -114,6 +114,10 @@ pub struct EvaluatorConfig {
     /// How to combine multiple metrics: "and" (all must pass) or "or" (any must pass).
     #[serde(default = "default_conjunction")]
     pub conjunction: Conjunction,
+
+    /// Per-execution timeout in seconds for evaluator commands (default: 120).
+    #[serde(default)]
+    pub eval_timeout_secs: Option<u64>,
 }
 
 fn default_conjunction() -> Conjunction {
@@ -337,6 +341,12 @@ impl TaskDefinition {
                     }
                 }
                 EvaluatorMode::Llm => {}
+            }
+
+            if let Some(0) = evaluator.eval_timeout_secs {
+                return Err(AppError::Config(
+                    "Evaluator 'eval_timeout_secs' must be > 0 if specified.".into(),
+                ));
             }
 
             // Validate individual metrics
@@ -968,5 +978,41 @@ mod tests {
             }
             _ => panic!("Expected CommandOutput"),
         }
+    }
+
+    #[test]
+    fn test_reject_zero_eval_timeout_secs() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "test",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "evaluator": {
+                "mode": "programmatic",
+                "metrics": [{"type": "file_exists", "path": "/tmp/a"}],
+                "eval_timeout_secs": 0
+            }
+        }"#;
+
+        let err = TaskDefinition::parse_and_validate(json).unwrap_err();
+        assert!(err.to_string().contains("eval_timeout_secs"));
+    }
+
+    #[test]
+    fn test_valid_eval_timeout_secs() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "test",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "evaluator": {
+                "mode": "programmatic",
+                "metrics": [{"type": "file_exists", "path": "/tmp/a"}],
+                "eval_timeout_secs": 60
+            }
+        }"#;
+
+        let task = TaskDefinition::parse_and_validate(json).unwrap();
+        assert_eq!(task.evaluator.unwrap().eval_timeout_secs, Some(60));
     }
 }

@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
@@ -9,6 +10,9 @@ use crate::task::{
     CompareMode, Conjunction, EvaluatorConfig, EvaluatorMode, MatchMode, MetricConfig,
     SemanticFormat,
 };
+
+/// Default timeout for individual evaluator exec calls (seconds).
+const DEFAULT_EVAL_TIMEOUT_SECS: u64 = 120;
 
 /// The result of evaluating a single metric.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,17 +41,22 @@ pub async fn run_evaluation(
     evaluator: &EvaluatorConfig,
     artifacts_dir: &Path,
 ) -> Result<EvaluationResult, AppError> {
+    let eval_timeout = Duration::from_secs(
+        evaluator.eval_timeout_secs.unwrap_or(DEFAULT_EVAL_TIMEOUT_SECS),
+    );
+
     info!(
-        "Running programmatic evaluation ({} metrics, conjunction: {:?})",
+        "Running programmatic evaluation ({} metrics, conjunction: {:?}, timeout: {}s)",
         evaluator.metrics.len(),
-        evaluator.conjunction
+        evaluator.conjunction,
+        eval_timeout.as_secs()
     );
 
     let mut metric_results = Vec::new();
 
     for (i, metric) in evaluator.metrics.iter().enumerate() {
         debug!("Evaluating metric {i}: {}", metric_type_name(metric));
-        let result = evaluate_metric(session, metric, artifacts_dir).await;
+        let result = evaluate_metric(session, metric, artifacts_dir, eval_timeout).await;
         match result {
             Ok(mr) => {
                 if mr.passed {
@@ -100,32 +109,33 @@ async fn evaluate_metric(
     session: &DockerSession,
     metric: &MetricConfig,
     artifacts_dir: &Path,
+    eval_timeout: Duration,
 ) -> Result<MetricResult, AppError> {
     match metric {
         MetricConfig::FileCompare {
             actual_path,
             expected_path,
             compare_mode,
-        } => evaluate_file_compare(session, actual_path, expected_path, compare_mode, artifacts_dir).await,
+        } => evaluate_file_compare(session, actual_path, expected_path, compare_mode, artifacts_dir, eval_timeout).await,
         MetricConfig::FileCompareSemantic {
             actual_path,
             expected_path,
             format,
-        } => evaluate_file_compare_semantic(session, actual_path, expected_path, format, artifacts_dir).await,
+        } => evaluate_file_compare_semantic(session, actual_path, expected_path, format, artifacts_dir, eval_timeout).await,
         MetricConfig::CommandOutput {
             command,
             expected,
             match_mode,
-        } => evaluate_command_output(session, command, expected, match_mode).await,
+        } => evaluate_command_output(session, command, expected, match_mode, eval_timeout).await,
         MetricConfig::FileExists {
             path,
             should_not_exist,
-        } => evaluate_file_exists(session, path, *should_not_exist).await,
+        } => evaluate_file_exists(session, path, *should_not_exist, eval_timeout).await,
         MetricConfig::ExitCode { command, expected } => {
-            evaluate_exit_code(session, command, *expected).await
+            evaluate_exit_code(session, command, *expected, eval_timeout).await
         }
         MetricConfig::ScriptReplay { script_path, screenshots_dir } => {
-            evaluate_script_replay(session, script_path, screenshots_dir.as_deref()).await
+            evaluate_script_replay(session, script_path, screenshots_dir.as_deref(), eval_timeout).await
         }
     }
 }
@@ -149,14 +159,23 @@ async fn evaluate_file_compare(
     expected_path: &str,
     compare_mode: &CompareMode,
     artifacts_dir: &Path,
+    eval_timeout: Duration,
 ) -> Result<MetricResult, AppError> {
     // Copy the actual file from the container to a temp location
     let temp_actual = artifacts_dir.join("eval_actual_file");
-    session.copy_from(actual_path, &temp_actual).await.map_err(|e| {
-        AppError::Infra(format!(
-            "Failed to copy file '{actual_path}' from container: {e}"
-        ))
-    })?;
+    tokio::time::timeout(eval_timeout, session.copy_from(actual_path, &temp_actual))
+        .await
+        .map_err(|_| {
+            AppError::Agent(format!(
+                "Evaluation copy_from timed out after {}s: {actual_path}",
+                eval_timeout.as_secs()
+            ))
+        })?
+        .map_err(|e| {
+            AppError::Infra(format!(
+                "Failed to copy file '{actual_path}' from container: {e}"
+            ))
+        })?;
 
     let actual_bytes = std::fs::read(&temp_actual)
         .map_err(|e| AppError::Infra(format!("Failed to read copied file: {e}")))?;
@@ -207,14 +226,23 @@ async fn evaluate_file_compare_semantic(
     expected_path: &str,
     format: &SemanticFormat,
     artifacts_dir: &Path,
+    eval_timeout: Duration,
 ) -> Result<MetricResult, AppError> {
     // Copy the actual file from the container
     let temp_actual = artifacts_dir.join("eval_semantic_actual");
-    session.copy_from(actual_path, &temp_actual).await.map_err(|e| {
-        AppError::Infra(format!(
-            "Failed to copy file '{actual_path}' from container: {e}"
-        ))
-    })?;
+    tokio::time::timeout(eval_timeout, session.copy_from(actual_path, &temp_actual))
+        .await
+        .map_err(|_| {
+            AppError::Agent(format!(
+                "Evaluation copy_from timed out after {}s: {actual_path}",
+                eval_timeout.as_secs()
+            ))
+        })?
+        .map_err(|e| {
+            AppError::Infra(format!(
+                "Failed to copy file '{actual_path}' from container: {e}"
+            ))
+        })?;
 
     let actual_str = std::fs::read_to_string(&temp_actual)
         .map_err(|e| AppError::Infra(format!("Failed to read copied file: {e}")))?;
@@ -246,10 +274,16 @@ async fn evaluate_command_output(
     command: &str,
     expected: &str,
     match_mode: &MatchMode,
+    eval_timeout: Duration,
 ) -> Result<MetricResult, AppError> {
-    let output = session
-        .exec(&["bash", "-c", command])
+    let output = tokio::time::timeout(eval_timeout, session.exec(&["bash", "-c", command]))
         .await
+        .map_err(|_| {
+            AppError::Agent(format!(
+                "Evaluation command timed out after {}s: {command}",
+                eval_timeout.as_secs()
+            ))
+        })?
         .map_err(|e| AppError::Infra(format!("Failed to run command '{command}': {e}")))?;
 
     let stdout = output.trim_end();
@@ -305,10 +339,17 @@ async fn evaluate_file_exists(
     session: &DockerSession,
     path: &str,
     should_not_exist: bool,
+    eval_timeout: Duration,
 ) -> Result<MetricResult, AppError> {
-    let output = session
-        .exec(&["bash", "-c", &format!("test -e {} && echo EXISTS || echo MISSING", shell_escape::escape(path.into()))])
+    let check_cmd = format!("test -e {} && echo EXISTS || echo MISSING", shell_escape::escape(path.into()));
+    let output = tokio::time::timeout(eval_timeout, session.exec(&["bash", "-c", &check_cmd]))
         .await
+        .map_err(|_| {
+            AppError::Agent(format!(
+                "Evaluation command timed out after {}s: file_exists check for {path}",
+                eval_timeout.as_secs()
+            ))
+        })?
         .map_err(|e| AppError::Infra(format!("Failed to check file '{path}': {e}")))?;
 
     let exists = output.trim().contains("EXISTS");
@@ -347,15 +388,18 @@ async fn evaluate_exit_code(
     session: &DockerSession,
     command: &str,
     expected: i32,
+    eval_timeout: Duration,
 ) -> Result<MetricResult, AppError> {
     // Run the command and capture the exit code via $?
-    let output = session
-        .exec(&[
-            "bash",
-            "-c",
-            &format!("{command}; echo \"EXIT_CODE:$?\""),
-        ])
+    let exit_cmd = format!("{command}; echo \"EXIT_CODE:$?\"");
+    let output = tokio::time::timeout(eval_timeout, session.exec(&["bash", "-c", &exit_cmd]))
         .await
+        .map_err(|_| {
+            AppError::Agent(format!(
+                "Evaluation command timed out after {}s: {command}",
+                eval_timeout.as_secs()
+            ))
+        })?
         .map_err(|e| AppError::Infra(format!("Failed to run command '{command}': {e}")))?;
 
     // Parse exit code from the output
@@ -392,6 +436,7 @@ async fn evaluate_script_replay(
     session: &DockerSession,
     script_path: &str,
     screenshots_dir: Option<&str>,
+    eval_timeout: Duration,
 ) -> Result<MetricResult, AppError> {
     let host_path = std::path::Path::new(script_path);
     if !host_path.exists() {
@@ -404,7 +449,14 @@ async fn evaluate_script_replay(
     if let Some(dir) = screenshots_dir {
         let dir_path = std::path::Path::new(dir);
         if dir_path.exists() {
-            session.copy_into(dir_path, "/home/tester/").await?;
+            tokio::time::timeout(eval_timeout, session.copy_into(dir_path, "/home/tester/"))
+                .await
+                .map_err(|_| {
+                    AppError::Agent(format!(
+                        "Evaluation copy_into timed out after {}s: screenshots dir",
+                        eval_timeout.as_secs()
+                    ))
+                })??;
             info!("Copied screenshots from {} into container", dir);
         } else {
             warn!("Screenshots directory not found: {dir}");
@@ -412,7 +464,14 @@ async fn evaluate_script_replay(
     }
 
     // Copy script into container
-    session.copy_into(host_path, "/home/tester/").await?;
+    tokio::time::timeout(eval_timeout, session.copy_into(host_path, "/home/tester/"))
+        .await
+        .map_err(|_| {
+            AppError::Agent(format!(
+                "Evaluation copy_into timed out after {}s: {script_path}",
+                eval_timeout.as_secs()
+            ))
+        })??;
 
     let script_name = host_path
         .file_name()
@@ -422,10 +481,25 @@ async fn evaluate_script_replay(
     let container_script = format!("/home/tester/{script_name}");
 
     // Make executable and run
-    session.exec(&["chmod", "+x", &container_script]).await?;
-    let (output, exit_code) = session
-        .exec_with_exit_code(&["python3", &container_script])
-        .await?;
+    tokio::time::timeout(eval_timeout, session.exec(&["chmod", "+x", &container_script]))
+        .await
+        .map_err(|_| {
+            AppError::Agent(format!(
+                "Evaluation command timed out after {}s: chmod script",
+                eval_timeout.as_secs()
+            ))
+        })??;
+    let (output, exit_code) = tokio::time::timeout(
+        eval_timeout,
+        session.exec_with_exit_code(&["python3", &container_script]),
+    )
+    .await
+    .map_err(|_| {
+        AppError::Agent(format!(
+            "Evaluation script timed out after {}s: {script_path}",
+            eval_timeout.as_secs()
+        ))
+    })??;
 
     let has_complete = output.contains("REPLAY_COMPLETE");
     let passed = exit_code == 0 && has_complete;
