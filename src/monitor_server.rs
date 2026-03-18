@@ -17,10 +17,10 @@ use crate::monitor::MonitorHandle;
 
 /// Start the monitor HTTP server on the given port.
 ///
-/// Returns a `JoinHandle` that resolves when the server shuts down (i.e. when the
-/// process exits). The server is automatically dropped on process exit.
-pub fn start_monitor_server(handle: MonitorHandle, port: u16, vnc_url: &str) -> JoinHandle<()> {
-    let dashboard_html = build_live_dashboard(vnc_url);
+/// Binds the port synchronously (before spawning) so the caller knows immediately
+/// whether the server started successfully. Returns `None` if the port is unavailable.
+pub async fn start_monitor_server(handle: MonitorHandle, port: u16) -> Option<JoinHandle<()>> {
+    let dashboard_html = build_live_dashboard();
 
     let state_handle = handle.clone();
     let app = Router::new()
@@ -34,29 +34,28 @@ pub fn start_monitor_server(handle: MonitorHandle, port: u16, vnc_url: &str) -> 
             get(move || async move { state_handler(state_handle).await }),
         );
 
-    tokio::spawn(async move {
-        let listener = match tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await {
-            Ok(l) => l,
-            Err(e) => {
-                warn!("Failed to bind monitor server on port {port}: {e}");
-                return;
-            }
-        };
+    let listener = match tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await {
+        Ok(l) => l,
+        Err(e) => {
+            warn!("Failed to bind monitor server on port {port}: {e}");
+            return None;
+        }
+    };
+
+    Some(tokio::spawn(async move {
         if let Err(e) = axum::serve(listener, app).await {
             warn!("Monitor server error: {e}");
         }
-    })
+    }))
 }
 
 /// Build the dashboard HTML configured for live mode.
-fn build_live_dashboard(vnc_url: &str) -> String {
+///
+/// VNC URL is not baked in — it arrives via SSE `test_start` event and
+/// the `/state` endpoint for late-connecting clients.
+fn build_live_dashboard() -> String {
     let template = include_str!("dashboard.html");
-    template
-        .replace("/*__MODE__*/\"static\"", "/*__MODE__*/\"live\"")
-        .replace(
-            "/*__VNC_URL__*/\"\"",
-            &format!("/*__VNC_URL__*/\"{}\"", vnc_url.replace('"', "\\\"")),
-        )
+    template.replace("/*__MODE__*/\"static\"", "/*__MODE__*/\"live\"")
 }
 
 /// SSE handler that streams monitor events to the browser.

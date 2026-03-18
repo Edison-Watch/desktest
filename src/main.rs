@@ -246,8 +246,9 @@ async fn main() {
 
                 let monitor_handle = if cli.monitor {
                     let handle = monitor::MonitorHandle::new(32);
-                    let _server = monitor_server::start_monitor_server(handle.clone(), cli.monitor_port, "");
-                    println!("Monitor dashboard: http://localhost:{}", cli.monitor_port);
+                    if let Some(_server) = monitor_server::start_monitor_server(handle.clone(), cli.monitor_port).await {
+                        println!("Monitor dashboard: http://localhost:{}", cli.monitor_port);
+                    }
                     Some(handle)
                 } else {
                     None
@@ -268,8 +269,9 @@ async fn main() {
             Command::Suite { dir, filter } => {
                 let monitor_handle = if cli.monitor {
                     let handle = monitor::MonitorHandle::new(32);
-                    let _server = monitor_server::start_monitor_server(handle.clone(), cli.monitor_port, "");
-                    println!("Monitor dashboard: http://localhost:{}", cli.monitor_port);
+                    if let Some(_server) = monitor_server::start_monitor_server(handle.clone(), cli.monitor_port).await {
+                        println!("Monitor dashboard: http://localhost:{}", cli.monitor_port);
+                    }
                     Some(handle)
                 } else {
                     None
