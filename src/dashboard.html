@@ -201,11 +201,30 @@ if (MODE === 'live') {
   // Hide codify bar in live mode (no trajectory path yet)
   codifyBar.style.display = 'none';
 
+  // Fetch current state for late-connecting clients
+  fetch('/state').then(function(r) { return r.json(); }).then(function(data) {
+    if (data && data.type === 'test_start') {
+      var html = '<div class="live-header">';
+      html += '<div style="display:flex;align-items:center;gap:8px"><strong>' + escapeHtml(data.test_id) + '</strong>';
+      html += '<span style="color:#484f58;font-size:12px">max ' + data.max_steps + ' steps</span></div>';
+      html += '<div class="test-info">' + escapeHtml(data.instruction) + '</div>';
+      if (data.vnc_url) {
+        html += '<a class="vnc-link" href="' + escapeHtml(data.vnc_url) + '" target="_blank">VNC: ' + escapeHtml(data.vnc_url) + '</a>';
+      }
+      html += '</div>';
+      liveHeader.innerHTML = html;
+    }
+  }).catch(function() {});
+
   // Connect to SSE
   var evtSource = new EventSource('/events');
 
   evtSource.addEventListener('test_start', function(e) {
     var data = JSON.parse(e.data);
+    // Clear previous test's steps
+    STEPS = [];
+    stepList.innerHTML = '';
+    mainPanel.innerHTML = '<div class="empty">Waiting for first step...</div>';
     var html = '<div class="live-header">';
     html += '<div style="display:flex;align-items:center;gap:8px"><strong>' + escapeHtml(data.test_id) + '</strong>';
     html += '<span style="color:#484f58;font-size:12px">max ' + data.max_steps + ' steps</span></div>';

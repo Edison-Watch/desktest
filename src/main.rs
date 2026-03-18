@@ -1039,6 +1039,7 @@ async fn run_agent_loop(
         loop_config,
         recording,
         monitor.cloned(),
+        task_def.id.clone(),
     );
     agent_loop.run().await
 }
@@ -1363,6 +1364,7 @@ async fn run_interactive_step_inner(
         loop_config,
         recording.as_ref(),
         None, // no monitor in interactive step mode
+        task_def.id.clone(),
     );
 
     let agent_loop_result = agent_loop.run_step_by_step().await;

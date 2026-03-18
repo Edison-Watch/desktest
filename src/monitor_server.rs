@@ -5,7 +5,7 @@
 use std::convert::Infallible;
 
 use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::response::Html;
+use axum::response::{Html, Json};
 use axum::routing::get;
 use axum::Router;
 use tokio::task::JoinHandle;
@@ -22,11 +22,16 @@ use crate::monitor::MonitorHandle;
 pub fn start_monitor_server(handle: MonitorHandle, port: u16, vnc_url: &str) -> JoinHandle<()> {
     let dashboard_html = build_live_dashboard(vnc_url);
 
+    let state_handle = handle.clone();
     let app = Router::new()
         .route("/", get(move || async move { Html(dashboard_html) }))
         .route(
             "/events",
             get(move || async move { sse_handler(handle) }),
+        )
+        .route(
+            "/state",
+            get(move || async move { state_handler(state_handle).await }),
         );
 
     tokio::spawn(async move {
@@ -77,4 +82,13 @@ fn sse_handler(
     });
 
     Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+/// State endpoint returning the last TestStart event as JSON.
+/// Late-connecting browsers fetch this to get current test context.
+async fn state_handler(handle: MonitorHandle) -> Json<serde_json::Value> {
+    match handle.last_test_start().await {
+        Some(event) => Json(serde_json::to_value(&event).unwrap_or_default()),
+        None => Json(serde_json::json!(null)),
+    }
 }

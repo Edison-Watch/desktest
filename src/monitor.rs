@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use serde::Serialize;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, RwLock};
 
 /// Events published by the agent loop / suite runner for the live dashboard.
 #[derive(Debug, Clone, Serialize)]
@@ -41,9 +41,13 @@ pub enum MonitorEvent {
 }
 
 /// A cheaply cloneable handle wrapping a broadcast channel for monitor events.
+///
+/// Also caches the last `TestStart` event so late-connecting browsers can
+/// fetch current state via the `/state` endpoint.
 #[derive(Clone)]
 pub struct MonitorHandle {
     sender: Arc<broadcast::Sender<MonitorEvent>>,
+    last_test_start: Arc<RwLock<Option<MonitorEvent>>>,
 }
 
 impl MonitorHandle {
@@ -52,16 +56,31 @@ impl MonitorHandle {
         let (sender, _) = broadcast::channel(capacity);
         Self {
             sender: Arc::new(sender),
+            last_test_start: Arc::new(RwLock::new(None)),
         }
     }
 
     /// Publish an event. Silently ignores errors when there are no receivers.
+    /// Caches `TestStart` events for late-connecting clients.
     pub fn send(&self, event: MonitorEvent) {
+        if matches!(event, MonitorEvent::TestStart { .. }) {
+            // Cache synchronously — blocking write is fine since it's fast and infrequent.
+            let last = self.last_test_start.clone();
+            let event_clone = event.clone();
+            tokio::spawn(async move {
+                *last.write().await = Some(event_clone);
+            });
+        }
         let _ = self.sender.send(event);
     }
 
     /// Subscribe to the event stream.
     pub fn subscribe(&self) -> broadcast::Receiver<MonitorEvent> {
         self.sender.subscribe()
+    }
+
+    /// Get the last `TestStart` event (for late-connecting clients).
+    pub async fn last_test_start(&self) -> Option<MonitorEvent> {
+        self.last_test_start.read().await.clone()
     }
 }

@@ -83,6 +83,7 @@ pub struct AgentLoopV2<'a> {
     trajectory: Option<TrajectoryLogger>,
     recording: Option<&'a Recording>,
     monitor: Option<MonitorHandle>,
+    test_id: String,
 }
 
 impl<'a> AgentLoopV2<'a> {
@@ -97,6 +98,7 @@ impl<'a> AgentLoopV2<'a> {
         config: AgentLoopV2Config,
         recording: Option<&'a Recording>,
         monitor: Option<MonitorHandle>,
+        test_id: String,
     ) -> Self {
         let context = ContextManager::new(
             display_width,
@@ -122,6 +124,7 @@ impl<'a> AgentLoopV2<'a> {
             trajectory,
             recording,
             monitor,
+            test_id,
         }
     }
 
@@ -553,7 +556,7 @@ impl<'a> AgentLoopV2<'a> {
     fn publish_test_complete(&self, passed: bool, reasoning: &str, start_time: Instant) {
         if let Some(ref m) = self.monitor {
             m.send(MonitorEvent::TestComplete {
-                test_id: String::new(),
+                test_id: self.test_id.clone(),
                 passed,
                 reasoning: reasoning.to_string(),
                 duration_ms: start_time.elapsed().as_millis() as u64,
