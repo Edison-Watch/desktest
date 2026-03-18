@@ -252,7 +252,7 @@ if (MODE === 'live') {
     // Auto-select the latest step
     selectStep(index);
     // Auto-scroll sidebar to bottom
-    stepList.scrollTop = stepList.scrollHeight;
+    stepList.parentElement.scrollTop = stepList.parentElement.scrollHeight;
   });
 
   evtSource.addEventListener('test_complete', function(e) {
