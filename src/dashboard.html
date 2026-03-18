@@ -61,8 +61,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .task-meta { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 13px; }
 .task-meta dt { color: #8b949e; font-weight: 600; }
 .task-meta dd { color: #c9d1d9; }
-.task-json-toggle { background: none; border: 1px solid #30363d; color: #8b949e; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; margin-top: 16px; }
-.task-json-toggle:hover { background: #1c2128; color: #c9d1d9; }
 </style>
 </head>
 <body>
@@ -127,22 +125,22 @@ function showTask() {
 
   // Metadata summary
   html += '<div class="section"><h3>Details</h3><dl class="task-meta">';
-  html += '<dt>Timeout</dt><dd>' + (t.timeout || 300) + 's</dd>';
-  html += '<dt>Max Steps</dt><dd>' + (t.max_steps || 15) + '</dd>';
+  html += '<dt>Timeout</dt><dd>' + (t.timeout != null ? t.timeout : 300) + 's</dd>';
+  html += '<dt>Max Steps</dt><dd>' + (t.max_steps != null ? t.max_steps : 15) + '</dd>';
   if (t.app) {
-    var appType = Object.keys(t.app)[0] || 'unknown';
+    var appType = t.app.type || 'unknown';
     html += '<dt>App Type</dt><dd>' + escapeHtml(appType) + '</dd>';
   }
   if (t.config && t.config.length > 0) {
     html += '<dt>Setup Steps</dt><dd>' + t.config.length + '</dd>';
   }
   if (t.evaluator) {
-    var evalType = t.evaluator.type || 'unknown';
+    var evalType = t.evaluator.mode || 'unknown';
     html += '<dt>Evaluator</dt><dd>' + escapeHtml(evalType) + '</dd>';
   }
   html += '</dl></div>';
 
-  // Full JSON (collapsible)
+  // Full JSON
   html += '<div class="section"><h3>Full Task Definition</h3>';
   html += '<pre>' + escapeHtml(JSON.stringify(t, null, 2)) + '</pre>';
   html += '</div>';

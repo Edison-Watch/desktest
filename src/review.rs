@@ -188,12 +188,12 @@ mod tests {
         let trajectory = dir.path().join("trajectory.jsonl");
         std::fs::write(&trajectory, "{\"step\":1,\"timestamp\":\"2026-01-01T00:00:00Z\",\"action_code\":\"pyautogui.click(100,200)\",\"result\":\"success\"}\n").unwrap();
 
-        // Write a task.json
+        // Write a task.json (internally-tagged format matching serde output)
         let task_json = serde_json::json!({
             "schema_version": "1.0",
             "id": "test-task-42",
             "instruction": "Open the file and save it",
-            "app": { "appimage": { "url": "https://example.com/app.AppImage" } },
+            "app": { "type": "appimage", "path": "/tmp/app.AppImage" },
             "timeout": 120,
             "max_steps": 10
         });
@@ -205,7 +205,7 @@ mod tests {
         let html = std::fs::read_to_string(&output).unwrap();
         assert!(html.contains("test-task-42"));
         assert!(html.contains("Open the file and save it"));
-        assert!(html.contains("TASK_JSON"));
+        assert!(html.contains("\"id\": \"test-task-42\""));
     }
 
     #[test]
