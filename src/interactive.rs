@@ -10,7 +10,7 @@ use crate::error::{AgentOutcome, AppError};
 use crate::evaluator;
 use crate::orchestration::{
     build_agent_loop_config, format_evaluation_reasoning, print_validation_results,
-    run_task,
+    run_task, TaskRunResult,
 };
 use crate::provider;
 use crate::readiness;
@@ -31,13 +31,6 @@ async fn resolve_image_name<'a>(
         return Ok(Some(docker::IMAGE_NAME_ELECTRON));
     }
     Ok(custom_image)
-}
-
-/// Internal result from interactive step mode.
-struct TaskRunResult {
-    outcome: AgentOutcome,
-    eval_result: Option<evaluator::EvaluationResult>,
-    agent_ran: bool,
 }
 
 /// Run the interactive subcommand: starts container, runs setup, provides dev access.

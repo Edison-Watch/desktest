@@ -19,11 +19,11 @@ use crate::setup;
 use crate::task;
 
 /// Internal result from run_task_inner, preserving evaluation details for results.json.
-struct TaskRunResult {
-    outcome: AgentOutcome,
-    eval_result: Option<evaluator::EvaluationResult>,
+pub(crate) struct TaskRunResult {
+    pub(crate) outcome: AgentOutcome,
+    pub(crate) eval_result: Option<evaluator::EvaluationResult>,
     /// True when an agent loop was run (LLM or hybrid mode).
-    agent_ran: bool,
+    pub(crate) agent_ran: bool,
 }
 
 /// Load config from --config flag path or use task defaults.
