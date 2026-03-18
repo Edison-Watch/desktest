@@ -100,8 +100,6 @@ fn build_html(steps_json: &str, recording_b64: &Option<String>, trajectory_path_
     let template = include_str!("dashboard.html");
     template
         .replace("/*__STEPS__*/[]", &format!("/*__STEPS__*/{steps_json}"))
-        .replace("/*__MODE__*/\"static\"", "/*__MODE__*/\"static\"")
-        .replace("/*__VNC_URL__*/\"\"", "/*__VNC_URL__*/\"\"")
         .replace(
             "/*__HAS_RECORDING__*/false",
             &format!("/*__HAS_RECORDING__*/{}", if has_recording { "true" } else { "false" }),

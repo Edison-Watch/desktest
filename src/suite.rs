@@ -308,6 +308,15 @@ pub async fn run_suite(
         test_results.push(test_result);
     }
 
+    // Emit final progress event so the dashboard reaches 100%
+    if let Some(ref m) = monitor {
+        m.send(crate::monitor::MonitorEvent::SuiteProgress {
+            completed: entries.len(),
+            total: entries.len(),
+            current_test_id: String::new(),
+        });
+    }
+
     let total_duration_ms = suite_start.elapsed().as_millis() as u64;
     let suite_result = build_suite_result(test_results, total_duration_ms);
 

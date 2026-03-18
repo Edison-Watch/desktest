@@ -540,7 +540,7 @@ impl<'a> AgentLoopV2<'a> {
             let screenshot_base64 = observation.screenshot_data_url.as_ref().and_then(|url| {
                 url.strip_prefix("data:image/png;base64,").map(|s| s.to_string())
             });
-            let timestamp = chrono_now();
+            let timestamp = crate::trajectory::chrono_iso8601_now();
             m.send(MonitorEvent::StepComplete {
                 step: step_index,
                 thought,
@@ -774,17 +774,6 @@ impl<'a> AgentLoopV2<'a> {
             Err(e) => warn!("Failed to serialize conversation log: {e}"),
         }
     }
-}
-
-/// Get current UTC timestamp as ISO 8601 string.
-fn chrono_now() -> String {
-    use std::time::SystemTime;
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default();
-    let secs = now.as_secs();
-    // Simple ISO-ish timestamp without pulling in chrono crate
-    format!("{}s", secs)
 }
 
 /// Check if an error message indicates a transient/retryable error.
