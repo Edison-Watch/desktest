@@ -21,7 +21,7 @@ pub const IMAGE_NAME: &str = "desktest-desktop:latest";
 pub const IMAGE_NAME_ELECTRON: &str = "desktest-desktop:electron";
 
 pub struct DockerSession {
-    pub(super) client: Docker,
+    pub(in crate::docker) client: Docker,
     pub container_id: String,
 }
 

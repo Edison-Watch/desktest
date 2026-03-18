@@ -86,7 +86,7 @@ pub(crate) fn parse_resolution(s: &str) -> Result<(u32, u32), AppError> {
 
 /// Resolve the Docker image to use, building the electron image if needed.
 /// Returns the electron image name when `config.electron` is true and no custom image is set.
-async fn resolve_image_name<'a>(
+pub(crate) async fn resolve_image_name<'a>(
     config: &Config,
     custom_image: Option<&'a str>,
 ) -> Result<Option<&'a str>, AppError> {

@@ -10,7 +10,7 @@ use crate::error::{AgentOutcome, AppError};
 use crate::evaluator;
 use crate::orchestration::{
     build_agent_loop_config, format_evaluation_reasoning, print_validation_results,
-    run_task, TaskRunResult,
+    resolve_image_name, run_task, TaskRunResult,
 };
 use crate::provider;
 use crate::readiness;
@@ -18,20 +18,6 @@ use crate::recording;
 use crate::results;
 use crate::setup;
 use crate::task;
-
-/// Resolve the Docker image to use, building the electron image if needed.
-async fn resolve_image_name<'a>(
-    config: &Config,
-    custom_image: Option<&'a str>,
-) -> Result<Option<&'a str>, AppError> {
-    if config.electron && custom_image.is_none() {
-        let client = bollard::Docker::connect_with_local_defaults()
-            .map_err(|e| AppError::Infra(format!("Cannot connect to Docker: {e}")))?;
-        docker::DockerSession::ensure_electron_image(&client, false).await?;
-        return Ok(Some(docker::IMAGE_NAME_ELECTRON));
-    }
-    Ok(custom_image)
-}
 
 /// Run the interactive subcommand: starts container, runs setup, provides dev access.
 pub(crate) async fn run_interactive(

@@ -28,12 +28,20 @@ cargo test -- --ignored --test-threads=1       # Integration tests (require Dock
 
 ### Key modules
 
-- `src/main.rs` — CLI (clap subcommands: run, suite, interactive, validate, codify, review), orchestration
+- `src/main.rs` — Module declarations, `setup_logging()`, `main()` with subcommand dispatch
+- `src/cli.rs` — CLI (clap): `Cli` struct, `Command` enum (run, suite, interactive, validate, codify, review)
+- `src/orchestration.rs` — Task orchestration: `run_task()`, `run_legacy()`, `build_agent_loop_config()`, helpers
+- `src/interactive.rs` — Interactive subcommand: pause mode, step-by-step mode, validate-only mode
 - `src/task.rs` — Task JSON schema: `TaskDefinition`, `SetupStep`, `EvaluatorConfig`, `MetricConfig` with serde tagged enums
 - `src/config.rs` — Runtime config loading with cross-field validation (app_type determines required fields)
-- `src/docker.rs` — `DockerSession`: container lifecycle, file transfer (tar-based), app deployment, command execution, custom image validation
+- `src/docker/mod.rs` — `DockerSession`: struct, container create/cleanup, custom image validation
+- `src/docker/image.rs` — Docker image building: `ensure_image()`, `ensure_electron_image()`
+- `src/docker/exec.rs` — Container command execution: `exec()`, `exec_with_exit_code()`, `exec_with_stdin()`, `exec_detached()`
+- `src/docker/transfer.rs` — File transfer: `copy_into()`, `copy_from()`
+- `src/docker/deploy.rs` — App deployment: `deploy_app()`, `launch_app()`
 - `src/setup.rs` — Setup step execution: execute, copy, open, sleep
-- `src/agent/loop_v2.rs` — OSWorld-style agent loop: observe → LLM → parse → execute → repeat, with timeouts and retry
+- `src/agent/loop_v2.rs` — OSWorld-style agent loop: observe → LLM → parse → execute → repeat, with timeouts
+- `src/agent/llm_retry.rs` — LLM call retry logic, transient error detection, response text extraction
 - `src/agent/context.rs` — Sliding window context management, message construction, system prompt
 - `src/agent/pyautogui.rs` — Parse LLM output for Python code blocks + special commands (DONE/FAIL/WAIT), execute via container
 - `src/agent/mod.rs` — Legacy agent loop (tool-call based, kept for backward compat)
@@ -43,7 +51,10 @@ cargo test -- --ignored --test-threads=1       # Integration tests (require Dock
 - `src/provider/anthropic.rs` — Anthropic Claude implementation (Messages API with vision)
 - `src/provider/custom.rs` — Custom OpenAI-compatible endpoint implementation
 - `src/observation.rs` — Screenshot + accessibility tree capture with retry, trimming, configurable modes
-- `src/evaluator.rs` — Programmatic evaluation: file_compare, file_compare_semantic, command_output, file_exists, exit_code, script_replay
+- `src/evaluator/mod.rs` — Programmatic evaluation dispatch: `run_evaluation()`, `combine_results()`, metric routing
+- `src/evaluator/file_compare.rs` — File comparison: exact, normalized, semantic (JSON/YAML/XML/CSV)
+- `src/evaluator/command.rs` — Command-based evaluation: `command_output`, `file_exists`, `exit_code`
+- `src/evaluator/script.rs` — Script replay evaluation: `script_replay`
 - `src/codify.rs` — Convert trajectory.jsonl to deterministic Python replay scripts
 - `src/review.rs` — Generate self-contained HTML trajectory viewer
 - `src/results.rs` — Structured `results.json` output with `ResultsWriter`
