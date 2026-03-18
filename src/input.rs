@@ -2,9 +2,10 @@
 /// These are executed inside the container via `DockerSession::exec`.
 
 /// Returns true if the token is a valid xdotool key name or modifier.
-/// Only alphanumeric characters and underscores are allowed.
+/// Allows alphanumeric characters, underscores, and hyphens (for XF86 media
+/// keys like `XF86Audio-RaiseVolume`). All of these are shell-safe.
 fn is_valid_xdotool_token(s: &str) -> bool {
-    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
 pub fn build_move_mouse(x: i32, y: i32) -> Vec<String> {
@@ -287,6 +288,7 @@ mod tests {
         assert!(is_valid_xdotool_token("ctrl"));
         assert!(is_valid_xdotool_token("F12"));
         assert!(is_valid_xdotool_token("KP_Enter"));
+        assert!(is_valid_xdotool_token("XF86Audio-RaiseVolume")); // hyphens allowed
         assert!(!is_valid_xdotool_token(""));
         assert!(!is_valid_xdotool_token("a$(whoami)"));
         assert!(!is_valid_xdotool_token("ctrl;rm"));

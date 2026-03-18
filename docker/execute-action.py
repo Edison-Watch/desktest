@@ -61,8 +61,8 @@ def _safe_builtins():
         "repr", "format", "chr", "ord", "hex", "oct", "bin",
         # Introspection (safe subset)
         "isinstance", "issubclass", "callable", "hash", "id",
-        # OOP primitives
-        "super", "object", "property", "staticmethod", "classmethod",
+        # OOP primitives (object excluded — __subclasses__() enables sandbox escape)
+        "super", "property", "staticmethod", "classmethod",
         # Exception types
         "Exception", "ValueError", "TypeError", "AttributeError",
         "KeyError", "IndexError", "RuntimeError", "StopIteration",
