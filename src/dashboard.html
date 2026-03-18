@@ -221,10 +221,12 @@ if (MODE === 'live') {
 
   evtSource.addEventListener('test_start', function(e) {
     var data = JSON.parse(e.data);
-    // Clear previous test's steps
+    // Clear previous test's steps and final-status div
     STEPS = [];
     stepList.innerHTML = '';
     mainPanel.innerHTML = '<div class="empty">Waiting for first step...</div>';
+    var oldStatus = document.getElementById('final-status-bar');
+    if (oldStatus) oldStatus.remove();
     var html = '<div class="live-header">';
     html += '<div style="display:flex;align-items:center;gap:8px"><strong>' + escapeHtml(data.test_id) + '</strong>';
     html += '<span style="color:#484f58;font-size:12px">max ' + data.max_steps + ' steps</span></div>';
@@ -257,14 +259,14 @@ if (MODE === 'live') {
 
   evtSource.addEventListener('test_complete', function(e) {
     var data = JSON.parse(e.data);
-    var html = '<div class="final-status">';
-    html += '<span class="badge ' + (data.passed ? 'pass' : 'fail') + '">' + (data.passed ? 'PASS' : 'FAIL') + '</span>';
-    html += '<div style="margin-top:8px;font-size:13px;color:#8b949e">' + escapeHtml(data.reasoning) + '</div>';
-    html += '<div style="margin-top:4px;font-size:12px;color:#484f58">' + (data.duration_ms / 1000).toFixed(1) + 's</div>';
-    html += '</div>';
+    // Remove any previous final-status div (suite mode)
+    var old = document.getElementById('final-status-bar');
+    if (old) old.remove();
     var statusDiv = document.createElement('div');
-    statusDiv.innerHTML = html;
-    liveHeader.parentNode.insertBefore(statusDiv.firstChild, stepList);
+    statusDiv.id = 'final-status-bar';
+    statusDiv.className = 'final-status';
+    statusDiv.innerHTML = '<span class="badge ' + (data.passed ? 'pass' : 'fail') + '">' + (data.passed ? 'PASS' : 'FAIL') + '</span><div style="margin-top:8px;font-size:13px;color:#8b949e">' + escapeHtml(data.reasoning) + '</div><div style="margin-top:4px;font-size:12px;color:#484f58">' + (data.duration_ms / 1000).toFixed(1) + 's</div>';
+    liveHeader.parentNode.insertBefore(statusDiv, stepList);
   });
 
   evtSource.addEventListener('suite_progress', function(e) {
