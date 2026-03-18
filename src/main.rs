@@ -150,7 +150,7 @@ EXAMPLES:
     #[command(after_help = "\
 EXAMPLES:
   eyetest codify test-results/trajectory.jsonl
-  eyetest codify test-results/trajectory.jsonl --output replay.py
+  eyetest codify test-results/trajectory.jsonl --output eyetest_replay.py
   eyetest codify test-results/trajectory.jsonl --steps 1,2,5,6
   eyetest codify test-results/trajectory.jsonl --with-screenshots --threshold 0.95")]
     Codify {
