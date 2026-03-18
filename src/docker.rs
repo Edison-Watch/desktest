@@ -299,6 +299,19 @@ impl DockerSession {
             }
         }
 
+        // Check that ~/.Xauthority exists — PyAutoGUI/python-xlib will crash without it.
+        // This is a common pitfall when building custom images (see docker/Dockerfile).
+        let (_, xauth_exit) = self
+            .exec_with_exit_code(&["test", "-f", "/home/tester/.Xauthority"])
+            .await?;
+        if xauth_exit != 0 {
+            tracing::warn!(
+                "~/.Xauthority not found — PyAutoGUI will fail to connect to the X display. \
+                 Add `RUN touch /home/tester/.Xauthority` to your Dockerfile after `USER tester`."
+            );
+            missing.push("/home/tester/.Xauthority (required by PyAutoGUI/python-xlib)".to_string());
+        }
+
         if missing.is_empty() {
             info!("Custom image validation passed: all required dependencies found");
             Ok(())

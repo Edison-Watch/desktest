@@ -62,6 +62,11 @@ RUN chmod +x /entrypoint.sh
 
 USER tester
 WORKDIR /home/tester
+
+# IMPORTANT: PyAutoGUI uses python-xlib which requires ~/.Xauthority to exist.
+# Without this file, all PyAutoGUI actions will crash with:
+#   Xlib.error.XauthError: ~/.Xauthority: [Errno 2] No such file or directory
+# If you extend this image and switch to USER root then back, re-run this touch.
 RUN touch /home/tester/.Xauthority
 
 ENTRYPOINT ["/entrypoint.sh"]

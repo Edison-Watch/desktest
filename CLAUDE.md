@@ -60,6 +60,8 @@ cargo test -- --ignored --test-threads=1       # Integration tests (require Dock
 
 Built from debian:bookworm-slim with Xvfb, XFCE4, x11vnc, xdotool, scrot, ffmpeg, Python3, PyAutoGUI, pyatspi, AT-SPI2, FUSE, GTK3 libs. Runs as non-root user "tester". Entrypoint starts display server, dbus, AT-SPI registry, desktop, VNC, then writes sentinel file.
 
+**IMPORTANT:** `~/.Xauthority` must exist for the tester user. PyAutoGUI (via python-xlib) crashes with `Xlib.error.XauthError` without it. The base Dockerfile creates it, but custom images or images that switch users must ensure it exists. Custom images are validated at startup; built-in images have a fallback in `execute-action.py`.
+
 Docker images:
 - `eyetest-desktop:latest` — Base image (Dockerfile)
 - `eyetest-desktop:electron` — Extends base with Node.js 20 + Electron deps (Dockerfile.electron)

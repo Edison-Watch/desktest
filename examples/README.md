@@ -63,6 +63,12 @@ Custom images must include these packages for eyetest to work:
 | Clipboard | `xclip` |
 | D-Bus | `dbus`, `dbus-x11` |
 
+Custom images must also create `~/.Xauthority` for the tester user. Without it, PyAutoGUI will crash with `Xlib.error.XauthError`. Add this after `USER tester`:
+
+```dockerfile
+RUN touch /home/tester/.Xauthority
+```
+
 You must also copy the helper scripts from `docker/`:
 - `docker/get-a11y-tree.py` → `/usr/local/bin/get-a11y-tree`
 - `docker/execute-action.py` → `/usr/local/bin/execute-action`

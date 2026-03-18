@@ -14,6 +14,10 @@ import time
 
 os.environ.setdefault("DISPLAY", ":99")
 
+# Ensure ~/.Xauthority exists — python-xlib crashes without it.
+import pathlib
+pathlib.Path(os.path.expanduser("~/.Xauthority")).touch(exist_ok=True)
+
 try:
     import pyautogui
     pyautogui.FAILSAFE = False
