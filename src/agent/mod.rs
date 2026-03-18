@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 pub mod context;
-pub(crate) mod llm_retry;
+pub(super) mod llm_retry;
 pub mod loop_v2;
 pub mod openai;
 pub mod pyautogui;
