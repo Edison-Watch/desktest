@@ -70,9 +70,13 @@ pub struct Cli {
     #[arg(long, default_value_t = false, global = true)]
     pub verbose: bool,
 
-    /// Disable video recording of test sessions
+    /// Enable video recording of test sessions
     #[arg(long, default_value_t = false, global = true)]
-    pub no_recording: bool,
+    pub record: bool,
+
+    /// Display resolution as WxH (e.g., 1280x720, 1920x1080) or preset (720p, 1080p)
+    #[arg(long, global = true)]
+    pub resolution: Option<String>,
 
     /// Enable live monitoring web dashboard
     #[arg(long, default_value_t = false, global = true)]
@@ -105,7 +109,8 @@ EXAMPLES:
   eyetest run task.json
   eyetest run task.json --config config.json
   eyetest run task.json --output ./my-results --verbose
-  eyetest run task.json --no-recording --debug")]
+  eyetest run task.json --record --debug
+  eyetest run task.json --resolution 1280x720")]
     Run {
         /// Path to the task JSON file
         task: std::path::PathBuf,
@@ -242,7 +247,7 @@ async fn main() {
                     }
                 };
 
-                let run_config = load_config_or_defaults(&cli.config_flag);
+                let run_config = load_config_or_defaults(&cli.config_flag, &cli.resolution);
 
                 let monitor_handle = if cli.monitor {
                     let handle = monitor::MonitorHandle::new(32);
@@ -256,7 +261,7 @@ async fn main() {
                     None
                 };
 
-                let result = run_task(task_def, run_config, cli.debug, cli.verbose, cli.no_recording, cli.output.clone(), monitor_handle).await;
+                let result = run_task(task_def, run_config, cli.debug, cli.verbose, !cli.record, cli.output.clone(), monitor_handle).await;
                 match result {
                     Ok(outcome) => {
                         println!("{outcome}");
@@ -288,7 +293,7 @@ async fn main() {
                     &cli.output,
                     cli.debug,
                     cli.verbose,
-                    cli.no_recording,
+                    !cli.record,
                     monitor_handle,
                 ).await;
 
@@ -311,14 +316,14 @@ async fn main() {
                     }
                 };
 
-                let run_config = load_config_or_defaults(&cli.config_flag);
+                let run_config = load_config_or_defaults(&cli.config_flag, &cli.resolution);
 
                 let result = run_interactive(
                     task_def,
                     run_config,
                     cli.debug,
                     cli.verbose,
-                    cli.no_recording,
+                    !cli.record,
                     cli.output.clone(),
                     *step,
                     *validate_only,
@@ -442,8 +447,8 @@ async fn main() {
 }
 
 /// Load config from --config flag path or use task defaults.
-fn load_config_or_defaults(config_flag: &Option<std::path::PathBuf>) -> Config {
-    if let Some(config_path) = config_flag {
+fn load_config_or_defaults(config_flag: &Option<std::path::PathBuf>, resolution: &Option<String>) -> Config {
+    let mut config = if let Some(config_path) = config_flag {
         match config::Config::load_and_validate(config_path) {
             Ok(c) => c,
             Err(e) => {
@@ -453,6 +458,44 @@ fn load_config_or_defaults(config_flag: &Option<std::path::PathBuf>) -> Config {
         }
     } else {
         config::Config::from_task_defaults()
+    };
+
+    if let Some(res) = resolution {
+        match parse_resolution(res) {
+            Ok((w, h)) => {
+                config.display_width = w;
+                config.display_height = h;
+            }
+            Err(e) => {
+                eprintln!("Resolution error: {e}");
+                std::process::exit(2);
+            }
+        }
+    }
+
+    config
+}
+
+/// Parse a resolution string like "1280x720", "720p", or "1080p" into (width, height).
+fn parse_resolution(s: &str) -> Result<(u32, u32), AppError> {
+    match s.to_lowercase().as_str() {
+        "720p" => Ok((1280, 720)),
+        "1080p" => Ok((1920, 1080)),
+        other => {
+            let parts: Vec<&str> = other.split('x').collect();
+            if parts.len() != 2 {
+                return Err(AppError::Config(format!(
+                    "Invalid resolution '{s}': expected WxH (e.g., 1280x720) or preset (720p, 1080p)"
+                )));
+            }
+            let w = parts[0].parse::<u32>().map_err(|_| {
+                AppError::Config(format!("Invalid resolution width in '{s}'"))
+            })?;
+            let h = parts[1].parse::<u32>().map_err(|_| {
+                AppError::Config(format!("Invalid resolution height in '{s}'"))
+            })?;
+            Ok((w, h))
+        }
     }
 }
 
@@ -1824,10 +1867,40 @@ mod tests {
 
     #[test]
     fn test_load_config_or_defaults_none() {
-        let config = load_config_or_defaults(&None);
+        let config = load_config_or_defaults(&None, &None);
         assert_eq!(config.provider, "anthropic");
         assert_eq!(config.model, "claude-sonnet-4-5-20250929");
         assert!(config.api_key.is_empty());
+    }
+
+    #[test]
+    fn test_parse_resolution_preset_720p() {
+        assert_eq!(parse_resolution("720p").unwrap(), (1280, 720));
+    }
+
+    #[test]
+    fn test_parse_resolution_preset_1080p() {
+        assert_eq!(parse_resolution("1080p").unwrap(), (1920, 1080));
+    }
+
+    #[test]
+    fn test_parse_resolution_wxh() {
+        assert_eq!(parse_resolution("1280x720").unwrap(), (1280, 720));
+        assert_eq!(parse_resolution("800x600").unwrap(), (800, 600));
+    }
+
+    #[test]
+    fn test_parse_resolution_invalid() {
+        assert!(parse_resolution("abc").is_err());
+        assert!(parse_resolution("1280").is_err());
+        assert!(parse_resolution("1280x").is_err());
+    }
+
+    #[test]
+    fn test_load_config_with_resolution_override() {
+        let config = load_config_or_defaults(&None, &Some("1280x720".into()));
+        assert_eq!(config.display_width, 1280);
+        assert_eq!(config.display_height, 720);
     }
 
     #[test]
