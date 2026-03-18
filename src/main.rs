@@ -673,7 +673,7 @@ pub(crate) async fn run_task(
             eprintln!("\nInterrupted (Ctrl+C), cleaning up...");
             Err(AppError::Infra("Interrupted by user".into()))
         }
-        r = run_task_inner(&task_def, &config, &session, &artifacts_dir, debug, verbose, no_recording, monitor.as_ref()) => r,
+        r = run_task_inner(&task_def, &config, &session, &artifacts_dir, debug, verbose, no_recording, monitor.as_ref(), start) => r,
     };
 
     // Always collect artifacts and clean up
@@ -719,6 +719,7 @@ async fn run_task_inner(
     verbose: bool,
     no_recording: bool,
     monitor: Option<&monitor::MonitorHandle>,
+    start_time: Instant,
 ) -> Result<TaskRunResult, AppError> {
     use task::EvaluatorMode;
 
@@ -887,7 +888,7 @@ async fn run_task_inner(
                     test_id: task_def.id.clone(),
                     passed: eval_result.passed,
                     reasoning: format_evaluation_reasoning(None, Some(&eval_result)),
-                    duration_ms: 0,
+                    duration_ms: start_time.elapsed().as_millis() as u64,
                 });
             }
 
@@ -953,7 +954,7 @@ async fn run_task_inner(
                     test_id: task_def.id.clone(),
                     passed: both_passed,
                     reasoning: format_evaluation_reasoning(Some(&agent_outcome), Some(&eval_result)),
-                    duration_ms: 0,
+                    duration_ms: start_time.elapsed().as_millis() as u64,
                 });
             }
 
