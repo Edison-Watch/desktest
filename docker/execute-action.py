@@ -40,10 +40,14 @@ except ImportError:
 def _sanitize_module(mod):
     """Remove dangerous attributes from a module before passing to exec namespace.
 
-    Strips __loader__ (which exposes load_module() for arbitrary imports) and
-    __spec__.loader. This is hardening — not a complete sandbox. Attribute
-    traversal via __class__.__mro__ can still reach dangerous classes; full
-    prevention requires RestrictedPython or process-level isolation.
+    Strips __loader__ (which exposes load_module() for arbitrary imports),
+    __spec__.loader, and __builtins__. This is hardening — not a complete sandbox.
+
+    Known remaining bypass vectors (all require CPython internals knowledge):
+    - Attribute traversal via __class__.__mro__ can reach arbitrary classes
+    - Function __globals__ on copied callables points to the original module's
+      __dict__, which contains unrestricted __builtins__
+    Full prevention requires RestrictedPython or process-level isolation.
     """
     import types
     # Create a shallow wrapper module to avoid mutating the real module
@@ -94,7 +98,23 @@ def _safe_builtins():
         "NotImplementedError", "ArithmeticError", "ZeroDivisionError",
         "OverflowError", "NameError", "OSError", "IOError",
     ]
-    return {name: getattr(builtins, name) for name in allowed if hasattr(builtins, name)}
+    safe = {name: getattr(builtins, name) for name in allowed if hasattr(builtins, name)}
+
+    # Provide a restricted __import__ so LLM-generated `import time` etc. still
+    # work, while blocking `import os`, `import subprocess`, etc.
+    _allowed_modules = frozenset({
+        "time", "pyautogui", "pyperclip", "math", "random", "string",
+        "re", "json", "collections", "itertools", "functools", "datetime",
+    })
+    _real_import = builtins.__import__
+
+    def _restricted_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name not in _allowed_modules:
+            raise ImportError(f"Import of '{name}' is not allowed in this sandbox")
+        return _real_import(name, globals, locals, fromlist, level)
+
+    safe["__import__"] = _restricted_import
+    return safe
 
 
 def main():

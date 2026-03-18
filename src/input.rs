@@ -5,7 +5,9 @@
 /// Allows alphanumeric characters, underscores, and hyphens (for XF86 media
 /// keys like `XF86Audio-RaiseVolume`). All of these are shell-safe.
 fn is_valid_xdotool_token(s: &str) -> bool {
-    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    !s.is_empty()
+        && !s.starts_with('-')
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
 pub fn build_move_mouse(x: i32, y: i32) -> Vec<String> {
@@ -293,5 +295,7 @@ mod tests {
         assert!(!is_valid_xdotool_token("a$(whoami)"));
         assert!(!is_valid_xdotool_token("ctrl;rm"));
         assert!(!is_valid_xdotool_token("key+combo")); // + not allowed in individual tokens
+        assert!(!is_valid_xdotool_token("-clearmodifiers")); // leading hyphen = flag injection
+        assert!(!is_valid_xdotool_token("--version")); // leading hyphen = flag injection
     }
 }
