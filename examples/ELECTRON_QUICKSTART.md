@@ -216,7 +216,7 @@ Since codified tests are deterministic (no LLM calls), they're fast, reliable, a
 - **Start with interactive mode** (`eyetest interactive`) to understand how your app looks in the virtual desktop
 - **Use VNC** to watch tests live: add `"vnc_port": 5900` to your config
 - **Accessibility matters**: Electron's `--force-renderer-accessibility` flag helps the agent read your UI. Use semantic HTML and ARIA labels for best results
-- **npm install is slow**: Use a `setup` step in your task JSON to run `npm install` before the app launches, or use a custom Docker image with dependencies pre-installed for faster test runs. Never put `npm install` in your `start.sh` — it will exceed the window detection timeout
+- **npm install is slow**: Use a `config` step in your task JSON to run `npm install` before the app launches, or use a custom Docker image with dependencies pre-installed for faster test runs. Never put `npm install` in your `start.sh` — it will exceed the window detection timeout
 - **File paths**: In the container, your app folder is at `/home/tester/<dir-name>/`
 
 ## Example
