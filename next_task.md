@@ -39,3 +39,7 @@ Mixed concerns (text truncation, layout calculation, magic numbers for font size
 ## 7. Shared constants dedup
 
 `DEFAULT_STEP_TIMEOUT_SECS` is defined in both `src/agent/pyautogui.rs` and `src/agent/loop_v2.rs`. Consolidate into a single location (e.g., `src/agent/mod.rs` or a shared constants module).
+
+## 8. `is_context_length_error` false-positive on `max_tokens`
+
+`src/agent/context.rs:317` — `lower.contains("max_tokens")` is too broad. Parameter validation errors like "max_tokens must be less than X" are misclassified as context length errors, triggering an unnecessary fallback (clear trajectory + retry). Replace with a more specific pattern like `"input length and max_tokens exceed"` or remove the `"max_tokens"` check entirely (the other patterns cover real context length errors). Flagged by Sentry in PR #16.
