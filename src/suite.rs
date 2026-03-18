@@ -257,9 +257,16 @@ pub async fn run_suite(
     };
 
     if let Some(res) = resolution {
-        let (w, h) = crate::parse_resolution(res)?;
-        run_config.display_width = w;
-        run_config.display_height = h;
+        match crate::parse_resolution(res) {
+            Ok((w, h)) => {
+                run_config.display_width = w;
+                run_config.display_height = h;
+            }
+            Err(e) => {
+                eprintln!("Resolution error: {e}");
+                std::process::exit(2);
+            }
+        }
     }
 
     let suite_start = Instant::now();
