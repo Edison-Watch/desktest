@@ -294,6 +294,7 @@ async fn main() {
                     cli.debug,
                     cli.verbose,
                     !cli.record,
+                    cli.resolution.as_deref(),
                     monitor_handle,
                 ).await;
 
@@ -477,7 +478,7 @@ fn load_config_or_defaults(config_flag: &Option<std::path::PathBuf>, resolution:
 }
 
 /// Parse a resolution string like "1280x720", "720p", or "1080p" into (width, height).
-fn parse_resolution(s: &str) -> Result<(u32, u32), AppError> {
+pub(crate) fn parse_resolution(s: &str) -> Result<(u32, u32), AppError> {
     match s.to_lowercase().as_str() {
         "720p" => Ok((1280, 720)),
         "1080p" => Ok((1920, 1080)),
@@ -494,6 +495,11 @@ fn parse_resolution(s: &str) -> Result<(u32, u32), AppError> {
             let h = parts[1].parse::<u32>().map_err(|_| {
                 AppError::Config(format!("Invalid resolution height in '{s}'"))
             })?;
+            if w == 0 || h == 0 {
+                return Err(AppError::Config(format!(
+                    "Invalid resolution '{s}': width and height must be greater than zero"
+                )));
+            }
             Ok((w, h))
         }
     }
@@ -1894,6 +1900,9 @@ mod tests {
         assert!(parse_resolution("abc").is_err());
         assert!(parse_resolution("1280").is_err());
         assert!(parse_resolution("1280x").is_err());
+        assert!(parse_resolution("0x720").is_err());
+        assert!(parse_resolution("1280x0").is_err());
+        assert!(parse_resolution("0x0").is_err());
     }
 
     #[test]
