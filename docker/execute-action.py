@@ -15,9 +15,8 @@ import time
 os.environ.setdefault("DISPLAY", ":99")
 
 # Ensure ~/.Xauthority exists — python-xlib crashes without it.
-_xauth = os.path.expanduser("~/.Xauthority")
-if not os.path.exists(_xauth):
-    open(_xauth, "a").close()
+import pathlib
+pathlib.Path(os.path.expanduser("~/.Xauthority")).touch(exist_ok=True)
 
 try:
     import pyautogui

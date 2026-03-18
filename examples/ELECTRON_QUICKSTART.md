@@ -45,7 +45,7 @@ Key flags:
 - `--disable-gpu` — no GPU available in the virtual desktop
 - `--force-renderer-accessibility` — enables the accessibility tree for better agent navigation
 
-> **Important:** Do NOT put `npm install` in `start.sh`. The entrypoint runs after the app window detection timer starts, and `npm install` for Electron downloads a ~180MB binary that will exceed the 30-second timeout. Instead, use a `setup` step in your task JSON to install dependencies before the app launches (see [Step 3](#step-3-write-a-task-file)).
+> **Important:** Do NOT put `npm install` in `start.sh`. The entrypoint runs after the app window detection timer starts, and `npm install` for Electron downloads a ~180MB binary that will exceed the 30-second timeout. Instead, use a `config` step in your task JSON to install dependencies before the app launches (see [Step 3](#step-3-write-a-task-file)).
 
 ### Option B: Pre-built Binary (Release Testing)
 
@@ -105,7 +105,7 @@ Create `my-test.json`:
     "entrypoint": "start.sh",
     "electron": true
   },
-  "setup": [
+  "config": [
     {
       "type": "execute",
       "command": "cd /home/tester/my-electron-app && npm install --production"
@@ -127,7 +127,7 @@ Create `my-test.json`:
 }
 ```
 
-The `setup` step runs `npm install` before the app is launched, so it doesn't count against the window detection timeout.
+The `config` step runs `npm install` after the app folder is deployed but before the app is launched, so it doesn't count against the window detection timeout.
 
 The `"electron": true` flag tells eyetest to:
 1. Use the `eyetest-desktop:electron` Docker image (which has Node.js and Electron runtime dependencies)

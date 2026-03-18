@@ -8,7 +8,7 @@
     "entrypoint": "start.sh",
     "electron": true
   },
-  "setup": [
+  "config": [
     {
       "type": "execute",
       "command": "cd /home/tester/electron-todo-app && npm install --production"

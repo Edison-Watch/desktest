@@ -710,17 +710,23 @@ async fn run_task_inner(
         session.validate_custom_image().await?;
     }
 
-    // 2. Run setup steps from task definition (after desktop readiness, before app launch)
+    // 2. Deploy app (before setup steps, so setup can reference deployed files)
+    let app_path = if is_docker_image {
+        info!("Custom Docker image: skipping app deployment");
+        String::new()
+    } else {
+        info!("Deploying app...");
+        session.deploy_app(config).await?
+    };
+
+    // 3. Run setup steps from task definition (after deploy, before app launch)
     if !task_def.config.is_empty() {
         info!("Running {} setup steps...", task_def.config.len());
         setup::run_setup_steps(session, &task_def.config).await?;
     }
 
-    // 3. Deploy and launch app
+    // 4. Launch app
     if is_docker_image {
-        // Custom Docker image: no deployment needed, launch via entrypoint_cmd if provided
-        info!("Custom Docker image: skipping app deployment");
-
         if let task::AppConfig::DockerImage { entrypoint_cmd, .. } = &task_def.app {
             if let Some(cmd) = entrypoint_cmd {
                 info!("Waiting for stable window baseline...");
@@ -754,9 +760,6 @@ async fn run_task_inner(
             }
         }
     } else {
-        // Standard flow: deploy app into container and launch
-        info!("Deploying app...");
-        let app_path = session.deploy_app(config).await?;
 
         info!("Waiting for stable window baseline...");
         let baseline_windows = readiness::get_stable_window_list(session).await?;
@@ -1104,15 +1107,23 @@ async fn run_interactive_pause_inner(
         session.validate_custom_image().await?;
     }
 
-    // 2. Run setup steps
+    // 2. Deploy app (before setup steps, so setup can reference deployed files)
+    let app_path = if is_docker_image {
+        info!("Custom Docker image: skipping app deployment");
+        String::new()
+    } else {
+        info!("Deploying app...");
+        session.deploy_app(config).await?
+    };
+
+    // 3. Run setup steps (after deploy, before app launch)
     if !task_def.config.is_empty() {
         info!("Running {} setup steps...", task_def.config.len());
         setup::run_setup_steps(session, &task_def.config).await?;
     }
 
-    // 3. Deploy and launch app
+    // 4. Launch app
     if is_docker_image {
-        info!("Custom Docker image: skipping app deployment");
         if let task::AppConfig::DockerImage { entrypoint_cmd, .. } = &task_def.app {
             if let Some(cmd) = entrypoint_cmd {
                 info!("Launching app via entrypoint_cmd: {cmd}");
@@ -1121,15 +1132,13 @@ async fn run_interactive_pause_inner(
             }
         }
     } else {
-        info!("Deploying app...");
-        let app_path = session.deploy_app(config).await?;
         let is_appimage = matches!(config.app_type, crate::config::AppType::Appimage);
         info!("Launching app: {app_path}");
         session.launch_app(&app_path, is_appimage, config.electron).await?;
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
 
-    // 4. Print VNC info and container info
+    // 5. Print VNC info and container info
     if let Some(port) = config.vnc_port {
         println!("VNC available at {}:{}", config.vnc_bind_addr, port);
     }
@@ -1247,15 +1256,23 @@ async fn run_interactive_step_inner(
         session.validate_custom_image().await?;
     }
 
-    // 2. Run setup steps
+    // 2. Deploy app (before setup steps, so setup can reference deployed files)
+    let app_path = if is_docker_image {
+        info!("Custom Docker image: skipping app deployment");
+        String::new()
+    } else {
+        info!("Deploying app...");
+        session.deploy_app(config).await?
+    };
+
+    // 3. Run setup steps (after deploy, before app launch)
     if !task_def.config.is_empty() {
         info!("Running {} setup steps...", task_def.config.len());
         setup::run_setup_steps(session, &task_def.config).await?;
     }
 
-    // 3. Deploy and launch app (same as run_task_inner)
+    // 4. Launch app
     if is_docker_image {
-        info!("Custom Docker image: skipping app deployment");
         if let task::AppConfig::DockerImage { entrypoint_cmd, .. } = &task_def.app {
             if let Some(cmd) = entrypoint_cmd {
                 let baseline_windows = readiness::get_stable_window_list(session).await?;
@@ -1267,8 +1284,6 @@ async fn run_interactive_step_inner(
             }
         }
     } else {
-        info!("Deploying app...");
-        let app_path = session.deploy_app(config).await?;
         let baseline_windows = readiness::get_stable_window_list(session).await?;
         let is_appimage = matches!(config.app_type, crate::config::AppType::Appimage);
         info!("Launching app: {app_path}");
