@@ -1,6 +1,6 @@
 # Examples
 
-Example task files and Dockerfiles for eyetest.
+Example task files and Dockerfiles for desktest.
 
 ## Task Files
 
@@ -10,9 +10,9 @@ A simple test that opens a text file in gedit, adds a line, and saves.
 Uses the `folder` app deploy type with a local application directory.
 
 ```bash
-eyetest run examples/gedit-save.json
-eyetest run examples/gedit-save.json --monitor   # Watch live at http://localhost:7860
-eyetest interactive examples/gedit-save.json
+desktest run examples/gedit-save.json
+desktest run examples/gedit-save.json --monitor   # Watch live at http://localhost:7860
+desktest interactive examples/gedit-save.json
 ```
 
 ### `libreoffice-calc.json` — Custom Docker Image
@@ -25,10 +25,10 @@ Uses the `docker_image` app type with a pre-built custom image.
 docker build -t tent-libreoffice:latest -f examples/Dockerfile.libreoffice .
 
 # Run the test
-eyetest run examples/libreoffice-calc.json
+desktest run examples/libreoffice-calc.json
 
 # Or interactively
-eyetest interactive examples/libreoffice-calc.json
+desktest interactive examples/libreoffice-calc.json
 ```
 
 ### `electron-todo.json` — Electron App (Folder Deploy)
@@ -38,11 +38,11 @@ Uses the `folder` app deploy type with `electron: true` for Node.js support.
 
 ```bash
 # Build the electron Docker image first
-docker build -t eyetest-desktop:latest docker/
-docker build -f docker/Dockerfile.electron -t eyetest-desktop:electron docker/
+docker build -t desktest-desktop:latest docker/
+docker build -f docker/Dockerfile.electron -t desktest-desktop:electron docker/
 
 # Run the test
-eyetest run examples/electron-todo.json
+desktest run examples/electron-todo.json
 ```
 
 See [ELECTRON_QUICKSTART.md](ELECTRON_QUICKSTART.md) for a complete guide to testing Electron apps.
@@ -53,7 +53,7 @@ See [ELECTRON_QUICKSTART.md](ELECTRON_QUICKSTART.md) for a complete guide to tes
 
 ### Required Dependencies
 
-Custom images must include these packages for eyetest to work:
+Custom images must include these packages for desktest to work:
 
 | Category | Packages |
 |----------|----------|
@@ -77,11 +77,11 @@ You must also copy the helper scripts from `docker/`:
 
 ### Validation
 
-eyetest validates custom images at startup. If a required dependency is missing, it exits with code 2 and a clear error message.
+desktest validates custom images at startup. If a required dependency is missing, it exits with code 2 and a clear error message.
 
 ```bash
 # Validate a task file without running
-eyetest validate examples/libreoffice-calc.json
+desktest validate examples/libreoffice-calc.json
 ```
 
 ## Live Monitoring
@@ -90,16 +90,16 @@ Any example can be run with the `--monitor` flag to open a real-time web dashboa
 
 ```bash
 # Single test with live dashboard
-eyetest run examples/gedit-save.json --monitor
+desktest run examples/gedit-save.json --monitor
 
 # Suite with progress tracking
-eyetest suite examples/ --monitor
+desktest suite examples/ --monitor
 
 # Custom port
-eyetest run examples/gedit-save.json --monitor --monitor-port 8080
+desktest run examples/gedit-save.json --monitor --monitor-port 8080
 ```
 
-Open `http://localhost:7860` in your browser to watch the agent's screenshots, thoughts, and actions stream in as each step completes. The dashboard uses the same UI as `eyetest review`.
+Open `http://localhost:7860` in your browser to watch the agent's screenshots, thoughts, and actions stream in as each step completes. The dashboard uses the same UI as `desktest review`.
 
 ## Task JSON Schema
 

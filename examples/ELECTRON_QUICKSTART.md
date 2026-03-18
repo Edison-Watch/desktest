@@ -1,11 +1,11 @@
-# Electron App Testing with Eyetest
+# Electron App Testing with Desktest
 
-A step-by-step guide to testing your Electron apps with eyetest.
+A step-by-step guide to testing your Electron apps with desktest.
 
 ## Prerequisites
 
 - Docker installed and running
-- eyetest binary ([install](#install) or build from source)
+- desktest binary ([install](#install) or build from source)
 - Your Electron app source code
 
 ## Install
@@ -13,16 +13,16 @@ A step-by-step guide to testing your Electron apps with eyetest.
 Download the latest release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Edison-Watch/eyetest/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Edison-Watch/tent-agent/master/install.sh | bash
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/Edison-Watch/eyetest.git
-cd eyetest
+git clone https://github.com/Edison-Watch/tent-agent.git
+cd tent-agent
 cargo build --release
-# Binary at target/release/eyetest
+# Binary at target/release/desktest
 ```
 
 ## Step 1: Prepare Your Electron App
@@ -61,14 +61,14 @@ Package your app as an AppImage using `electron-builder`:
 }
 ```
 
-Then use `app.type = "appimage"` with `"electron": true` in your task JSON. This ensures `--no-sandbox`, `--disable-gpu`, and `--force-renderer-accessibility` are passed to the binary, and the `eyetest-desktop:electron` image is used.
+Then use `app.type = "appimage"` with `"electron": true` in your task JSON. This ensures `--no-sandbox`, `--disable-gpu`, and `--force-renderer-accessibility` are passed to the binary, and the `desktest-desktop:electron` image is used.
 
 ### Option C: Custom Docker Image
 
 For complex setups, extend the electron base image:
 
 ```dockerfile
-FROM eyetest-desktop:electron
+FROM desktest-desktop:electron
 COPY my-app /home/tester/my-app
 RUN cd /home/tester/my-app && npm install --production
 
@@ -84,10 +84,10 @@ The electron image adds Node.js and Electron dependencies to the base image:
 
 ```bash
 # Build the base image first (if not already built)
-docker build -t eyetest-desktop:latest docker/
+docker build -t desktest-desktop:latest docker/
 
 # Build the electron image
-docker build -f docker/Dockerfile.electron -t eyetest-desktop:electron docker/
+docker build -f docker/Dockerfile.electron -t desktest-desktop:electron docker/
 ```
 
 ## Step 3: Write a Task File
@@ -129,8 +129,8 @@ Create `my-test.json`:
 
 The `config` step runs `npm install` after the app folder is deployed but before the app is launched, so it doesn't count against the window detection timeout.
 
-The `"electron": true` flag tells eyetest to:
-1. Use the `eyetest-desktop:electron` Docker image (which has Node.js and Electron runtime dependencies)
+The `"electron": true` flag tells desktest to:
+1. Use the `desktest-desktop:electron` Docker image (which has Node.js and Electron runtime dependencies)
 2. For AppImage deploys, pass `--no-sandbox --disable-gpu --force-renderer-accessibility` flags directly to the binary
 
 **Important for folder deploys:** Since `start.sh` is a shell script (not the Electron binary), you must include all Electron flags in your script directly: `npx electron . --no-sandbox --disable-gpu --force-renderer-accessibility`. Electron does not support env vars for these options — they must be CLI flags.
@@ -139,13 +139,13 @@ The `"electron": true` flag tells eyetest to:
 
 ```bash
 # Validate the task file first
-eyetest validate my-test.json
+desktest validate my-test.json
 
 # Run with VNC enabled so you can watch
-eyetest run my-test.json --config config.json
+desktest run my-test.json --config config.json
 
 # Or interactively for debugging
-eyetest interactive my-test.json
+desktest interactive my-test.json
 ```
 
 ## Step 5: Review the Trajectory
@@ -153,7 +153,7 @@ eyetest interactive my-test.json
 After a test run, review what the agent did:
 
 ```bash
-eyetest review test-results/ --open
+desktest review test-results/ --open
 ```
 
 This generates an interactive HTML viewer showing each step's screenshot, the agent's reasoning, and the action code.
@@ -164,10 +164,10 @@ Convert a successful trajectory into a deterministic replay script:
 
 ```bash
 # Generate replay script from all successful steps
-eyetest codify test-results/trajectory.jsonl --output test_replay.py
+desktest codify test-results/trajectory.jsonl --output test_replay.py
 
 # Or select specific steps from the review UI
-eyetest codify test-results/trajectory.jsonl --steps 1,2,5,6 --output test_replay.py
+desktest codify test-results/trajectory.jsonl --steps 1,2,5,6 --output test_replay.py
 ```
 
 ## Step 7: Run the Codified Test
@@ -204,16 +204,16 @@ Create a task that uses the replay script instead of the LLM:
 Add to your GitHub Actions workflow:
 
 ```yaml
-- name: Run eyetest
+- name: Run desktest
   run: |
-    eyetest run my-test-replay.json
+    desktest run my-test-replay.json
 ```
 
 Since codified tests are deterministic (no LLM calls), they're fast, reliable, and free.
 
 ## Tips
 
-- **Start with interactive mode** (`eyetest interactive`) to understand how your app looks in the virtual desktop
+- **Start with interactive mode** (`desktest interactive`) to understand how your app looks in the virtual desktop
 - **Use VNC** to watch tests live: add `"vnc_port": 5900` to your config
 - **Accessibility matters**: Electron's `--force-renderer-accessibility` flag helps the agent read your UI. Use semantic HTML and ARIA labels for best results
 - **npm install is slow**: Use a `config` step in your task JSON to run `npm install` before the app launches, or use a custom Docker image with dependencies pre-installed for faster test runs. Never put `npm install` in your `start.sh` — it will exceed the window detection timeout
@@ -224,5 +224,5 @@ Since codified tests are deterministic (no LLM calls), they're fast, reliable, a
 See `examples/electron-todo-app/` for a complete working example:
 
 ```bash
-eyetest run examples/electron-todo.json
+desktest run examples/electron-todo.json
 ```

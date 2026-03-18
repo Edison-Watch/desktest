@@ -384,6 +384,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "desktest"
+version = "0.2.0"
+dependencies = [
+ "assert_cmd",
+ "axum",
+ "base64",
+ "bollard",
+ "clap",
+ "csv",
+ "dotenvy",
+ "futures",
+ "predicates",
+ "quick-xml",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "shell-escape",
+ "tar",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+ "tracing-subscriber",
+ "wiremock",
+]
+
+[[package]]
 name = "difflib"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -435,36 +465,6 @@ checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "eyetest"
-version = "0.2.0"
-dependencies = [
- "assert_cmd",
- "axum",
- "base64",
- "bollard",
- "clap",
- "csv",
- "dotenvy",
- "futures",
- "predicates",
- "quick-xml",
- "regex",
- "reqwest",
- "serde",
- "serde_json",
- "serde_yaml",
- "shell-escape",
- "tar",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-stream",
- "tracing",
- "tracing-subscriber",
- "wiremock",
 ]
 
 [[package]]

@@ -17,8 +17,8 @@ use tracing::{debug, info};
 use crate::config::Config;
 use crate::error::AppError;
 
-pub const IMAGE_NAME: &str = "eyetest-desktop:latest";
-pub const IMAGE_NAME_ELECTRON: &str = "eyetest-desktop:electron";
+pub const IMAGE_NAME: &str = "desktest-desktop:latest";
+pub const IMAGE_NAME_ELECTRON: &str = "desktest-desktop:electron";
 
 pub struct DockerSession {
     client: Docker,
@@ -155,7 +155,7 @@ impl DockerSession {
     /// Create and start a container from the test image.
     ///
     /// When `custom_image` is `Some`, use that pre-built image instead of the
-    /// built-in `eyetest-desktop` base image. The custom image is NOT built —
+    /// built-in `desktest-desktop` base image. The custom image is NOT built —
     /// it must already exist locally or be pullable by Docker.
     pub async fn create(config: &Config, custom_image: Option<&str>) -> Result<Self, AppError> {
         let client =
@@ -842,6 +842,6 @@ mod tests {
 
     #[test]
     fn test_image_name_constant() {
-        assert_eq!(IMAGE_NAME, "eyetest-desktop:latest");
+        assert_eq!(IMAGE_NAME, "desktest-desktop:latest");
     }
 }

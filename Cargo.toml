@@ -1,10 +1,10 @@
 [package]
-name = "eyetest"
+name = "desktest"
 version = "0.2.0"
 edition = "2024"
 
 [[bin]]
-name = "eyetest"
+name = "desktest"
 path = "src/main.rs"
 
 [dependencies]

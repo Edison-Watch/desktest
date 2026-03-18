@@ -128,7 +128,7 @@ fn default_conjunction() -> Conjunction {
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EvaluatorMode {
-    /// Only agent verdict (existing eyetest behavior).
+    /// Only agent verdict (existing desktest behavior).
     Llm,
     /// Setup steps only + programmatic metrics (no agent loop).
     Programmatic,

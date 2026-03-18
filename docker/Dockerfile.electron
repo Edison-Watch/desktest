@@ -1,4 +1,4 @@
-FROM eyetest-desktop:latest
+FROM desktest-desktop:latest
 
 USER root
 

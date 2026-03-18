@@ -9,6 +9,6 @@ config.json
 *.back
 instructions.md
 
-# eyetest CLI artifacts
-eyetest_replay.py
-eyetest_review.html
+# desktest CLI artifacts
+desktest_replay.py
+desktest_review.html

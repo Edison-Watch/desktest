@@ -87,7 +87,7 @@ pub struct Config {
 impl Config {
     /// Create a Config with sensible defaults for task-based runs.
     ///
-    /// Used when `eyetest run <task.json>` is invoked without a separate config file.
+    /// Used when `desktest run <task.json>` is invoked without a separate config file.
     /// API key and provider are resolved from environment variables at provider creation time.
     pub fn from_task_defaults() -> Self {
         Config {
@@ -110,7 +110,7 @@ impl Config {
 
     /// Populate app-related config fields from a task definition's AppConfig.
     ///
-    /// When running via `eyetest run <task.json>` without a separate config file,
+    /// When running via `desktest run <task.json>` without a separate config file,
     /// the Config starts with default/None app fields. This method fills them
     /// from the task definition so that `deploy_app()` works correctly.
     pub fn apply_task_app(&mut self, app: &crate::task::AppConfig) {
