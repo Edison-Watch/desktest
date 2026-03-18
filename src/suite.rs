@@ -242,6 +242,7 @@ pub async fn run_suite(
     debug: bool,
     verbose: bool,
     no_recording: bool,
+    resolution: Option<&str>,
     monitor: Option<crate::monitor::MonitorHandle>,
 ) -> Result<SuiteResult, AppError> {
     let entries = discover_tasks(dir, filter)?;
@@ -249,11 +250,24 @@ pub async fn run_suite(
     info!("Discovered {} task(s) in '{}'", entries.len(), dir.display());
     println!("Running {} test(s)...\n", entries.len());
 
-    let run_config = if let Some(config_path) = config {
+    let mut run_config = if let Some(config_path) = config {
         Config::load_and_validate(config_path)?
     } else {
         Config::from_task_defaults()
     };
+
+    if let Some(res) = resolution {
+        match crate::parse_resolution(res) {
+            Ok((w, h)) => {
+                run_config.display_width = w;
+                run_config.display_height = h;
+            }
+            Err(e) => {
+                eprintln!("Resolution error: {e}");
+                std::process::exit(2);
+            }
+        }
+    }
 
     let suite_start = Instant::now();
     let mut test_results: Vec<TestResult> = Vec::new();
