@@ -26,46 +26,12 @@ cargo test -- --ignored --test-threads=1       # Integration tests (require Dock
 
 **Exit codes:** 0=pass, 1=fail, 2=config error, 3=infra error, 4=agent error.
 
-### Key modules
+### Non-obvious details
 
-- `src/main.rs` — Module declarations, `setup_logging()`, `main()` with subcommand dispatch
-- `src/cli.rs` — CLI (clap): `Cli` struct, `Command` enum (run, suite, interactive, validate, codify, review)
-- `src/orchestration.rs` — Task orchestration: `run_task()`, `run_legacy()`, `build_agent_loop_config()`, helpers
-- `src/interactive.rs` — Interactive subcommand: pause mode, step-by-step mode, validate-only mode
-- `src/task.rs` — Task JSON schema: `TaskDefinition`, `SetupStep`, `EvaluatorConfig`, `MetricConfig` with serde tagged enums
-- `src/config.rs` — Runtime config loading with cross-field validation (app_type determines required fields)
-- `src/docker/mod.rs` — `DockerSession`: struct, container create/cleanup, custom image validation
-- `src/docker/image.rs` — Docker image building: `ensure_image()`, `ensure_electron_image()`
-- `src/docker/exec.rs` — Container command execution: `exec()`, `exec_with_exit_code()`, `exec_with_stdin()`, `exec_detached()`
-- `src/docker/transfer.rs` — File transfer: `copy_into()`, `copy_from()`
-- `src/docker/deploy.rs` — App deployment: `deploy_app()`, `launch_app()`
-- `src/setup.rs` — Setup step execution: execute, copy, open, sleep
-- `src/agent/loop_v2.rs` — OSWorld-style agent loop: observe → LLM → parse → execute → repeat, with timeouts
-- `src/agent/llm_retry.rs` — LLM call retry logic, transient error detection, response text extraction
-- `src/agent/context.rs` — Sliding window context management, message construction, system prompt
-- `src/agent/pyautogui.rs` — Parse LLM output for Python code blocks + special commands (DONE/FAIL/WAIT), execute via container
-- `src/agent/mod.rs` — Legacy agent loop (tool-call based, kept for backward compat)
-- `src/agent/tools.rs` — Legacy tool definitions (mouse, keyboard, screenshot, done) + xdotool dispatch
-- `src/provider/mod.rs` — `LlmProvider` trait, provider factory, common message types
-- `src/provider/openai.rs` — OpenAI implementation
-- `src/provider/anthropic.rs` — Anthropic Claude implementation (Messages API with vision)
-- `src/provider/custom.rs` — Custom OpenAI-compatible endpoint implementation
-- `src/observation.rs` — Screenshot + accessibility tree capture with retry, trimming, configurable modes
-- `src/evaluator/mod.rs` — Programmatic evaluation dispatch: `run_evaluation()`, `combine_results()`, metric routing
-- `src/evaluator/file_compare.rs` — File comparison: exact, normalized, semantic (JSON/YAML/XML/CSV)
-- `src/evaluator/command.rs` — Command-based evaluation: `command_output`, `file_exists`, `exit_code`
-- `src/evaluator/script.rs` — Script replay evaluation: `script_replay`
-- `src/codify.rs` — Convert trajectory.jsonl to deterministic Python replay scripts
-- `src/review.rs` — Generate self-contained HTML trajectory viewer
-- `src/results.rs` — Structured `results.json` output with `ResultsWriter`
-- `src/trajectory.rs` — Step-by-step `trajectory.jsonl` logging
-- `src/recording.rs` — Video recording via ffmpeg x11grab inside container
-- `src/suite.rs` — Test suite discovery, execution, aggregated `suite-results.json`
-- `src/readiness.rs` — Desktop/app readiness polling via sentinel file, xdotool window detection
-- `src/input.rs` — Pure functions building xdotool command strings (legacy)
-- `src/screenshot.rs` — Screenshot capture via scrot, base64 encoding
-- `src/artifacts.rs` — Collects logs, screenshots, home dir, conversation JSON
-- `src/error.rs` — `AppError` enum with typed variants mapping to exit codes, `AgentOutcome`
+- `src/agent/mod.rs` contains a **legacy** tool-call-based agent loop kept for backward compat — the active agent is `agent/loop_v2.rs`
+- `src/task.rs` uses serde tagged enums (`#[serde(tag = "type")]`) for `AppConfig`, `MetricConfig`, and `SetupStep`
+- `AppError` variants in `src/error.rs` map to specific exit codes (0–4) — don't change the mapping without updating docs
+- `pub(crate) use orchestration::{parse_resolution, run_task}` in `main.rs` re-exports these for `suite.rs` to use as `crate::run_task`
 
 ### Docker container (`docker/`)
 
