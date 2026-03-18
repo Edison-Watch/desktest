@@ -137,10 +137,14 @@ pub(super) fn is_transient_error(err_str: &str) -> bool {
     lower.contains("429")
         || lower.contains("rate limit")
         || lower.contains("too many requests")
-        || lower.contains("500")
-        || lower.contains("502")
-        || lower.contains("503")
-        || lower.contains("504")
+        || lower.contains("status 500")
+        || lower.contains("status 502")
+        || lower.contains("status 503")
+        || lower.contains("status 504")
+        || lower.contains("error 500")
+        || lower.contains("error 502")
+        || lower.contains("error 503")
+        || lower.contains("error 504")
         || lower.contains("server error")
         || lower.contains("internal error")
         || lower.contains("overloaded")
@@ -276,12 +280,19 @@ mod tests {
 
     #[test]
     fn test_transient_500() {
-        assert!(is_transient_error("500 Internal Server Error"));
+        assert!(is_transient_error("HTTP status 500 Internal Server Error"));
     }
 
     #[test]
     fn test_transient_503() {
-        assert!(is_transient_error("503 Service Temporarily Unavailable"));
+        assert!(is_transient_error("error 503 Service Temporarily Unavailable"));
+    }
+
+    #[test]
+    fn test_not_transient_token_limit() {
+        // "4500" should NOT match as a 500 error
+        assert!(!is_transient_error("max_tokens cannot exceed 4500"));
+        assert!(!is_transient_error("context window is 32500 tokens"));
     }
 
     #[test]
