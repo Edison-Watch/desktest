@@ -53,6 +53,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .progress-bar .fill { height: 100%; background: #58a6ff; transition: width 0.3s; }
 .final-status { padding: 12px 16px; border-bottom: 1px solid #30363d; background: #161b22; text-align: center; }
 .final-status .badge { font-size: 14px; padding: 4px 16px; }
+.task-item { padding: 12px 16px; border-bottom: 1px solid #21262d; cursor: pointer; transition: background 0.15s; font-weight: 600; font-size: 13px; color: #f0883e; display: flex; align-items: center; gap: 8px; }
+.task-item:hover { background: #1c2128; }
+.task-item.active { background: #1f6feb22; border-left: 3px solid #1f6feb; }
+.task-item svg { width: 16px; height: 16px; fill: currentColor; }
+.task-instruction { font-size: 15px; line-height: 1.6; color: #c9d1d9; padding: 16px; background: #1c2128; border-radius: 6px; margin-bottom: 16px; }
+.task-meta { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 13px; }
+.task-meta dt { color: #8b949e; font-weight: 600; }
+.task-meta dd { color: #c9d1d9; }
 </style>
 </head>
 <body>
@@ -62,6 +70,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
     <span id="live-indicator"></span>
   </div>
   <div id="live-header"></div>
+  <div id="task-entry"></div>
   <div id="recording-entry"></div>
   <div id="step-list"></div>
   <div id="codify-bar" class="codify-bar">
@@ -80,7 +89,9 @@ var VNC_URL = /*__VNC_URL__*/"";
 var HAS_RECORDING = /*__HAS_RECORDING__*/false;
 var RECORDING_URI = /*__RECORDING_URI__*/"";
 var TRAJECTORY_PATH = /*__TRAJECTORY_PATH__*/"";
+var TASK_JSON = /*__TASK_JSON__*/null;
 
+var taskEntry = document.getElementById('task-entry');
 var stepList = document.getElementById('step-list');
 var checkboxList = document.getElementById('checkbox-list');
 var mainPanel = document.getElementById('main-panel');
@@ -88,6 +99,54 @@ var recordingEntry = document.getElementById('recording-entry');
 var liveIndicator = document.getElementById('live-indicator');
 var liveHeader = document.getElementById('live-header');
 var codifyBar = document.getElementById('codify-bar');
+
+// --- Task entry (static mode) ---
+if (TASK_JSON) {
+  var taskDiv = document.createElement('div');
+  taskDiv.className = 'task-item';
+  taskDiv.id = 'task-nav';
+  taskDiv.innerHTML = '<svg viewBox="0 0 16 16"><path d="M0 1.75A.75.75 0 0 1 .75 1h4.253c1.227 0 2.317.59 3 1.501A3.743 3.743 0 0 1 11.006 1h4.245a.75.75 0 0 1 .75.75v10.5a.75.75 0 0 1-.75.75h-4.507a2.25 2.25 0 0 0-1.591.659l-.622.621a.75.75 0 0 1-1.06 0l-.622-.621A2.25 2.25 0 0 0 5.258 13H.75a.75.75 0 0 1-.75-.75Zm7.251 10.324.004-5.073-.002-2.253A2.25 2.25 0 0 0 5.003 2.5H1.5v9h3.757a3.75 3.75 0 0 1 1.994.574ZM8.755 4.75l-.004 7.322a3.752 3.752 0 0 1 1.992-.572H14.5v-9h-3.495a2.25 2.25 0 0 0-2.25 2.25Z"/></svg> Task';
+  taskDiv.addEventListener('click', function() { showTask(); });
+  taskEntry.appendChild(taskDiv);
+}
+
+function showTask() {
+  document.querySelectorAll('.step-item').forEach(function(el) { el.classList.remove('active'); });
+  var recNav = document.getElementById('recording-nav');
+  if (recNav) recNav.classList.remove('active');
+  var nav = document.getElementById('task-nav');
+  if (nav) nav.classList.add('active');
+
+  var t = TASK_JSON;
+  var html = '<div class="detail-header"><h2>Task: ' + escapeHtml(t.id || 'Unknown') + '</h2></div>';
+
+  // Instruction
+  html += '<div class="section"><h3>Instruction</h3><div class="task-instruction">' + escapeHtml(t.instruction || '') + '</div></div>';
+
+  // Metadata summary
+  html += '<div class="section"><h3>Details</h3><dl class="task-meta">';
+  html += '<dt>Timeout</dt><dd>' + (t.timeout != null ? t.timeout : 300) + 's</dd>';
+  html += '<dt>Max Steps</dt><dd>' + (t.max_steps != null ? t.max_steps : 15) + '</dd>';
+  if (t.app) {
+    var appType = t.app.type || 'unknown';
+    html += '<dt>App Type</dt><dd>' + escapeHtml(appType) + '</dd>';
+  }
+  if (t.config && t.config.length > 0) {
+    html += '<dt>Setup Steps</dt><dd>' + t.config.length + '</dd>';
+  }
+  if (t.evaluator) {
+    var evalType = t.evaluator.mode || 'unknown';
+    html += '<dt>Evaluator</dt><dd>' + escapeHtml(evalType) + '</dd>';
+  }
+  html += '</dl></div>';
+
+  // Full JSON
+  html += '<div class="section"><h3>Full Task Definition</h3>';
+  html += '<pre>' + escapeHtml(JSON.stringify(t, null, 2)) + '</pre>';
+  html += '</div>';
+
+  mainPanel.innerHTML = html;
+}
 
 // --- Recording entry (static mode) ---
 if (HAS_RECORDING) {
@@ -116,6 +175,8 @@ function escapeHtml(text) {
 
 function showRecording() {
   document.querySelectorAll('.step-item').forEach(function(el) { el.classList.remove('active'); });
+  var taskNav = document.getElementById('task-nav');
+  if (taskNav) taskNav.classList.remove('active');
   var nav = document.getElementById('recording-nav');
   if (nav) nav.classList.add('active');
   mainPanel.innerHTML = '<div class="detail-header"><h2>Session Recording</h2></div><div class="video-container"><video controls autoplay muted><source src="' + RECORDING_URI + '" type="video/mp4">Your browser does not support video playback.</video></div>';
@@ -125,6 +186,8 @@ function selectStep(index) {
   document.querySelectorAll('.step-item').forEach(function(el) { el.classList.remove('active'); });
   var nav = document.getElementById('recording-nav');
   if (nav) nav.classList.remove('active');
+  var taskNav = document.getElementById('task-nav');
+  if (taskNav) taskNav.classList.remove('active');
   var el = document.querySelector('.step-item[data-index="' + index + '"]');
   if (el) el.classList.add('active');
 

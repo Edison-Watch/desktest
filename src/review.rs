@@ -48,10 +48,32 @@ pub fn generate_review_html(
         }
     };
 
+    // Load task.json if present in artifacts, validating as JSON before embedding
+    let task_json = {
+        let task_path = artifacts_dir.join("task.json");
+        if task_path.exists() {
+            std::fs::read_to_string(&task_path)
+                .ok()
+                .and_then(|s| {
+                    serde_json::from_str::<serde_json::Value>(&s)
+                        .ok()
+                        .map(|v| serde_json::to_string(&v).unwrap_or_else(|_| "null".to_string()))
+                })
+                .unwrap_or_else(|| {
+                    info!("task.json is malformed, skipping task embedding");
+                    "null".to_string()
+                })
+        } else {
+            "null".to_string()
+        }
+    };
+    // Escape closing script tags in JSON
+    let task_json = task_json.replace("</", "<\\/");
+
     let trajectory_path_json = serde_json::to_string(&trajectory_path.to_string_lossy().as_ref())
         .unwrap_or_else(|_| "\"trajectory.jsonl\"".to_string())
         .replace("</", "<\\/");
-    let html = build_html(&steps_json, &recording_b64, &trajectory_path_json);
+    let html = build_html(&steps_json, &recording_b64, &trajectory_path_json, &task_json);
 
     std::fs::write(output_path, &html)
         .map_err(|e| AppError::Infra(format!("Cannot write review HTML: {e}")))?;
@@ -90,7 +112,7 @@ fn build_steps_json(entries: &[TrajectoryRecord], artifacts_dir: &Path) -> Strin
 }
 
 /// Build the complete HTML document using the shared dashboard template.
-fn build_html(steps_json: &str, recording_b64: &Option<String>, trajectory_path_json: &str) -> String {
+fn build_html(steps_json: &str, recording_b64: &Option<String>, trajectory_path_json: &str, task_json: &str) -> String {
     let has_recording = recording_b64.is_some();
     let recording_data_uri = recording_b64
         .as_ref()
@@ -112,6 +134,10 @@ fn build_html(steps_json: &str, recording_b64: &Option<String>, trajectory_path_
             "/*__TRAJECTORY_PATH__*/\"\"",
             &format!("/*__TRAJECTORY_PATH__*/{trajectory_path_json}"),
         )
+        .replace(
+            "/*__TASK_JSON__*/null",
+            &format!("/*__TASK_JSON__*/{task_json}"),
+        )
 }
 
 #[cfg(test)]
@@ -120,7 +146,7 @@ mod tests {
 
     #[test]
     fn test_build_html_contains_structure() {
-        let html = build_html("[]", &None, "\"trajectory.jsonl\"");
+        let html = build_html("[]", &None, "\"trajectory.jsonl\"", "null");
         assert!(html.contains("<!DOCTYPE html>"));
         assert!(html.contains("eyetest"));
         assert!(html.contains("Trajectory Review"));
@@ -162,6 +188,49 @@ mod tests {
         let html = std::fs::read_to_string(&output).unwrap();
         assert!(html.contains("<!DOCTYPE html>"));
         assert!(html.contains("pyautogui.click"));
+    }
+
+    #[test]
+    fn test_generate_review_html_with_task() {
+        let dir = tempfile::tempdir().unwrap();
+        let trajectory = dir.path().join("trajectory.jsonl");
+        std::fs::write(&trajectory, "{\"step\":1,\"timestamp\":\"2026-01-01T00:00:00Z\",\"action_code\":\"pyautogui.click(100,200)\",\"result\":\"success\"}\n").unwrap();
+
+        // Write a task.json (internally-tagged format matching serde output)
+        let task_json = serde_json::json!({
+            "schema_version": "1.0",
+            "id": "test-task-42",
+            "instruction": "Open the file and save it",
+            "app": { "type": "appimage", "path": "/tmp/app.AppImage" },
+            "timeout": 120,
+            "max_steps": 10
+        });
+        std::fs::write(dir.path().join("task.json"), serde_json::to_string_pretty(&task_json).unwrap()).unwrap();
+
+        let output = dir.path().join("review.html");
+        generate_review_html(dir.path(), &output).unwrap();
+
+        let html = std::fs::read_to_string(&output).unwrap();
+        assert!(html.contains("test-task-42"));
+        assert!(html.contains("Open the file and save it"));
+        assert!(html.contains("\"id\":\"test-task-42\""));
+    }
+
+    #[test]
+    fn test_generate_review_html_with_malformed_task() {
+        let dir = tempfile::tempdir().unwrap();
+        let trajectory = dir.path().join("trajectory.jsonl");
+        std::fs::write(&trajectory, "{\"step\":1,\"timestamp\":\"2026-01-01T00:00:00Z\",\"action_code\":\"pyautogui.click(100,200)\",\"result\":\"success\"}\n").unwrap();
+
+        // Write a malformed task.json
+        std::fs::write(dir.path().join("task.json"), "{broken json").unwrap();
+
+        let output = dir.path().join("review.html");
+        generate_review_html(dir.path(), &output).unwrap();
+
+        let html = std::fs::read_to_string(&output).unwrap();
+        // Should fall back to null, not inject broken content
+        assert!(html.contains("TASK_JSON = /*__TASK_JSON__*/null"));
     }
 
     #[test]
