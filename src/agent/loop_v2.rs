@@ -70,6 +70,8 @@ impl Default for AgentLoopV2Config {
 /// - Observation pipeline (screenshot + a11y tree)
 /// - Sliding window context management
 pub struct AgentLoopV2<'a> {
+    // Fields are pub(super) to allow the split impl block in llm_retry.rs
+    // to access them directly without additional accessors.
     pub(super) client: Box<dyn LlmProvider>,
     pub(super) session: &'a DockerSession,
     pub(super) artifacts_dir: PathBuf,
