@@ -13,6 +13,7 @@ use crate::agent::context::{is_context_length_error, ContextManager, TrajectoryT
 use crate::agent::pyautogui::{self, SpecialCommand};
 use crate::docker::DockerSession;
 use crate::error::{AgentOutcome, AppError};
+use crate::monitor::{MonitorEvent, MonitorHandle};
 use crate::observation::{self, Observation, ObservationConfig};
 use crate::provider::{ChatMessage, LlmProvider};
 use crate::recording::Recording;
@@ -81,6 +82,8 @@ pub struct AgentLoopV2<'a> {
     config: AgentLoopV2Config,
     trajectory: Option<TrajectoryLogger>,
     recording: Option<&'a Recording>,
+    monitor: Option<MonitorHandle>,
+    test_id: String,
 }
 
 impl<'a> AgentLoopV2<'a> {
@@ -94,6 +97,8 @@ impl<'a> AgentLoopV2<'a> {
         display_height: u32,
         config: AgentLoopV2Config,
         recording: Option<&'a Recording>,
+        monitor: Option<MonitorHandle>,
+        test_id: String,
     ) -> Self {
         let context = ContextManager::new(
             display_width,
@@ -118,6 +123,8 @@ impl<'a> AgentLoopV2<'a> {
             config,
             trajectory,
             recording,
+            monitor,
+            test_id,
         }
     }
 
@@ -137,6 +144,8 @@ impl<'a> AgentLoopV2<'a> {
         info!("Capturing initial observation...");
         let mut current_observation = self.capture_observation_for_step(0).await?;
 
+        // TestStart is published by run_task_inner in main.rs with the full task context.
+
         loop {
             // Check total timeout
             if start_time.elapsed() >= self.config.total_timeout {
@@ -153,13 +162,15 @@ impl<'a> AgentLoopV2<'a> {
                     None,
                 );
                 self.save_conversation_log();
+                let reasoning = format!(
+                    "Total timeout ({}s) exceeded after {} steps",
+                    self.config.total_timeout.as_secs(),
+                    step_index
+                );
+                self.publish_test_complete(false, &reasoning, start_time);
                 return Ok(AgentOutcome {
                     passed: false,
-                    reasoning: format!(
-                        "Total timeout ({}s) exceeded after {} steps",
-                        self.config.total_timeout.as_secs(),
-                        step_index
-                    ),
+                    reasoning,
                     screenshot_count: step_index,
                 });
             }
@@ -176,12 +187,14 @@ impl<'a> AgentLoopV2<'a> {
                     None,
                 );
                 self.save_conversation_log();
+                let reasoning = format!(
+                    "Max steps ({}) reached without task completion",
+                    self.config.max_steps
+                );
+                self.publish_test_complete(false, &reasoning, start_time);
                 return Ok(AgentOutcome {
                     passed: false,
-                    reasoning: format!(
-                        "Max steps ({}) reached without task completion",
-                        self.config.max_steps
-                    ),
+                    reasoning,
                     screenshot_count: step_index,
                 });
             }
@@ -238,15 +251,18 @@ impl<'a> AgentLoopV2<'a> {
                             "done",
                             Some(&response_text),
                         );
+                        self.publish_step_event(step_index, &response_text, &code_blocks, &current_observation, "done");
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
                             error_feedback: None,
                         });
                         self.save_conversation_log();
+                        let reasoning = extract_reasoning(&response_text);
+                        self.publish_test_complete(true, &reasoning, start_time);
                         return Ok(AgentOutcome {
                             passed: true,
-                            reasoning: extract_reasoning(&response_text),
+                            reasoning,
                             screenshot_count: step_index,
                         });
                     }
@@ -260,15 +276,18 @@ impl<'a> AgentLoopV2<'a> {
                             "fail",
                             Some(&response_text),
                         );
+                        self.publish_step_event(step_index, &response_text, &code_blocks, &current_observation, "fail");
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
                             error_feedback: None,
                         });
                         self.save_conversation_log();
+                        let reasoning = extract_reasoning(&response_text);
+                        self.publish_test_complete(false, &reasoning, start_time);
                         return Ok(AgentOutcome {
                             passed: false,
-                            reasoning: extract_reasoning(&response_text),
+                            reasoning,
                             screenshot_count: step_index,
                         });
                     }
@@ -282,6 +301,7 @@ impl<'a> AgentLoopV2<'a> {
                             "wait",
                             Some(&response_text),
                         );
+                        self.publish_step_event(step_index, &response_text, &code_blocks, &current_observation, "wait");
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
@@ -317,6 +337,7 @@ impl<'a> AgentLoopV2<'a> {
                 &result_str,
                 Some(&response_text),
             );
+            self.publish_step_event(step_index, &response_text, &code_blocks, &current_observation, &result_str);
 
             // Record the turn in trajectory
             self.context.push_turn(TrajectoryTurn {
@@ -501,6 +522,45 @@ impl<'a> AgentLoopV2<'a> {
             // Capture new observation
             current_observation = self.capture_observation_for_step(step_index).await?;
             execution_elapsed += step_start.elapsed();
+        }
+    }
+
+    /// Publish a StepComplete event to the live monitor.
+    fn publish_step_event(
+        &self,
+        step_index: usize,
+        response_text: &str,
+        code_blocks: &[String],
+        observation: &Observation,
+        result: &str,
+    ) {
+        if let Some(ref m) = self.monitor {
+            let thought = crate::trajectory::extract_thought(response_text, code_blocks);
+            let action_code = code_blocks.join("\n");
+            let screenshot_base64 = observation.screenshot_data_url.as_ref().and_then(|url| {
+                url.strip_prefix("data:image/png;base64,").map(|s| s.to_string())
+            });
+            let timestamp = crate::trajectory::chrono_iso8601_now();
+            m.send(MonitorEvent::StepComplete {
+                step: step_index,
+                thought,
+                action_code,
+                result: result.to_string(),
+                screenshot_base64,
+                timestamp,
+            });
+        }
+    }
+
+    /// Publish a TestComplete event to the live monitor.
+    fn publish_test_complete(&self, passed: bool, reasoning: &str, start_time: Instant) {
+        if let Some(ref m) = self.monitor {
+            m.send(MonitorEvent::TestComplete {
+                test_id: self.test_id.clone(),
+                passed,
+                reasoning: reasoning.to_string(),
+                duration_ms: start_time.elapsed().as_millis() as u64,
+            });
         }
     }
 

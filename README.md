@@ -14,15 +14,16 @@ Eyetest is a CLI tool for automated end-to-end testing of Linux desktop applicat
 - **Video recording**: ffmpeg captures every test session
 - **Trajectory logging**: step-by-step JSONL logs with screenshots and accessibility trees
 - **Custom Docker images**: bring your own image for apps with complex dependencies
+- **Live monitoring dashboard**: real-time web UI to watch agent actions as they happen
 - **Interactive mode**: step through agent actions one at a time for debugging
 
 ## Developer Workflow
 
 ```
-1. EXPLORE   →  eyetest run task.json         # LLM agent explores your app
-2. REVIEW    →  eyetest review test-results/   # Inspect trajectory in web viewer
-3. CODIFY    →  eyetest codify trajectory.jsonl # Convert to deterministic script
-4. REPLAY    →  eyetest run replay-task.json   # Run codified test (no LLM)
+1. EXPLORE   →  eyetest run task.json --monitor  # LLM agent explores your app (watch live!)
+2. REVIEW    →  eyetest review test-results/      # Inspect trajectory in web viewer
+3. CODIFY    →  eyetest codify trajectory.jsonl    # Convert to deterministic script
+4. REPLAY    →  eyetest run replay-task.json      # Run codified test (no LLM)
 5. CI        →  Run codified tests on every commit
 ```
 
@@ -105,11 +106,13 @@ Commands:
   review        Generate web-based trajectory review viewer
 
 Options:
-  --config <FILE>    Config JSON file (optional; API key can come from env vars)
-  --output <DIR>     Output directory for results (default: ./test-results/)
-  --debug            Enable debug logging
-  --verbose          Include full LLM responses in trajectory logs
-  --no-recording     Disable video recording
+  --config <FILE>        Config JSON file (optional; API key can come from env vars)
+  --output <DIR>         Output directory for results (default: ./test-results/)
+  --debug                Enable debug logging
+  --verbose              Include full LLM responses in trajectory logs
+  --no-recording         Disable video recording
+  --monitor              Enable live monitoring web dashboard
+  --monitor-port <PORT>  Port for the monitoring dashboard (default: 7860)
 ```
 
 ## Task Definition
@@ -155,6 +158,29 @@ See `examples/` for more examples including folder deploys and custom Docker ima
 | `file_exists` | Check if a file exists (or doesn't) in the container |
 | `exit_code` | Run a command, check its exit code |
 | `script_replay` | Run a Python replay script, check for REPLAY_COMPLETE + exit 0 |
+
+## Live Monitoring
+
+Add `--monitor` to any `run` or `suite` command to launch a real-time web dashboard that streams the agent's actions as they happen:
+
+```bash
+# Watch a single test live
+eyetest run task.json --monitor
+
+# Watch a test suite with progress tracking
+eyetest suite tests/ --monitor
+
+# Use a custom port
+eyetest run task.json --monitor --monitor-port 8080
+```
+
+Open `http://localhost:7860` in your browser to see:
+- **Live step feed**: screenshots, agent thoughts, and action code appear as each step completes
+- **Test info header**: test ID, instruction, VNC link, and max steps
+- **Suite progress**: progress bar showing completed/total tests during suite runs
+- **Status indicator**: pulsing dot shows connection state (live vs disconnected)
+
+The dashboard uses the same UI as `eyetest review` — a sidebar with step navigation, main panel with screenshot/thought/action details. The difference is that steps stream in via Server-Sent Events (SSE) instead of being loaded from a static file.
 
 ## Artifacts
 

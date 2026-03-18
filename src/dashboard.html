@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>eyetest - Trajectory Review</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #0f1117; color: #e1e4e8; display: flex; height: 100vh; }
+.sidebar { width: 350px; background: #161b22; border-right: 1px solid #30363d; overflow-y: auto; flex-shrink: 0; display: flex; flex-direction: column; }
+.sidebar-header { padding: 16px; font-size: 14px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 8px; }
+.step-item { padding: 12px 16px; border-bottom: 1px solid #21262d; cursor: pointer; transition: background 0.15s; }
+.step-item:hover { background: #1c2128; }
+.step-item.active { background: #1f6feb22; border-left: 3px solid #1f6feb; }
+.step-num { font-weight: 600; font-size: 13px; color: #58a6ff; }
+.step-thought { font-size: 12px; color: #8b949e; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; margin-left: 8px; }
+.badge.success { background: #23882344; color: #3fb950; }
+.badge.done { background: #1f6feb22; color: #58a6ff; }
+.badge.error { background: #f8514944; color: #f85149; }
+.badge.fail { background: #f8514944; color: #f85149; }
+.badge.pass { background: #23882344; color: #3fb950; }
+.main { flex: 1; overflow-y: auto; padding: 24px; }
+.detail-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.detail-header h2 { font-size: 20px; }
+.screenshot { max-width: 100%; border-radius: 8px; border: 1px solid #30363d; margin-bottom: 20px; }
+.section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+.section h3 { font-size: 13px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+.section pre { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; white-space: pre-wrap; word-break: break-all; color: #c9d1d9; }
+.thought-text { font-size: 14px; line-height: 1.6; color: #c9d1d9; }
+.codify-bar { padding: 12px 16px; border-top: 1px solid #30363d; background: #161b22; margin-top: auto; }
+.codify-bar label { font-size: 12px; color: #8b949e; cursor: pointer; }
+.codify-bar input[type=checkbox] { margin-right: 6px; }
+.codify-btn { display: block; width: 100%; margin-top: 12px; padding: 8px; background: #238636; color: white; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 600; }
+.codify-btn:hover { background: #2ea043; }
+.empty { display: flex; align-items: center; justify-content: center; height: 100%; color: #484f58; font-size: 16px; }
+.recording-item { padding: 12px 16px; border-bottom: 1px solid #21262d; cursor: pointer; transition: background 0.15s; font-weight: 600; font-size: 13px; color: #d2a8ff; display: flex; align-items: center; gap: 8px; }
+.recording-item:hover { background: #1c2128; }
+.recording-item.active { background: #1f6feb22; border-left: 3px solid #1f6feb; }
+.recording-item svg { width: 16px; height: 16px; fill: currentColor; }
+.video-container { max-width: 100%; }
+.video-container video { width: 100%; border-radius: 8px; border: 1px solid #30363d; }
+/* Live mode styles */
+.live-indicator { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #3fb950; }
+.live-dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950; animation: pulse 1.5s ease-in-out infinite; }
+.live-dot.disconnected { background: #f85149; animation: none; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.live-header { padding: 12px 16px; border-bottom: 1px solid #30363d; background: #161b22; }
+.live-header .test-info { font-size: 13px; color: #c9d1d9; margin-top: 4px; }
+.live-header .vnc-link { font-size: 12px; color: #58a6ff; text-decoration: none; }
+.live-header .vnc-link:hover { text-decoration: underline; }
+.progress-bar { height: 4px; background: #21262d; border-radius: 2px; margin-top: 8px; overflow: hidden; }
+.progress-bar .fill { height: 100%; background: #58a6ff; transition: width 0.3s; }
+.final-status { padding: 12px 16px; border-bottom: 1px solid #30363d; background: #161b22; text-align: center; }
+.final-status .badge { font-size: 14px; padding: 4px 16px; }
+</style>
+</head>
+<body>
+<div class="sidebar">
+  <div class="sidebar-header">
+    <span>Steps</span>
+    <span id="live-indicator"></span>
+  </div>
+  <div id="live-header"></div>
+  <div id="recording-entry"></div>
+  <div id="step-list"></div>
+  <div id="codify-bar" class="codify-bar">
+    <div id="checkbox-list"></div>
+    <button class="codify-btn" onclick="copyCodifyCommand()">Copy codify command</button>
+  </div>
+</div>
+<div class="main" id="main-panel">
+  <div class="empty">Select a step to view details</div>
+</div>
+
+<script>
+var STEPS = /*__STEPS__*/[];
+var MODE = /*__MODE__*/"static";
+var VNC_URL = /*__VNC_URL__*/"";
+var HAS_RECORDING = /*__HAS_RECORDING__*/false;
+var RECORDING_URI = /*__RECORDING_URI__*/"";
+var TRAJECTORY_PATH = /*__TRAJECTORY_PATH__*/"";
+
+var stepList = document.getElementById('step-list');
+var checkboxList = document.getElementById('checkbox-list');
+var mainPanel = document.getElementById('main-panel');
+var recordingEntry = document.getElementById('recording-entry');
+var liveIndicator = document.getElementById('live-indicator');
+var liveHeader = document.getElementById('live-header');
+var codifyBar = document.getElementById('codify-bar');
+
+// --- Recording entry (static mode) ---
+if (HAS_RECORDING) {
+  var div = document.createElement('div');
+  div.className = 'recording-item';
+  div.id = 'recording-nav';
+  div.innerHTML = '<svg viewBox="0 0 16 16"><path d="M1 4.804a1 1 0 0 1 1.53-.848l2.972 1.86A1 1 0 0 1 6 6.68v2.64a1 1 0 0 1-.498.864l-2.972 1.86A1 1 0 0 1 1 11.196V4.804zM7.5 4A1.5 1.5 0 0 1 9 5.5v5A1.5 1.5 0 0 1 7.5 12H14.5A1.5 1.5 0 0 0 16 10.5v-5A1.5 1.5 0 0 0 14.5 4H7.5z"/></svg> Recording';
+  div.addEventListener('click', function() { showRecording(); });
+  recordingEntry.appendChild(div);
+}
+
+// --- Helper functions ---
+function badgeClass(result) {
+  if (!result) return 'fail';
+  if (result === 'success') return 'success';
+  if (result === 'done') return 'done';
+  if (result.startsWith('error') || result === 'fail') return 'error';
+  return 'fail';
+}
+
+function escapeHtml(text) {
+  var div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function showRecording() {
+  document.querySelectorAll('.step-item').forEach(function(el) { el.classList.remove('active'); });
+  var nav = document.getElementById('recording-nav');
+  if (nav) nav.classList.add('active');
+  mainPanel.innerHTML = '<div class="detail-header"><h2>Session Recording</h2></div><div class="video-container"><video controls autoplay muted><source src="' + RECORDING_URI + '" type="video/mp4">Your browser does not support video playback.</video></div>';
+}
+
+function selectStep(index) {
+  document.querySelectorAll('.step-item').forEach(function(el) { el.classList.remove('active'); });
+  var nav = document.getElementById('recording-nav');
+  if (nav) nav.classList.remove('active');
+  var el = document.querySelector('.step-item[data-index="' + index + '"]');
+  if (el) el.classList.add('active');
+
+  var s = STEPS[index];
+  var html = '';
+  html += '<div class="detail-header"><h2>Step ' + s.step + '</h2><span class="badge ' + badgeClass(s.result) + '">' + escapeHtml(s.result) + '</span><span style="color:#484f58;font-size:13px">' + escapeHtml(s.timestamp || '') + '</span></div>';
+
+  if (s.screenshot) {
+    html += '<img class="screenshot" src="data:image/png;base64,' + s.screenshot + '" alt="Step ' + s.step + ' screenshot">';
+  }
+
+  if (s.thought) {
+    html += '<div class="section"><h3>Thought</h3><div class="thought-text">' + escapeHtml(s.thought) + '</div></div>';
+  }
+
+  if (s.action_code) {
+    html += '<div class="section"><h3>Action Code</h3><pre>' + escapeHtml(s.action_code) + '</pre></div>';
+  }
+
+  mainPanel.innerHTML = html;
+}
+
+function addStepToSidebar(s, index) {
+  var div = document.createElement('div');
+  div.className = 'step-item';
+  div.dataset.index = index;
+  div.innerHTML = '<span class="step-num">Step ' + s.step + '</span><span class="badge ' + badgeClass(s.result) + '">' + escapeHtml(s.result) + '</span><div class="step-thought">' + escapeHtml(s.thought || '(no thought)') + '</div>';
+  div.addEventListener('click', function() { selectStep(index); });
+  stepList.appendChild(div);
+}
+
+function addCheckbox(s) {
+  var label = document.createElement('label');
+  label.style.display = 'block';
+  label.style.marginBottom = '4px';
+  label.innerHTML = '<input type="checkbox" value="' + s.step + '" ' + (s.result === 'success' ? 'checked' : '') + '> Step ' + s.step;
+  checkboxList.appendChild(label);
+}
+
+function copyCodifyCommand() {
+  var checked = Array.from(document.querySelectorAll('#checkbox-list input:checked')).map(function(cb) { return cb.value; });
+  if (checked.length === 0) {
+    alert('Select at least one step to include.');
+    return;
+  }
+  var quotedPath = "'" + TRAJECTORY_PATH.replace(/'/g, "'\\''") + "'";
+  var cmd = 'eyetest codify ' + quotedPath + ' --steps ' + checked.join(',');
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(cmd).then(function() {
+      var btn = document.querySelector('.codify-btn');
+      btn.textContent = 'Copied!';
+      setTimeout(function() { btn.textContent = 'Copy codify command'; }, 2000);
+    }).catch(function() {
+      prompt('Copy this command:', cmd);
+    });
+  } else {
+    prompt('Copy this command:', cmd);
+  }
+}
+
+// --- Render initial steps (static mode) ---
+STEPS.forEach(function(s, i) {
+  addStepToSidebar(s, i);
+  addCheckbox(s);
+});
+
+if (STEPS.length > 0) selectStep(0);
+
+// --- Live mode ---
+if (MODE === 'live') {
+  // Show live indicator
+  liveIndicator.innerHTML = '<span class="live-indicator"><span class="live-dot" id="live-dot"></span> LIVE</span>';
+
+  // Hide codify bar in live mode (no trajectory path yet)
+  codifyBar.style.display = 'none';
+
+  // Fetch current state for late-connecting clients
+  fetch('/state').then(function(r) { return r.json(); }).then(function(data) {
+    if (data && data.type === 'test_start') {
+      var html = '<div class="live-header">';
+      html += '<div style="display:flex;align-items:center;gap:8px"><strong>' + escapeHtml(data.test_id) + '</strong>';
+      html += '<span style="color:#484f58;font-size:12px">max ' + data.max_steps + ' steps</span></div>';
+      html += '<div class="test-info">' + escapeHtml(data.instruction) + '</div>';
+      if (data.vnc_url) {
+        html += '<a class="vnc-link" href="' + escapeHtml(data.vnc_url) + '" target="_blank">VNC: ' + escapeHtml(data.vnc_url) + '</a>';
+      }
+      html += '</div>';
+      liveHeader.innerHTML = html;
+    }
+  }).catch(function() {});
+
+  // Connect to SSE
+  var evtSource = new EventSource('/events');
+
+  evtSource.addEventListener('test_start', function(e) {
+    var data = JSON.parse(e.data);
+    // Clear previous test's steps and final-status div
+    STEPS = [];
+    stepList.innerHTML = '';
+    mainPanel.innerHTML = '<div class="empty">Waiting for first step...</div>';
+    var oldStatus = document.getElementById('final-status-bar');
+    if (oldStatus) oldStatus.remove();
+    var html = '<div class="live-header">';
+    html += '<div style="display:flex;align-items:center;gap:8px"><strong>' + escapeHtml(data.test_id) + '</strong>';
+    html += '<span style="color:#484f58;font-size:12px">max ' + data.max_steps + ' steps</span></div>';
+    html += '<div class="test-info">' + escapeHtml(data.instruction) + '</div>';
+    if (data.vnc_url) {
+      html += '<a class="vnc-link" href="' + escapeHtml(data.vnc_url) + '" target="_blank">VNC: ' + escapeHtml(data.vnc_url) + '</a>';
+    }
+    html += '</div>';
+    liveHeader.innerHTML = html;
+  });
+
+  evtSource.addEventListener('step_complete', function(e) {
+    var data = JSON.parse(e.data);
+    var step = {
+      step: data.step,
+      thought: data.thought,
+      action_code: data.action_code,
+      result: data.result,
+      screenshot: data.screenshot_base64,
+      timestamp: data.timestamp
+    };
+    var index = STEPS.length;
+    STEPS.push(step);
+    addStepToSidebar(step, index);
+    // Auto-select the latest step
+    selectStep(index);
+    // Auto-scroll sidebar to bottom
+    stepList.parentElement.scrollTop = stepList.parentElement.scrollHeight;
+  });
+
+  evtSource.addEventListener('test_complete', function(e) {
+    var data = JSON.parse(e.data);
+    // Remove any previous final-status div (suite mode)
+    var old = document.getElementById('final-status-bar');
+    if (old) old.remove();
+    var statusDiv = document.createElement('div');
+    statusDiv.id = 'final-status-bar';
+    statusDiv.className = 'final-status';
+    statusDiv.innerHTML = '<span class="badge ' + (data.passed ? 'pass' : 'fail') + '">' + (data.passed ? 'PASS' : 'FAIL') + '</span><div style="margin-top:8px;font-size:13px;color:#8b949e">' + escapeHtml(data.reasoning) + '</div><div style="margin-top:4px;font-size:12px;color:#484f58">' + (data.duration_ms / 1000).toFixed(1) + 's</div>';
+    liveHeader.parentNode.insertBefore(statusDiv, stepList);
+  });
+
+  evtSource.addEventListener('suite_progress', function(e) {
+    var data = JSON.parse(e.data);
+    var existing = document.getElementById('suite-progress');
+    if (!existing) {
+      existing = document.createElement('div');
+      existing.id = 'suite-progress';
+      existing.style.cssText = 'padding:8px 16px;border-bottom:1px solid #30363d;background:#161b22;';
+      liveHeader.parentNode.insertBefore(existing, liveHeader);
+    }
+    existing.innerHTML = '<div style="font-size:12px;color:#8b949e">Suite: ' + data.completed + '/' + data.total + ' - ' + escapeHtml(data.current_test_id) + '</div><div class="progress-bar"><div class="fill" style="width:' + (data.total > 0 ? (data.completed / data.total * 100) : 0) + '%"></div></div>';
+  });
+
+  evtSource.onerror = function() {
+    var dot = document.getElementById('live-dot');
+    if (dot) { dot.classList.add('disconnected'); }
+    var indicator = document.querySelector('.live-indicator');
+    if (indicator) { indicator.style.color = '#f85149'; indicator.lastChild.textContent = ' DISCONNECTED'; }
+  };
+}
+</script>
+</body>
+</html>

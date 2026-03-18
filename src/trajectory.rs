@@ -180,7 +180,7 @@ pub fn extract_thought(response_text: &str, code_blocks: &[String]) -> Option<St
 /// Get current UTC time as ISO 8601 string.
 ///
 /// Uses a simple implementation without requiring the chrono crate.
-fn chrono_iso8601_now() -> String {
+pub(crate) fn chrono_iso8601_now() -> String {
     use std::time::SystemTime;
 
     let now = SystemTime::now()

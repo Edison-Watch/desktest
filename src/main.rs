@@ -6,6 +6,8 @@ mod docker;
 mod error;
 mod evaluator;
 mod input;
+mod monitor;
+mod monitor_server;
 mod observation;
 mod provider;
 mod readiness;
@@ -71,6 +73,14 @@ pub struct Cli {
     /// Disable video recording of test sessions
     #[arg(long, default_value_t = false, global = true)]
     pub no_recording: bool,
+
+    /// Enable live monitoring web dashboard
+    #[arg(long, default_value_t = false, global = true)]
+    pub monitor: bool,
+
+    /// Port for the live monitoring dashboard
+    #[arg(long, default_value_t = 7860, global = true)]
+    pub monitor_port: u16,
 
     /// Interactive mode: start container and app, then wait for Ctrl+C (no agent) [legacy flag]
     #[arg(long, default_value_t = false, hide = true)]
@@ -234,7 +244,19 @@ async fn main() {
 
                 let run_config = load_config_or_defaults(&cli.config_flag);
 
-                let result = run_task(task_def, run_config, cli.debug, cli.verbose, cli.no_recording, cli.output.clone()).await;
+                let monitor_handle = if cli.monitor {
+                    let handle = monitor::MonitorHandle::new(32);
+                    if let Some(_server) = monitor_server::start_monitor_server(handle.clone(), cli.monitor_port).await {
+                        println!("Monitor dashboard: http://localhost:{}", cli.monitor_port);
+                        Some(handle)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                let result = run_task(task_def, run_config, cli.debug, cli.verbose, cli.no_recording, cli.output.clone(), monitor_handle).await;
                 match result {
                     Ok(outcome) => {
                         println!("{outcome}");
@@ -247,6 +269,18 @@ async fn main() {
                 }
             }
             Command::Suite { dir, filter } => {
+                let monitor_handle = if cli.monitor {
+                    let handle = monitor::MonitorHandle::new(32);
+                    if let Some(_server) = monitor_server::start_monitor_server(handle.clone(), cli.monitor_port).await {
+                        println!("Monitor dashboard: http://localhost:{}", cli.monitor_port);
+                        Some(handle)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
                 let result = suite::run_suite(
                     dir,
                     cli.config_flag.as_deref(),
@@ -255,6 +289,7 @@ async fn main() {
                     cli.debug,
                     cli.verbose,
                     cli.no_recording,
+                    monitor_handle,
                 ).await;
 
                 match result {
@@ -596,6 +631,7 @@ pub(crate) async fn run_task(
     verbose: bool,
     no_recording: bool,
     output_dir: std::path::PathBuf,
+    monitor: Option<monitor::MonitorHandle>,
 ) -> Result<AgentOutcome, AppError> {
     let start = Instant::now();
 
@@ -637,7 +673,7 @@ pub(crate) async fn run_task(
             eprintln!("\nInterrupted (Ctrl+C), cleaning up...");
             Err(AppError::Infra("Interrupted by user".into()))
         }
-        r = run_task_inner(&task_def, &config, &session, &artifacts_dir, debug, verbose, no_recording) => r,
+        r = run_task_inner(&task_def, &config, &session, &artifacts_dir, debug, verbose, no_recording, monitor.as_ref(), start) => r,
     };
 
     // Always collect artifacts and clean up
@@ -682,6 +718,8 @@ async fn run_task_inner(
     debug: bool,
     verbose: bool,
     no_recording: bool,
+    monitor: Option<&monitor::MonitorHandle>,
+    start_time: Instant,
 ) -> Result<TaskRunResult, AppError> {
     use task::EvaluatorMode;
 
@@ -794,8 +832,22 @@ async fn run_task_inner(
     }
 
     // 6. Print VNC info
-    if let Some(port) = config.vnc_port {
-        println!("VNC available at {}:{}", config.vnc_bind_addr, port);
+    let vnc_url = if let Some(port) = config.vnc_port {
+        let url = format!("{}:{}", config.vnc_bind_addr, port);
+        println!("VNC available at {url}");
+        url
+    } else {
+        String::new()
+    };
+
+    // Publish TestStart for live monitoring
+    if let Some(m) = monitor {
+        m.send(monitor::MonitorEvent::TestStart {
+            test_id: task_def.id.clone(),
+            instruction: task_def.instruction.clone(),
+            vnc_url,
+            max_steps: task_def.max_steps as usize,
+        });
     }
 
     // 7. Start video recording (after app is ready so we skip the boot/setup filler)
@@ -833,6 +885,16 @@ async fn run_task_inner(
 
             print_validation_results(None, Some(&eval_result));
 
+            // Publish TestComplete for programmatic mode (no agent loop to emit it)
+            if let Some(m) = monitor {
+                m.send(monitor::MonitorEvent::TestComplete {
+                    test_id: task_def.id.clone(),
+                    passed: eval_result.passed,
+                    reasoning: format_evaluation_reasoning(None, Some(&eval_result)),
+                    duration_ms: start_time.elapsed().as_millis() as u64,
+                });
+            }
+
             Ok(TaskRunResult {
                 outcome: AgentOutcome {
                     passed: eval_result.passed,
@@ -846,7 +908,7 @@ async fn run_task_inner(
         EvaluatorMode::Llm => {
             // LLM mode: run agent loop only, use agent verdict
             info!("Starting agent loop v2 (LLM-only evaluation)...");
-            let agent_loop_result = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose, recording.as_ref()).await;
+            let agent_loop_result = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose, recording.as_ref(), monitor).await;
 
             // Stop recording unconditionally (before propagating any error)
             if let Some(rec) = &recording {
@@ -867,7 +929,7 @@ async fn run_task_inner(
         EvaluatorMode::Hybrid => {
             // Hybrid mode: run agent loop AND programmatic evaluation, both must pass
             info!("Starting agent loop v2 (hybrid evaluation)...");
-            let agent_loop_result = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose, recording.as_ref()).await;
+            let agent_loop_result = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose, recording.as_ref(), monitor).await;
 
             // Stop recording unconditionally (before propagating any error)
             if let Some(rec) = &recording {
@@ -887,6 +949,17 @@ async fn run_task_inner(
             let both_passed = agent_outcome.passed && eval_result.passed;
 
             print_validation_results(Some(&agent_outcome), Some(&eval_result));
+
+            // Publish corrected TestComplete with hybrid verdict (overrides the
+            // premature one from the agent loop which only had the agent's verdict)
+            if let Some(m) = monitor {
+                m.send(monitor::MonitorEvent::TestComplete {
+                    test_id: task_def.id.clone(),
+                    passed: both_passed,
+                    reasoning: format_evaluation_reasoning(Some(&agent_outcome), Some(&eval_result)),
+                    duration_ms: start_time.elapsed().as_millis() as u64,
+                });
+            }
 
             Ok(TaskRunResult {
                 outcome: AgentOutcome {
@@ -977,6 +1050,7 @@ async fn run_agent_loop(
     debug: bool,
     verbose: bool,
     recording: Option<&recording::Recording>,
+    monitor: Option<&monitor::MonitorHandle>,
 ) -> Result<AgentOutcome, AppError> {
     let llm_client = provider::create_provider(
         &config.provider,
@@ -995,6 +1069,8 @@ async fn run_agent_loop(
         config.display_height,
         loop_config,
         recording,
+        monitor.cloned(),
+        task_def.id.clone(),
     );
     agent_loop.run().await
 }
@@ -1026,7 +1102,7 @@ async fn run_interactive(
             eval.mode = task::EvaluatorMode::Programmatic;
         }
 
-        return run_task(task_def, config, debug, verbose, no_recording, output_dir).await;
+        return run_task(task_def, config, debug, verbose, no_recording, output_dir, None).await;
     }
 
     if step {
@@ -1330,6 +1406,8 @@ async fn run_interactive_step_inner(
         config.display_height,
         loop_config,
         recording.as_ref(),
+        None, // no monitor in interactive step mode
+        task_def.id.clone(),
     );
 
     let agent_loop_result = agent_loop.run_step_by_step().await;

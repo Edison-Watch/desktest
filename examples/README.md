@@ -11,6 +11,7 @@ Uses the `folder` app deploy type with a local application directory.
 
 ```bash
 eyetest run examples/gedit-save.json
+eyetest run examples/gedit-save.json --monitor   # Watch live at http://localhost:7860
 eyetest interactive examples/gedit-save.json
 ```
 
@@ -82,6 +83,23 @@ eyetest validates custom images at startup. If a required dependency is missing,
 # Validate a task file without running
 eyetest validate examples/libreoffice-calc.json
 ```
+
+## Live Monitoring
+
+Any example can be run with the `--monitor` flag to open a real-time web dashboard:
+
+```bash
+# Single test with live dashboard
+eyetest run examples/gedit-save.json --monitor
+
+# Suite with progress tracking
+eyetest suite examples/ --monitor
+
+# Custom port
+eyetest run examples/gedit-save.json --monitor --monitor-port 8080
+```
+
+Open `http://localhost:7860` in your browser to watch the agent's screenshots, thoughts, and actions stream in as each step completes. The dashboard uses the same UI as `eyetest review`.
 
 ## Task JSON Schema
 
