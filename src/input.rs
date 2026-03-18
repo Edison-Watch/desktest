@@ -94,7 +94,7 @@ pub fn build_type(text: &str) -> Vec<String> {
 /// - `modifiers`: optional modifier keys like "ctrl", "alt", "shift", "super"
 pub fn build_key_press(key: &str, hold_ms: i32, modifiers: Option<&[&str]>) -> Vec<String> {
     // Validate key and modifiers to prevent shell injection.
-    // Valid xdotool tokens contain only alphanumeric chars and underscores.
+    // Valid xdotool tokens contain only alphanumeric chars, underscores, and hyphens.
     if !is_valid_xdotool_token(key) {
         tracing::warn!("Rejected invalid xdotool key name: {:?}", key);
         return vec!["true".into()]; // safe no-op
