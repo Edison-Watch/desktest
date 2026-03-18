@@ -734,6 +734,17 @@ pub(crate) async fn run_task(
 
     let duration_ms = start.elapsed().as_millis() as u64;
 
+    // Save task definition to artifacts for review HTML
+    let task_json_path = artifacts_dir.join("task.json");
+    match serde_json::to_string_pretty(&task_def) {
+        Ok(json) => {
+            if let Err(e) = std::fs::write(&task_json_path, &json) {
+                tracing::warn!("Failed to write task.json to artifacts: {e}");
+            }
+        }
+        Err(e) => tracing::warn!("Failed to serialize task definition: {e}"),
+    }
+
     // Write results.json
     let test_result = match &result {
         Ok(run_result) if !run_result.agent_ran => {
