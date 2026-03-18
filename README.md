@@ -1,8 +1,8 @@
-# Eyetest - Desktop App Test Runner
+# Desktest - Desktop App Test Runner
 
-Eyetest is a CLI tool for automated end-to-end testing of Linux desktop applications using LLM-powered agents. It spins up a disposable Docker container with a virtual desktop, deploys your app, and runs an agent that interacts with it like a real user — clicking, typing, and reading the screen. Deterministic programmatic checks then validate correctness.
+Desktest is a CLI tool for automated end-to-end testing of Linux desktop applications using LLM-powered agents. It spins up a disposable Docker container with a virtual desktop, deploys your app, and runs an agent that interacts with it like a real user — clicking, typing, and reading the screen. Deterministic programmatic checks then validate correctness.
 
-> **Warning:** Eyetest is beta software under active development. APIs, task schema, and CLI flags may change between releases.
+> **Warning:** Desktest is beta software under active development. APIs, task schema, and CLI flags may change between releases.
 
 ## Features
 
@@ -20,10 +20,10 @@ Eyetest is a CLI tool for automated end-to-end testing of Linux desktop applicat
 ## Developer Workflow
 
 ```
-1. EXPLORE   →  eyetest run task.json --monitor  # LLM agent explores your app (watch live!)
-2. REVIEW    →  eyetest review test-results/      # Inspect trajectory in web viewer
-3. CODIFY    →  eyetest codify trajectory.jsonl    # Convert to deterministic script
-4. REPLAY    →  eyetest run replay-task.json      # Run codified test (no LLM)
+1. EXPLORE   →  desktest run task.json --monitor  # LLM agent explores your app (watch live!)
+2. REVIEW    →  desktest review test-results/      # Inspect trajectory in web viewer
+3. CODIFY    →  desktest codify trajectory.jsonl    # Convert to deterministic script
+4. REPLAY    →  desktest run replay-task.json      # Run codified test (no LLM)
 5. CI        →  Run codified tests on every commit
 ```
 
@@ -34,7 +34,7 @@ Developer writes task.json
         │
         ▼
    ┌─────────┐
-   │ eyetest CLI │  validate / run / suite / interactive
+   │ desktest CLI │  validate / run / suite / interactive
    └────┬─────┘
         │
         ▼
@@ -95,7 +95,7 @@ cargo run -- interactive elcalc-test.json --step
 ## CLI
 
 ```
-eyetest [OPTIONS] <COMMAND>
+desktest [OPTIONS] <COMMAND>
 
 Commands:
   run           Run a single test from a task JSON file
@@ -146,7 +146,7 @@ See `examples/` for more examples including folder deploys and custom Docker ima
 | `folder` | Deploy a directory with an entrypoint script |
 | `docker_image` | Use a pre-built custom Docker image |
 
-> **Electron apps**: Add `"electron": true` to your app config to use the `eyetest-desktop:electron` image with Node.js pre-installed. See [examples/ELECTRON_QUICKSTART.md](examples/ELECTRON_QUICKSTART.md).
+> **Electron apps**: Add `"electron": true` to your app config to use the `desktest-desktop:electron` image with Node.js pre-installed. See [examples/ELECTRON_QUICKSTART.md](examples/ELECTRON_QUICKSTART.md).
 
 ### Evaluation Metrics
 
@@ -165,13 +165,13 @@ Add `--monitor` to any `run` or `suite` command to launch a real-time web dashbo
 
 ```bash
 # Watch a single test live
-eyetest run task.json --monitor
+desktest run task.json --monitor
 
 # Watch a test suite with progress tracking
-eyetest suite tests/ --monitor
+desktest suite tests/ --monitor
 
 # Use a custom port
-eyetest run task.json --monitor --monitor-port 8080
+desktest run task.json --monitor --monitor-port 8080
 ```
 
 Open `http://localhost:7860` in your browser to see:
@@ -180,7 +180,7 @@ Open `http://localhost:7860` in your browser to see:
 - **Suite progress**: progress bar showing completed/total tests during suite runs
 - **Status indicator**: pulsing dot shows connection state (live vs disconnected)
 
-The dashboard uses the same UI as `eyetest review` — a sidebar with step navigation, main panel with screenshot/thought/action details. The difference is that steps stream in via Server-Sent Events (SSE) instead of being loaded from a static file.
+The dashboard uses the same UI as `desktest review` — a sidebar with step navigation, main panel with screenshot/thought/action details. The difference is that steps stream in via Server-Sent Events (SSE) instead of being loaded from a static file.
 
 ## Artifacts
 

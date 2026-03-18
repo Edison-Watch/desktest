@@ -29,20 +29,20 @@ use tracing::info;
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "eyetest",
+    name = "desktest",
     about = "LLM-powered desktop app tester",
     after_help = "\
 EXAMPLES:
   Legacy mode (backward compatible):
-    eyetest config.json instructions.md
-    eyetest --interactive config.json instructions.md
+    desktest config.json instructions.md
+    desktest --interactive config.json instructions.md
 
   Subcommand mode:
-    eyetest run task.json
-    eyetest run task.json --config config.json --output ./results
-    eyetest suite ./tests --filter gedit
-    eyetest interactive task.json
-    eyetest validate task.json"
+    desktest run task.json
+    desktest run task.json --config config.json --output ./results
+    desktest suite ./tests --filter gedit
+    desktest interactive task.json
+    desktest validate task.json"
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -96,8 +96,8 @@ pub enum Command {
     /// Validate a task JSON file against the schema without running anything
     #[command(after_help = "\
 EXAMPLES:
-  eyetest validate task.json
-  eyetest validate tests/gedit-save.json")]
+  desktest validate task.json
+  desktest validate tests/gedit-save.json")]
     Validate {
         /// Path to the task JSON file to validate
         task: std::path::PathBuf,
@@ -106,11 +106,11 @@ EXAMPLES:
     /// Run a single test from a task JSON file
     #[command(after_help = "\
 EXAMPLES:
-  eyetest run task.json
-  eyetest run task.json --config config.json
-  eyetest run task.json --output ./my-results --verbose
-  eyetest run task.json --record --debug
-  eyetest run task.json --resolution 1280x720")]
+  desktest run task.json
+  desktest run task.json --config config.json
+  desktest run task.json --output ./my-results --verbose
+  desktest run task.json --record --debug
+  desktest run task.json --resolution 1280x720")]
     Run {
         /// Path to the task JSON file
         task: std::path::PathBuf,
@@ -119,9 +119,9 @@ EXAMPLES:
     /// Run a suite of tests from a directory of task JSON files
     #[command(after_help = "\
 EXAMPLES:
-  eyetest suite ./tests
-  eyetest suite ./tests --filter gedit
-  eyetest suite ./tests --config config.json --output ./results")]
+  desktest suite ./tests
+  desktest suite ./tests --filter gedit
+  desktest suite ./tests --config config.json --output ./results")]
     Suite {
         /// Path to the directory containing task JSON files
         dir: std::path::PathBuf,
@@ -134,10 +134,10 @@ EXAMPLES:
     /// Start a container with a task for interactive development and debugging
     #[command(after_help = "\
 EXAMPLES:
-  eyetest interactive task.json                   # Start container, run setup, pause
-  eyetest interactive task.json --step            # Run agent one step at a time
-  eyetest interactive task.json --validate-only   # Skip agent, run evaluation only
-  eyetest interactive task.json --config c.json   # Use custom config")]
+  desktest interactive task.json                   # Start container, run setup, pause
+  desktest interactive task.json --step            # Run agent one step at a time
+  desktest interactive task.json --validate-only   # Skip agent, run evaluation only
+  desktest interactive task.json --config c.json   # Use custom config")]
     Interactive {
         /// Path to the task JSON file
         task: std::path::PathBuf,
@@ -154,16 +154,16 @@ EXAMPLES:
     /// Convert a trajectory into a deterministic Python replay script
     #[command(after_help = "\
 EXAMPLES:
-  eyetest codify test-results/trajectory.jsonl
-  eyetest codify test-results/trajectory.jsonl --output eyetest_replay.py
-  eyetest codify test-results/trajectory.jsonl --steps 1,2,5,6
-  eyetest codify test-results/trajectory.jsonl --with-screenshots --threshold 0.95")]
+  desktest codify test-results/trajectory.jsonl
+  desktest codify test-results/trajectory.jsonl --output desktest_replay.py
+  desktest codify test-results/trajectory.jsonl --steps 1,2,5,6
+  desktest codify test-results/trajectory.jsonl --with-screenshots --threshold 0.95")]
     Codify {
         /// Path to trajectory.jsonl file
         trajectory: std::path::PathBuf,
 
-        /// Output Python script path (default: eyetest_replay.py)
-        #[arg(long, default_value = "eyetest_replay.py")]
+        /// Output Python script path (default: desktest_replay.py)
+        #[arg(long, default_value = "desktest_replay.py")]
         output: std::path::PathBuf,
 
         /// Only include these step numbers (comma-separated, 1-indexed)
@@ -186,15 +186,15 @@ EXAMPLES:
     /// Generate a web-based trajectory review viewer
     #[command(after_help = "\
 EXAMPLES:
-  eyetest review test-results/
-  eyetest review test-results/ --output eyetest_review.html
-  eyetest review test-results/ --no-open")]
+  desktest review test-results/
+  desktest review test-results/ --output desktest_review.html
+  desktest review test-results/ --no-open")]
     Review {
         /// Path to artifacts directory containing trajectory.jsonl
         artifacts_dir: std::path::PathBuf,
 
-        /// Output HTML file path (default: eyetest_review.html)
-        #[arg(long, default_value = "eyetest_review.html")]
+        /// Output HTML file path (default: desktest_review.html)
+        #[arg(long, default_value = "desktest_review.html")]
         output: std::path::PathBuf,
 
         /// Do not open the generated HTML file in the default browser
@@ -524,13 +524,13 @@ async fn resolve_image_name<'a>(
 async fn run_legacy(cli: Cli) -> Result<AgentOutcome, AppError> {
     // 1. Validate config
     let config_path = cli.config_pos.ok_or_else(|| {
-        AppError::Config("Missing config file argument. Usage: eyetest <config.json> <instructions.md>\n\nOr use subcommands: eyetest run <task.json>, eyetest suite <dir>, eyetest interactive <task.json>, eyetest validate <task.json>".into())
+        AppError::Config("Missing config file argument. Usage: desktest <config.json> <instructions.md>\n\nOr use subcommands: desktest run <task.json>, desktest suite <dir>, desktest interactive <task.json>, desktest validate <task.json>".into())
     })?;
     let config = Config::load_and_validate(&config_path)?;
 
     // 2. Read instructions
     let instructions_path = cli.instructions.ok_or_else(|| {
-        AppError::Config("Missing instructions file argument. Usage: eyetest <config.json> <instructions.md>".into())
+        AppError::Config("Missing instructions file argument. Usage: desktest <config.json> <instructions.md>".into())
     })?;
     let instructions = std::fs::read_to_string(&instructions_path)
         .map_err(|e| AppError::Config(format!("Cannot read instructions file: {e}")))?;

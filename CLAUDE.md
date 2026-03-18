@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Eyetest** is a CLI tool for automated end-to-end testing of Linux desktop applications using LLM-powered agents. It spins up a Docker container with an XFCE desktop (Xvfb + x11vnc), deploys an app (AppImage, folder, or custom Docker image), then runs an OSWorld-style agent loop where the LLM interacts with the app via PyAutoGUI code execution and observes via screenshots + accessibility trees.
+**Desktest** is a CLI tool for automated end-to-end testing of Linux desktop applications using LLM-powered agents. It spins up a Docker container with an XFCE desktop (Xvfb + x11vnc), deploys an app (AppImage, folder, or custom Docker image), then runs an OSWorld-style agent loop where the LLM interacts with the app via PyAutoGUI code execution and observes via screenshots + accessibility trees.
 
 **Tech stack:** Rust (edition 2024), Tokio async runtime, Docker (Bollard), multi-model LLM support (OpenAI, Anthropic, custom OpenAI-compatible endpoints).
 
@@ -63,8 +63,8 @@ Built from debian:bookworm-slim with Xvfb, XFCE4, x11vnc, xdotool, scrot, ffmpeg
 **IMPORTANT:** `~/.Xauthority` must exist for the tester user. PyAutoGUI (via python-xlib) crashes with `Xlib.error.XauthError` without it. The base Dockerfile creates it, but custom images or images that switch users must ensure it exists. Custom images are validated at startup; built-in images have a fallback in `execute-action.py`.
 
 Docker images:
-- `eyetest-desktop:latest` — Base image (Dockerfile)
-- `eyetest-desktop:electron` — Extends base with Node.js 20 + Electron deps (Dockerfile.electron)
+- `desktest-desktop:latest` — Base image (Dockerfile)
+- `desktest-desktop:electron` — Extends base with Node.js 20 + Electron deps (Dockerfile.electron)
 
 Helper scripts:
 - `docker/get-a11y-tree.py` — Extracts linearized accessibility tree via pyatspi (TSV format)

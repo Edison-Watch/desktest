@@ -148,7 +148,7 @@ mod tests {
     fn test_build_html_contains_structure() {
         let html = build_html("[]", &None, "\"trajectory.jsonl\"", "null");
         assert!(html.contains("<!DOCTYPE html>"));
-        assert!(html.contains("eyetest"));
+        assert!(html.contains("desktest"));
         assert!(html.contains("Trajectory Review"));
         assert!(html.contains("STEPS"));
     }

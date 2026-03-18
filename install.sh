@@ -1,10 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-# eyetest installer — downloads the latest release binary for your platform.
+# desktest installer — downloads the latest release binary for your platform.
 # Usage: curl -fsSL https://raw.githubusercontent.com/Edison-Watch/tent-agent/master/install.sh | bash
 
-REPO="${EYETEST_REPO:-Edison-Watch/tent-agent}"
+REPO="${DESKTEST_REPO:-Edison-Watch/tent-agent}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
 # Detect OS and architecture
@@ -37,24 +37,24 @@ fi
 echo "Latest release: ${LATEST}"
 
 # Download
-URL="https://github.com/${REPO}/releases/download/${LATEST}/eyetest-${LATEST}-${TARGET}.tar.gz"
+URL="https://github.com/${REPO}/releases/download/${LATEST}/desktest-${LATEST}-${TARGET}.tar.gz"
 CHECKSUMS_URL="https://github.com/${REPO}/releases/download/${LATEST}/SHA256SUMS.txt"
 
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
-echo "Downloading eyetest ${LATEST} for ${TARGET}..."
-curl -fsSL "$URL" -o "$TMPDIR/eyetest.tar.gz"
+echo "Downloading desktest ${LATEST} for ${TARGET}..."
+curl -fsSL "$URL" -o "$TMPDIR/desktest.tar.gz"
 curl -fsSL "$CHECKSUMS_URL" -o "$TMPDIR/SHA256SUMS.txt"
 
 # Verify checksum
 echo "Verifying checksum..."
-EXPECTED=$(grep "eyetest-${LATEST}-${TARGET}.tar.gz" "$TMPDIR/SHA256SUMS.txt" | awk '{print $1}')
+EXPECTED=$(grep "desktest-${LATEST}-${TARGET}.tar.gz" "$TMPDIR/SHA256SUMS.txt" | awk '{print $1}')
 if [ -n "$EXPECTED" ]; then
   if command -v sha256sum &>/dev/null; then
-    ACTUAL=$(sha256sum "$TMPDIR/eyetest.tar.gz" | awk '{print $1}')
+    ACTUAL=$(sha256sum "$TMPDIR/desktest.tar.gz" | awk '{print $1}')
   else
-    ACTUAL=$(shasum -a 256 "$TMPDIR/eyetest.tar.gz" | awk '{print $1}')
+    ACTUAL=$(shasum -a 256 "$TMPDIR/desktest.tar.gz" | awk '{print $1}')
   fi
   if [ "$EXPECTED" != "$ACTUAL" ]; then
     echo "Error: Checksum mismatch!"
@@ -64,17 +64,17 @@ if [ -n "$EXPECTED" ]; then
   fi
   echo "Checksum verified."
 else
-  echo "Error: Checksum for eyetest-${LATEST}-${TARGET}.tar.gz not found in SHA256SUMS.txt"
+  echo "Error: Checksum for desktest-${LATEST}-${TARGET}.tar.gz not found in SHA256SUMS.txt"
   exit 1
 fi
 
 # Install
 mkdir -p "$INSTALL_DIR"
-tar xzf "$TMPDIR/eyetest.tar.gz" -C "$INSTALL_DIR"
-chmod +x "$INSTALL_DIR/eyetest"
+tar xzf "$TMPDIR/desktest.tar.gz" -C "$INSTALL_DIR"
+chmod +x "$INSTALL_DIR/desktest"
 
 echo ""
-echo "eyetest ${LATEST} installed to ${INSTALL_DIR}/eyetest"
+echo "desktest ${LATEST} installed to ${INSTALL_DIR}/desktest"
 
 # Check if install dir is in PATH
 if ! echo "$PATH" | tr ':' '\n' | grep -q "^${INSTALL_DIR}$"; then
