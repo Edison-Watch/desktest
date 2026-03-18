@@ -92,8 +92,9 @@ def _safe_builtins():
         "repr", "format", "chr", "ord", "hex", "oct", "bin",
         # Introspection (safe subset)
         "isinstance", "issubclass", "callable", "hash", "id",
-        # OOP primitives (object excluded — __subclasses__() enables sandbox escape)
-        "super", "property", "staticmethod", "classmethod",
+        # OOP: class definitions are intentionally blocked (__build_class__ excluded)
+        # to reduce attack surface. super/property/staticmethod/classmethod removed
+        # since they are unusable without class definitions.
         # Exception types
         "Exception", "ValueError", "TypeError", "AttributeError",
         "KeyError", "IndexError", "RuntimeError", "StopIteration",
