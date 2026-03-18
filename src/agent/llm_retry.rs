@@ -145,6 +145,11 @@ pub(super) fn is_transient_error(err_str: &str) -> bool {
         || lower.contains("error 502")
         || lower.contains("error 503")
         || lower.contains("error 504")
+        // Provider format: "API error (502 Bad Gateway): ..."
+        || lower.contains("error (500")
+        || lower.contains("error (502")
+        || lower.contains("error (503")
+        || lower.contains("error (504")
         || lower.contains("server error")
         || lower.contains("internal error")
         || lower.contains("overloaded")
@@ -286,6 +291,14 @@ mod tests {
     #[test]
     fn test_transient_503() {
         assert!(is_transient_error("error 503 Service Temporarily Unavailable"));
+    }
+
+    #[test]
+    fn test_transient_provider_format() {
+        // Actual provider error format: "OpenAI API error (502 Bad Gateway): ..."
+        assert!(is_transient_error("Agent error: OpenAI API error (502 Bad Gateway): upstream error"));
+        assert!(is_transient_error("Agent error: Anthropic API error (503 Service Unavailable): overloaded"));
+        assert!(is_transient_error("Agent error: Custom API error (504 Gateway Timeout): timeout"));
     }
 
     #[test]
