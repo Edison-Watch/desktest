@@ -37,11 +37,36 @@ except ImportError:
     pyperclip = None
 
 
+def _sanitize_module(mod):
+    """Remove dangerous attributes from a module before passing to exec namespace.
+
+    Strips __loader__ (which exposes load_module() for arbitrary imports) and
+    __spec__.loader. This is hardening — not a complete sandbox. Attribute
+    traversal via __class__.__mro__ can still reach dangerous classes; full
+    prevention requires RestrictedPython or process-level isolation.
+    """
+    import types
+    # Create a shallow wrapper module to avoid mutating the real module
+    wrapper = types.ModuleType(mod.__name__)
+    for attr in dir(mod):
+        if attr in ("__loader__", "__spec__"):
+            continue
+        try:
+            setattr(wrapper, attr, getattr(mod, attr))
+        except (AttributeError, TypeError):
+            pass
+    return wrapper
+
+
 def _safe_builtins():
     """Return a restricted dict of Python builtins safe for LLM-generated code.
 
-    Excludes dangerous functions like __import__, open, exec, eval, compile,
-    getattr, setattr, delattr, and type to prevent sandbox escapes.
+    This is defense-in-depth hardening, NOT a full sandbox. CPython's exec()
+    cannot be fully sandboxed — attribute traversal (e.g. "".__class__.__mro__)
+    can reach arbitrary classes regardless of __builtins__ restrictions. The
+    Docker container (non-root "tester" user) remains the primary security
+    boundary. This allowlist raises the bar by removing the most obvious
+    escape vectors (direct __import__, open, eval, etc.).
     """
     import builtins
 
@@ -83,13 +108,15 @@ def main():
         print(json.dumps(result))
         return
 
+    # Sanitize modules to remove __loader__ (prevents load_module() import bypass).
+    # This is hardening — see _safe_builtins() docstring for full threat model.
     namespace = {
-        "pyautogui": pyautogui,
-        "time": time,
+        "pyautogui": _sanitize_module(pyautogui),
+        "time": _sanitize_module(time),
         "__builtins__": _safe_builtins(),
     }
     if pyperclip is not None:
-        namespace["pyperclip"] = pyperclip
+        namespace["pyperclip"] = _sanitize_module(pyperclip)
 
     start = time.monotonic()
     try:
