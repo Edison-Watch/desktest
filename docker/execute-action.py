@@ -49,7 +49,7 @@ def _sanitize_module(mod):
     # Create a shallow wrapper module to avoid mutating the real module
     wrapper = types.ModuleType(mod.__name__)
     for attr in dir(mod):
-        if attr in ("__loader__", "__spec__"):
+        if attr in ("__loader__", "__spec__", "__builtins__"):
             continue
         try:
             setattr(wrapper, attr, getattr(mod, attr))
