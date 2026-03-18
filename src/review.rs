@@ -89,178 +89,31 @@ fn build_steps_json(entries: &[TrajectoryRecord], artifacts_dir: &Path) -> Strin
         .replace("</", "<\\/")
 }
 
-/// Build the complete HTML document.
+/// Build the complete HTML document using the shared dashboard template.
 fn build_html(steps_json: &str, recording_b64: &Option<String>, trajectory_path_json: &str) -> String {
     let has_recording = recording_b64.is_some();
     let recording_data_uri = recording_b64
         .as_ref()
         .map(|b64| format!("data:video/mp4;base64,{b64}"))
         .unwrap_or_default();
-    format!(r##"<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>eyetest - Trajectory Review</title>
-<style>
-* {{ margin: 0; padding: 0; box-sizing: border-box; }}
-body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #0f1117; color: #e1e4e8; display: flex; height: 100vh; }}
-.sidebar {{ width: 350px; background: #161b22; border-right: 1px solid #30363d; overflow-y: auto; flex-shrink: 0; }}
-.sidebar h2 {{ padding: 16px; font-size: 14px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #30363d; }}
-.step-item {{ padding: 12px 16px; border-bottom: 1px solid #21262d; cursor: pointer; transition: background 0.15s; }}
-.step-item:hover {{ background: #1c2128; }}
-.step-item.active {{ background: #1f6feb22; border-left: 3px solid #1f6feb; }}
-.step-num {{ font-weight: 600; font-size: 13px; color: #58a6ff; }}
-.step-thought {{ font-size: 12px; color: #8b949e; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
-.badge {{ display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; margin-left: 8px; }}
-.badge.success {{ background: #23882344; color: #3fb950; }}
-.badge.done {{ background: #1f6feb22; color: #58a6ff; }}
-.badge.error {{ background: #f8514944; color: #f85149; }}
-.badge.fail {{ background: #f8514944; color: #f85149; }}
-.main {{ flex: 1; overflow-y: auto; padding: 24px; }}
-.detail-header {{ display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }}
-.detail-header h2 {{ font-size: 20px; }}
-.screenshot {{ max-width: 100%; border-radius: 8px; border: 1px solid #30363d; margin-bottom: 20px; }}
-.section {{ background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-bottom: 16px; }}
-.section h3 {{ font-size: 13px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }}
-.section pre {{ font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; white-space: pre-wrap; word-break: break-all; color: #c9d1d9; }}
-.thought-text {{ font-size: 14px; line-height: 1.6; color: #c9d1d9; }}
-.codify-bar {{ padding: 12px 16px; border-top: 1px solid #30363d; background: #161b22; }}
-.codify-bar label {{ font-size: 12px; color: #8b949e; cursor: pointer; }}
-.codify-bar input[type=checkbox] {{ margin-right: 6px; }}
-.codify-btn {{ display: block; width: 100%; margin-top: 12px; padding: 8px; background: #238636; color: white; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 600; }}
-.codify-btn:hover {{ background: #2ea043; }}
-.empty {{ display: flex; align-items: center; justify-content: center; height: 100%; color: #484f58; font-size: 16px; }}
-.recording-item {{ padding: 12px 16px; border-bottom: 1px solid #21262d; cursor: pointer; transition: background 0.15s; font-weight: 600; font-size: 13px; color: #d2a8ff; display: flex; align-items: center; gap: 8px; }}
-.recording-item:hover {{ background: #1c2128; }}
-.recording-item.active {{ background: #1f6feb22; border-left: 3px solid #1f6feb; }}
-.recording-item svg {{ width: 16px; height: 16px; fill: currentColor; }}
-.video-container {{ max-width: 100%; }}
-.video-container video {{ width: 100%; border-radius: 8px; border: 1px solid #30363d; }}
-</style>
-</head>
-<body>
-<div class="sidebar">
-  <h2>Steps</h2>
-  <div id="recording-entry"></div>
-  <div id="step-list"></div>
-  <div class="codify-bar">
-    <div id="checkbox-list"></div>
-    <button class="codify-btn" onclick="copyCodifyCommand()">Copy codify command</button>
-  </div>
-</div>
-<div class="main" id="main-panel">
-  <div class="empty">Select a step to view details</div>
-</div>
 
-<script>
-const STEPS = {steps_json};
-const HAS_RECORDING = {has_recording};
-const RECORDING_URI = "{recording_data_uri}";
-const TRAJECTORY_PATH = {trajectory_path_json};
-
-const stepList = document.getElementById('step-list');
-const checkboxList = document.getElementById('checkbox-list');
-const mainPanel = document.getElementById('main-panel');
-const recordingEntry = document.getElementById('recording-entry');
-
-if (HAS_RECORDING) {{
-  const div = document.createElement('div');
-  div.className = 'recording-item';
-  div.id = 'recording-nav';
-  div.innerHTML = '<svg viewBox="0 0 16 16"><path d="M1 4.804a1 1 0 0 1 1.53-.848l2.972 1.86A1 1 0 0 1 6 6.68v2.64a1 1 0 0 1-.498.864l-2.972 1.86A1 1 0 0 1 1 11.196V4.804zM7.5 4A1.5 1.5 0 0 1 9 5.5v5A1.5 1.5 0 0 1 7.5 12H14.5A1.5 1.5 0 0 0 16 10.5v-5A1.5 1.5 0 0 0 14.5 4H7.5z"/></svg> Recording';
-  div.addEventListener('click', () => showRecording());
-  recordingEntry.appendChild(div);
-}}
-
-function badgeClass(result) {{
-  if (!result) return 'fail';
-  if (result === 'success') return 'success';
-  if (result === 'done') return 'done';
-  if (result.startsWith('error') || result === 'fail') return 'error';
-  return 'fail';
-}}
-
-STEPS.forEach((s, i) => {{
-  // Step list item
-  const div = document.createElement('div');
-  div.className = 'step-item';
-  div.dataset.index = i;
-  div.innerHTML = `<span class="step-num">Step ${{s.step}}</span><span class="badge ${{badgeClass(s.result)}}">${{escapeHtml(s.result)}}</span><div class="step-thought">${{escapeHtml(s.thought || '(no thought)')}}</div>`;
-  div.addEventListener('click', () => selectStep(i));
-  stepList.appendChild(div);
-
-  // Checkbox
-  const label = document.createElement('label');
-  label.style.display = 'block';
-  label.style.marginBottom = '4px';
-  label.innerHTML = `<input type="checkbox" value="${{s.step}}" ${{s.result === 'success' ? 'checked' : ''}}> Step ${{s.step}}`;
-  checkboxList.appendChild(label);
-}});
-
-function showRecording() {{
-  document.querySelectorAll('.step-item').forEach(el => el.classList.remove('active'));
-  const nav = document.getElementById('recording-nav');
-  if (nav) nav.classList.add('active');
-  mainPanel.innerHTML = `<div class="detail-header"><h2>Session Recording</h2></div><div class="video-container"><video controls autoplay muted><source src="${{RECORDING_URI}}" type="video/mp4">Your browser does not support video playback.</video></div>`;
-}}
-
-function selectStep(index) {{
-  document.querySelectorAll('.step-item').forEach(el => el.classList.remove('active'));
-  const nav = document.getElementById('recording-nav');
-  if (nav) nav.classList.remove('active');
-  document.querySelector(`.step-item[data-index="${{index}}"]`).classList.add('active');
-
-  const s = STEPS[index];
-  let html = '';
-  html += `<div class="detail-header"><h2>Step ${{s.step}}</h2><span class="badge ${{badgeClass(s.result)}}">${{escapeHtml(s.result)}}</span><span style="color:#484f58;font-size:13px">${{escapeHtml(s.timestamp)}}</span></div>`;
-
-  if (s.screenshot) {{
-    html += `<img class="screenshot" src="data:image/png;base64,${{s.screenshot}}" alt="Step ${{s.step}} screenshot">`;
-  }}
-
-  if (s.thought) {{
-    html += `<div class="section"><h3>Thought</h3><div class="thought-text">${{escapeHtml(s.thought)}}</div></div>`;
-  }}
-
-  if (s.action_code) {{
-    html += `<div class="section"><h3>Action Code</h3><pre>${{escapeHtml(s.action_code)}}</pre></div>`;
-  }}
-
-  mainPanel.innerHTML = html;
-}}
-
-function escapeHtml(text) {{
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}}
-
-function copyCodifyCommand() {{
-  const checked = [...document.querySelectorAll('#checkbox-list input:checked')].map(cb => cb.value);
-  if (checked.length === 0) {{
-    alert('Select at least one step to include.');
-    return;
-  }}
-  const quotedPath = "'" + TRAJECTORY_PATH.replace(/'/g, "'\\''") + "'";
-  const cmd = `eyetest codify ${{quotedPath}} --steps ${{checked.join(',')}}`;
-  if (navigator.clipboard) {{
-    navigator.clipboard.writeText(cmd).then(() => {{
-      const btn = document.querySelector('.codify-btn');
-      btn.textContent = 'Copied!';
-      setTimeout(() => btn.textContent = 'Copy codify command', 2000);
-    }}).catch(() => {{
-      prompt('Copy this command:', cmd);
-    }});
-  }} else {{
-    prompt('Copy this command:', cmd);
-  }}
-}}
-
-if (STEPS.length > 0) selectStep(0);
-</script>
-</body>
-</html>"##, steps_json = steps_json, has_recording = if has_recording { "true" } else { "false" }, recording_data_uri = recording_data_uri, trajectory_path_json = trajectory_path_json)
+    let template = include_str!("dashboard.html");
+    template
+        .replace("/*__STEPS__*/[]", &format!("/*__STEPS__*/{steps_json}"))
+        .replace("/*__MODE__*/\"static\"", "/*__MODE__*/\"static\"")
+        .replace("/*__VNC_URL__*/\"\"", "/*__VNC_URL__*/\"\"")
+        .replace(
+            "/*__HAS_RECORDING__*/false",
+            &format!("/*__HAS_RECORDING__*/{}", if has_recording { "true" } else { "false" }),
+        )
+        .replace(
+            "/*__RECORDING_URI__*/\"\"",
+            &format!("/*__RECORDING_URI__*/\"{}\"", recording_data_uri),
+        )
+        .replace(
+            "/*__TRAJECTORY_PATH__*/\"\"",
+            &format!("/*__TRAJECTORY_PATH__*/{trajectory_path_json}"),
+        )
 }
 
 #[cfg(test)]

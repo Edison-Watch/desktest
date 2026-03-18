@@ -242,6 +242,7 @@ pub async fn run_suite(
     debug: bool,
     verbose: bool,
     no_recording: bool,
+    monitor: Option<crate::monitor::MonitorHandle>,
 ) -> Result<SuiteResult, AppError> {
     let entries = discover_tasks(dir, filter)?;
 
@@ -266,6 +267,14 @@ pub async fn run_suite(
             entry.path.display()
         );
 
+        if let Some(ref m) = monitor {
+            m.send(crate::monitor::MonitorEvent::SuiteProgress {
+                completed: i,
+                total: entries.len(),
+                current_test_id: entry.task_def.id.clone(),
+            });
+        }
+
         let test_output_dir = output_dir.join(&entry.task_def.id);
         let test_start = Instant::now();
 
@@ -277,6 +286,7 @@ pub async fn run_suite(
             verbose,
             no_recording,
             test_output_dir.clone(),
+            monitor.clone(),
         )
         .await;
 
