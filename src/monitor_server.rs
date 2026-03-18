@@ -47,11 +47,11 @@ pub fn start_monitor_server(handle: MonitorHandle, port: u16, vnc_url: &str) -> 
 fn build_live_dashboard(vnc_url: &str) -> String {
     let template = include_str!("dashboard.html");
     template
-        .replace("/*__STEPS__*/[]", "/*__STEPS__*/[]")
-        .replace("/*__MODE__*/\"static\"", &format!("/*__MODE__*/\"live\""))
-        .replace("/*__VNC_URL__*/\"\"", &format!("/*__VNC_URL__*/\"{}\"", vnc_url.replace('"', "\\\"")))
-        .replace("/*__RECORDING_URI__*/\"\"", "/*__RECORDING_URI__*/\"\"")
-        .replace("/*__TRAJECTORY_PATH__*/\"\"", "/*__TRAJECTORY_PATH__*/\"\"")
+        .replace("/*__MODE__*/\"static\"", "/*__MODE__*/\"live\"")
+        .replace(
+            "/*__VNC_URL__*/\"\"",
+            &format!("/*__VNC_URL__*/\"{}\"", vnc_url.replace('"', "\\\"")),
+        )
 }
 
 /// SSE handler that streams monitor events to the browser.
@@ -70,7 +70,10 @@ fn sse_handler(
             let json = serde_json::to_string(&event).unwrap_or_default();
             Some(Ok(Event::default().event(event_type).data(json)))
         }
-        Err(_) => None,
+        Err(tokio_stream::wrappers::errors::BroadcastStreamRecvError::Lagged(n)) => {
+            warn!("SSE client lagged; dropped {n} monitor events");
+            None
+        }
     });
 
     Sse::new(stream).keep_alive(KeepAlive::default())

@@ -141,15 +141,7 @@ impl<'a> AgentLoopV2<'a> {
         info!("Capturing initial observation...");
         let mut current_observation = self.capture_observation_for_step(0).await?;
 
-        // Publish TestStart event for live monitoring
-        if let Some(ref m) = self.monitor {
-            m.send(MonitorEvent::TestStart {
-                test_id: String::new(), // filled by caller via TestStart from main.rs
-                instruction: String::new(),
-                vnc_url: String::new(),
-                max_steps: self.config.max_steps,
-            });
-        }
+        // TestStart is published by run_task_inner in main.rs with the full task context.
 
         loop {
             // Check total timeout
