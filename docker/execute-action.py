@@ -43,7 +43,9 @@ def _sanitize_module(mod):
     Strips __loader__ (which exposes load_module() for arbitrary imports),
     __spec__.loader, and __builtins__. This is hardening — not a complete sandbox.
 
-    Known remaining bypass vectors (all require CPython internals knowledge):
+    Known remaining bypass vectors:
+    - Module-level imports on sanitized modules (e.g. pyautogui.sys.modules['os'])
+      are accessible via plain attribute access — no CPython internals knowledge needed
     - Attribute traversal via __class__.__mro__ can reach arbitrary classes
     - Function __globals__ on copied callables points to the original module's
       __dict__, which contains unrestricted __builtins__
