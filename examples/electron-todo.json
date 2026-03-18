@@ -8,6 +8,12 @@
     "entrypoint": "start.sh",
     "electron": true
   },
+  "setup": [
+    {
+      "type": "execute",
+      "command": "cd /home/tester/electron-todo-app && npm install --production"
+    }
+  ],
   "evaluator": {
     "mode": "hybrid",
     "metrics": [

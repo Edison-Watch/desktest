@@ -30,3 +30,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 USER tester
 WORKDIR /home/tester
+
+# IMPORTANT: PyAutoGUI requires ~/.Xauthority to connect to the X display.
+# The base image creates it, but switching to root and back can sometimes
+# cause layer issues. Ensure it exists here.
+RUN touch /home/tester/.Xauthority

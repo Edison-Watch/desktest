@@ -37,7 +37,6 @@ Create `start.sh` in your app directory:
 #!/bin/bash
 set -e
 cd /home/tester/your-app-name
-npm install --production 2>&1
 npx electron . --no-sandbox --disable-gpu --force-renderer-accessibility 2>&1
 ```
 
@@ -45,6 +44,8 @@ Key flags:
 - `--no-sandbox` — required for running inside Docker containers
 - `--disable-gpu` — no GPU available in the virtual desktop
 - `--force-renderer-accessibility` — enables the accessibility tree for better agent navigation
+
+> **Important:** Do NOT put `npm install` in `start.sh`. The entrypoint runs after the app window detection timer starts, and `npm install` for Electron downloads a ~180MB binary that will exceed the 30-second timeout. Instead, use a `setup` step in your task JSON to install dependencies before the app launches (see [Step 3](#step-3-write-a-task-file)).
 
 ### Option B: Pre-built Binary (Release Testing)
 
@@ -70,6 +71,11 @@ For complex setups, extend the electron base image:
 FROM eyetest-desktop:electron
 COPY my-app /home/tester/my-app
 RUN cd /home/tester/my-app && npm install --production
+
+# IMPORTANT: PyAutoGUI requires ~/.Xauthority to connect to the X display.
+# Always ensure this file exists after switching users.
+USER tester
+RUN touch /home/tester/.Xauthority
 ```
 
 ## Step 2: Build the Electron Docker Image
@@ -99,6 +105,12 @@ Create `my-test.json`:
     "entrypoint": "start.sh",
     "electron": true
   },
+  "setup": [
+    {
+      "type": "execute",
+      "command": "cd /home/tester/my-electron-app && npm install --production"
+    }
+  ],
   "evaluator": {
     "mode": "hybrid",
     "metrics": [
@@ -114,6 +126,8 @@ Create `my-test.json`:
   "max_steps": 10
 }
 ```
+
+The `setup` step runs `npm install` before the app is launched, so it doesn't count against the window detection timeout.
 
 The `"electron": true` flag tells eyetest to:
 1. Use the `eyetest-desktop:electron` Docker image (which has Node.js and Electron runtime dependencies)
@@ -202,7 +216,7 @@ Since codified tests are deterministic (no LLM calls), they're fast, reliable, a
 - **Start with interactive mode** (`eyetest interactive`) to understand how your app looks in the virtual desktop
 - **Use VNC** to watch tests live: add `"vnc_port": 5900` to your config
 - **Accessibility matters**: Electron's `--force-renderer-accessibility` flag helps the agent read your UI. Use semantic HTML and ARIA labels for best results
-- **npm install is slow**: Consider using a custom Docker image with dependencies pre-installed for faster test runs
+- **npm install is slow**: Use a `setup` step in your task JSON to run `npm install` before the app launches, or use a custom Docker image with dependencies pre-installed for faster test runs. Never put `npm install` in your `start.sh` — it will exceed the window detection timeout
 - **File paths**: In the container, your app folder is at `/home/tester/<dir-name>/`
 
 ## Example
