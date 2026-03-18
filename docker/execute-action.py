@@ -112,7 +112,10 @@ def _safe_builtins():
     _real_import = builtins.__import__
 
     def _restricted_import(name, globals=None, locals=None, fromlist=(), level=0):
-        if name not in _allowed_modules:
+        # Check top-level module so dotted imports like `import collections.abc`
+        # work when `collections` is in the allowlist.
+        top_level = name.split('.')[0]
+        if top_level not in _allowed_modules:
             raise ImportError(f"Import of '{name}' is not allowed in this sandbox")
         mod = _real_import(name, globals, locals, fromlist, level)
         # Sanitize returned modules to prevent __builtins__ leakage via re-import.
