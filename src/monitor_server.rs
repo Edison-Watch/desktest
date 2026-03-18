@@ -87,7 +87,7 @@ fn sse_handler(
 /// State endpoint returning the last TestStart event as JSON.
 /// Late-connecting browsers fetch this to get current test context.
 async fn state_handler(handle: MonitorHandle) -> Json<serde_json::Value> {
-    match handle.last_test_start().await {
+    match handle.last_test_start() {
         Some(event) => Json(serde_json::to_value(&event).unwrap_or_default()),
         None => Json(serde_json::json!(null)),
     }
