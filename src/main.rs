@@ -150,15 +150,15 @@ EXAMPLES:
     #[command(after_help = "\
 EXAMPLES:
   eyetest codify test-results/trajectory.jsonl
-  eyetest codify test-results/trajectory.jsonl --output replay.py
+  eyetest codify test-results/trajectory.jsonl --output eyetest_replay.py
   eyetest codify test-results/trajectory.jsonl --steps 1,2,5,6
   eyetest codify test-results/trajectory.jsonl --with-screenshots --threshold 0.95")]
     Codify {
         /// Path to trajectory.jsonl file
         trajectory: std::path::PathBuf,
 
-        /// Output Python script path (default: replay.py)
-        #[arg(long, default_value = "replay.py")]
+        /// Output Python script path (default: eyetest_replay.py)
+        #[arg(long, default_value = "eyetest_replay.py")]
         output: std::path::PathBuf,
 
         /// Only include these step numbers (comma-separated, 1-indexed)
@@ -182,14 +182,14 @@ EXAMPLES:
     #[command(after_help = "\
 EXAMPLES:
   eyetest review test-results/
-  eyetest review test-results/ --output review.html
+  eyetest review test-results/ --output eyetest_review.html
   eyetest review test-results/ --no-open")]
     Review {
         /// Path to artifacts directory containing trajectory.jsonl
         artifacts_dir: std::path::PathBuf,
 
-        /// Output HTML file path (default: review.html)
-        #[arg(long, default_value = "review.html")]
+        /// Output HTML file path (default: eyetest_review.html)
+        #[arg(long, default_value = "eyetest_review.html")]
         output: std::path::PathBuf,
 
         /// Do not open the generated HTML file in the default browser

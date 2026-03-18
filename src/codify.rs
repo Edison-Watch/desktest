@@ -1,6 +1,6 @@
 //! Convert trajectory.jsonl into a standalone deterministic Python replay script.
 //!
-//! Usage: `eyetest codify <trajectory.jsonl> [--output replay.py] [--steps 1,2,3] [--delay 0.5]`
+//! Usage: `eyetest codify <trajectory.jsonl> [--output eyetest_replay.py] [--steps 1,2,3] [--delay 0.5]`
 
 use std::io::BufRead;
 use std::path::Path;

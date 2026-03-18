@@ -8,3 +8,7 @@
 config.json
 *.back
 instructions.md
+
+# eyetest CLI artifacts
+eyetest_replay.py
+eyetest_review.html
