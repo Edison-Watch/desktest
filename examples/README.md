@@ -57,7 +57,7 @@ Custom images must include these packages for desktest to work:
 
 | Category | Packages |
 |----------|----------|
-| Display | `xvfb`, `x11vnc`, `openbox` |
+| Display | `xvfb`, `x11vnc`, `xfce4`, `xfce4-terminal` |
 | Tools | `scrot`, `xdotool`, `ffmpeg` |
 | Accessibility | `at-spi2-core`, `libatspi2.0-0` |
 | Python | `python3`, `python3-pyautogui`, `python3-xlib`, `python3-pyatspi`, `python3-pyperclip` |

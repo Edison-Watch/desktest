@@ -13,14 +13,14 @@ A step-by-step guide to testing your Electron apps with desktest.
 Download the latest release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Edison-Watch/tent-agent/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Edison-Watch/desktest/master/install.sh | bash
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/Edison-Watch/tent-agent.git
-cd tent-agent
+git clone https://github.com/Edison-Watch/desktest.git
+cd desktest
 cargo build --release
 # Binary at target/release/desktest
 ```
@@ -153,7 +153,7 @@ desktest interactive my-test.json
 After a test run, review what the agent did:
 
 ```bash
-desktest review test-results/ --open
+desktest review test-results/
 ```
 
 This generates an interactive HTML viewer showing each step's screenshot, the agent's reasoning, and the action code.
