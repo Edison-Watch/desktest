@@ -70,6 +70,16 @@ Developer writes task.json
 - Rust toolchain (`cargo`)
 - An LLM API key (OpenAI, Anthropic, or compatible)
 
+## Installation
+
+```bash
+git clone https://github.com/Edison-Watch/desktest.git
+cd desktest
+
+# Install the desktest CLI to ~/.cargo/bin/
+make install_cli
+```
+
 ## Quick Start
 
 ```bash
