@@ -16,6 +16,7 @@ Desktest is a CLI tool for automated end-to-end testing of Linux desktop applica
 - **Custom Docker images**: bring your own image for apps with complex dependencies
 - **Live monitoring dashboard**: real-time web UI to watch agent actions as they happen
 - **Interactive mode**: step through agent actions one at a time for debugging
+- **Attach mode**: connect to an already-running container for integration with external orchestration
 
 ## Developer Workflow
 
@@ -102,6 +103,34 @@ cargo run -- interactive elcalc-test.json
 cargo run -- interactive elcalc-test.json --step
 ```
 
+## Attach Mode
+
+Use `desktest attach` to run the agent loop against an already-running Docker container, without managing its lifecycle. This is useful when an external orchestration script controls the container and needs desktest to interact with the desktop at specific moments.
+
+```bash
+# Attach to a running container by name or ID
+desktest attach task.json --container my-container
+
+# With a config file
+desktest attach task.json --container my-container --config config.json
+```
+
+Task files for attach mode use the `vnc_attach` app type (the `app` section is otherwise ignored):
+
+```json
+{
+  "schema_version": "1.0",
+  "id": "approve-dialog",
+  "instruction": "A dialog titled 'Confirm' is visible. Click the OK button.",
+  "app": { "type": "vnc_attach" },
+  "evaluator": { "mode": "llm" },
+  "timeout": 60,
+  "max_steps": 10
+}
+```
+
+Attach mode skips container creation, desktop readiness wait, app deployment, and container cleanup. Setup steps (`config`), the agent loop, and evaluation all work the same as `desktest run`.
+
 ## CLI
 
 ```
@@ -111,6 +140,7 @@ Commands:
   run           Run a single test from a task JSON file
   suite         Run all *.json task files in a directory
   interactive   Start container and pause for debugging
+  attach        Attach to an existing running container
   validate      Check task JSON against schema without running
   codify        Convert trajectory to deterministic Python replay script
   review        Generate web-based trajectory review viewer
@@ -155,6 +185,7 @@ See `examples/` for more examples including folder deploys and custom Docker ima
 | `appimage` | Deploy a single AppImage file |
 | `folder` | Deploy a directory with an entrypoint script |
 | `docker_image` | Use a pre-built custom Docker image |
+| `vnc_attach` | Attach to an existing running desktop (used with `desktest attach`) |
 
 > **Electron apps**: Add `"electron": true` to your app config to use the `desktest-desktop:electron` image with Node.js pre-installed. See [examples/ELECTRON_QUICKSTART.md](examples/ELECTRON_QUICKSTART.md).
 

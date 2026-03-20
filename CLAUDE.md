@@ -16,6 +16,7 @@ cargo run -- validate examples/gedit-save.json # Validate task file
 cargo run -- run task.json --config config.json # Run single test
 cargo run -- suite examples/                   # Run test suite
 cargo run -- interactive task.json             # Interactive debugging
+cargo run -- attach task.json --container ID  # Attach to existing container
 cargo test                                     # All non-ignored tests
 cargo test -- --ignored --test-threads=1       # Integration tests (require Docker)
 ```
@@ -24,12 +25,14 @@ cargo test -- --ignored --test-threads=1       # Integration tests (require Dock
 
 **Main flow** (`src/main.rs`): Parse CLI → load task JSON → create Docker container → wait for desktop → run setup steps → run agent loop (or skip for programmatic-only) → run evaluation → write results → collect artifacts → cleanup.
 
+**Attach flow** (`desktest attach`): Parse CLI → load task JSON → attach to existing container (no create/cleanup) → run setup steps → run agent loop → run evaluation → write results → collect artifacts. Uses `DockerSession::attach()` instead of `DockerSession::create()`.
+
 **Exit codes:** 0=pass, 1=fail, 2=config error, 3=infra error, 4=agent error.
 
 ### Non-obvious details
 
 - `src/agent/mod.rs` contains a **legacy** tool-call-based agent loop kept for backward compat — the active agent is `agent/loop_v2.rs`
-- `src/task.rs` uses serde tagged enums (`#[serde(tag = "type")]`) for `AppConfig`, `MetricConfig`, and `SetupStep`
+- `src/task.rs` uses serde tagged enums (`#[serde(tag = "type")]`) for `AppConfig` (including `VncAttach` for attach mode), `MetricConfig`, and `SetupStep`
 - `AppError` variants in `src/error.rs` map to specific exit codes (0–4) — don't change the mapping without updating docs
 - `pub(crate) use orchestration::{parse_resolution, run_task}` in `main.rs` re-exports these for `suite.rs` to use as `crate::run_task`
 
