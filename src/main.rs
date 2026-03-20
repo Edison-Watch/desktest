@@ -125,6 +125,39 @@ async fn main() {
                     }
                 }
             }
+            Command::Attach { task, container } => {
+                let task_def = match task::TaskDefinition::load(task) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        eprintln!("Task load error: {e}");
+                        std::process::exit(e.exit_code());
+                    }
+                };
+
+                let run_config = orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
+                let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
+
+                let result = orchestration::run_attach(
+                    task_def,
+                    run_config,
+                    container,
+                    cli.debug,
+                    cli.verbose,
+                    !cli.record,
+                    cli.output.clone(),
+                    monitor_handle,
+                ).await;
+                match result {
+                    Ok(outcome) => {
+                        println!("{outcome}");
+                        std::process::exit(if outcome.passed { 0 } else { 1 });
+                    }
+                    Err(e) => {
+                        eprintln!("Error: {e}");
+                        std::process::exit(e.exit_code());
+                    }
+                }
+            }
             Command::Interactive { task, step, validate_only } => {
                 let task_def = match task::TaskDefinition::load(task) {
                     Ok(t) => t,

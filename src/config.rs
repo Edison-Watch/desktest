@@ -130,6 +130,11 @@ impl Config {
                 self.app_type = AppType::DockerImage;
                 self.electron = false;
             }
+            crate::task::AppConfig::VncAttach { .. } => {
+                // No app to deploy in attach mode
+                self.app_type = AppType::DockerImage;
+                self.electron = false;
+            }
         }
     }
 
