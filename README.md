@@ -73,8 +73,8 @@ Developer writes task.json
 ## Installation
 
 ```bash
-git clone https://github.com/Edison-Watch/desktest.git
-cd desktest
+git clone https://github.com/Edison-Watch/tent-agent.git
+cd tent-agent
 
 # Install the desktest CLI to ~/.cargo/bin/
 make install_cli
