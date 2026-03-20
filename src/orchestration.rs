@@ -580,7 +580,7 @@ async fn run_agent_loop(
 /// and evaluation against it.
 pub(crate) async fn run_attach(
     task_def: task::TaskDefinition,
-    config: Config,
+    mut config: Config,
     container: &str,
     debug: bool,
     verbose: bool,
@@ -604,6 +604,9 @@ pub(crate) async fn run_attach(
             task_def.id, app_type
         );
     }
+
+    // Populate config app fields from task definition (needed when no --config file)
+    config.apply_task_app(&task_def.app);
 
     // Set up artifacts directory
     let artifacts_dir = std::env::current_dir()
