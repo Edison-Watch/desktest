@@ -153,7 +153,7 @@ desktest interactive my-test.json
 After a test run, review what the agent did:
 
 ```bash
-desktest review test-results/
+desktest review desktest_artifacts/
 ```
 
 This generates an interactive HTML viewer showing each step's screenshot, the agent's reasoning, and the action code.

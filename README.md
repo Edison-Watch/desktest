@@ -21,8 +21,8 @@ Desktest is a CLI tool for automated end-to-end testing of Linux desktop applica
 
 ```
 1. EXPLORE   →  desktest run task.json --monitor  # LLM agent explores your app (watch live!)
-2. REVIEW    →  desktest review test-results/      # Inspect trajectory in web viewer
-3. CODIFY    →  desktest codify trajectory.jsonl    # Convert to deterministic script
+2. REVIEW    →  desktest review desktest_artifacts/  # Inspect trajectory in web viewer
+3. CODIFY    →  desktest codify desktest_artifacts/trajectory.jsonl  # Convert to deterministic script
 4. REPLAY    →  desktest run replay-task.json      # Run codified test (no LLM)
 5. CI        →  Run codified tests on every commit
 ```
