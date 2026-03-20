@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # desktest installer — downloads the latest release binary for your platform.
-# Usage: curl -fsSL https://raw.githubusercontent.com/Edison-Watch/tent-agent/master/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/Edison-Watch/desktest/master/install.sh | bash
 
-REPO="${DESKTEST_REPO:-Edison-Watch/tent-agent}"
+REPO="${DESKTEST_REPO:-Edison-Watch/desktest}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
 # Detect OS and architecture

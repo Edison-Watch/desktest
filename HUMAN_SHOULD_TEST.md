@@ -29,7 +29,7 @@ Create `elcalc-test.json`:
   "instruction": "Using the calculator app, compute 42 + 58 and verify the result shows 100.",
   "app": {
     "type": "appimage",
-    "appimage_path": "./elcalc-2.0.3-x86_64.AppImage"
+    "path": "./elcalc-2.0.3-x86_64.AppImage"
   },
   "evaluator": {
     "mode": "llm",
@@ -66,13 +66,13 @@ Create `elcalc-test.json`:
 
 ## 8. Video Recording
 
-- [ ] After a `run`, verify `test-results/recording.mp4` exists
+- [ ] After a `run` with `--record`, verify `desktest_artifacts/recording.mp4` exists
 - [ ] Play the video — it should show the full desktop session
-- [ ] Run with `--no-recording` and confirm no mp4 is produced
+- [ ] Run without `--record` and confirm no mp4 is produced
 
 ## 9. Trajectory Log
 
-- [ ] Verify `test-results/trajectory.jsonl` exists after a run
+- [ ] Verify `desktest_artifacts/trajectory.jsonl` exists after a run
 - [ ] Each line is valid JSON with fields: step number, action, screenshot reference
 - [ ] Running with `--verbose` includes full LLM responses in the log
 

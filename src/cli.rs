@@ -129,10 +129,10 @@ EXAMPLES:
     /// Convert a trajectory into a deterministic Python replay script
     #[command(after_help = "\
 EXAMPLES:
-  desktest codify test-results/trajectory.jsonl
-  desktest codify test-results/trajectory.jsonl --output desktest_replay.py
-  desktest codify test-results/trajectory.jsonl --steps 1,2,5,6
-  desktest codify test-results/trajectory.jsonl --with-screenshots --threshold 0.95")]
+  desktest codify desktest_artifacts/trajectory.jsonl
+  desktest codify desktest_artifacts/trajectory.jsonl --output desktest_replay.py
+  desktest codify desktest_artifacts/trajectory.jsonl --steps 1,2,5,6
+  desktest codify desktest_artifacts/trajectory.jsonl --with-screenshots --threshold 0.95")]
     Codify {
         /// Path to trajectory.jsonl file
         trajectory: std::path::PathBuf,
@@ -161,9 +161,9 @@ EXAMPLES:
     /// Generate a web-based trajectory review viewer
     #[command(after_help = "\
 EXAMPLES:
-  desktest review test-results/
-  desktest review test-results/ --output desktest_review.html
-  desktest review test-results/ --no-open")]
+  desktest review desktest_artifacts/
+  desktest review desktest_artifacts/ --output desktest_review.html
+  desktest review desktest_artifacts/ --no-open")]
     Review {
         /// Path to artifacts directory containing trajectory.jsonl
         artifacts_dir: std::path::PathBuf,

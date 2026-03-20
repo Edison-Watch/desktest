@@ -1,7 +1,7 @@
-# Example Dockerfile for a custom tent-agent test image with LibreOffice.
+# Example Dockerfile for a custom desktest test image with LibreOffice.
 #
 # This shows how to create a compatible Docker image that includes all
-# required dependencies for tent-agent's observation and action pipelines.
+# required dependencies for desktest's observation and action pipelines.
 #
 # Build:
 #   docker build -t tent-libreoffice:latest -f examples/Dockerfile.libreoffice .
@@ -13,7 +13,7 @@ FROM debian:bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# ----- Core desktop environment (required by tent-agent) -----
+# ----- Core desktop environment (required by desktest) -----
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Virtual display and VNC
     xvfb x11vnc \
@@ -41,8 +41,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libreoffice-calc libreoffice-gtk3 \
     && rm -rf /var/lib/apt/lists/*
 
-# ----- Copy tent-agent helper scripts -----
-# These scripts are in the docker/ directory of the tent-agent repository.
+# ----- Copy desktest helper scripts -----
+# These scripts are in the docker/ directory of the desktest repository.
 COPY docker/get-a11y-tree.py /usr/local/bin/get-a11y-tree
 COPY docker/execute-action.py /usr/local/bin/execute-action
 RUN chmod +x /usr/local/bin/get-a11y-tree /usr/local/bin/execute-action
