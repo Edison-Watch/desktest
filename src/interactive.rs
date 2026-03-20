@@ -30,6 +30,13 @@ pub(crate) async fn run_interactive(
     step: bool,
     validate_only: bool,
 ) -> Result<AgentOutcome, AppError> {
+    // Guard: vnc_attach tasks must use `desktest attach`, not `desktest interactive`
+    if matches!(task_def.app, task::AppConfig::VncAttach { .. }) {
+        return Err(AppError::Config(
+            "Task uses 'vnc_attach' app type — use 'desktest attach' instead of 'desktest interactive'.".into()
+        ));
+    }
+
     if validate_only {
         // --validate-only: skip agent loop, run programmatic evaluation only
         // Force evaluation mode to programmatic, reusing the existing run_task flow
