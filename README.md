@@ -24,9 +24,14 @@ Desktest is a CLI tool for automated end-to-end testing of Linux desktop applica
 1. EXPLORE   →  desktest run task.json --monitor  # LLM agent explores your app (watch live!)
 2. REVIEW    →  desktest review desktest_artifacts/  # Inspect trajectory in web viewer
 3. CODIFY    →  desktest codify desktest_artifacts/trajectory.jsonl  # Convert to deterministic script
-4. REPLAY    →  desktest run replay-task.json      # Run codified test (no LLM)
+4. REPLAY    →  Add script_replay metric to task.json, then: desktest run task.json  # Run codified test (no LLM)
 5. CI        →  Run codified tests on every commit
 ```
+
+> **Step 4 detail:** `desktest codify` outputs a Python replay script (`desktest_replay.py`), not a task JSON. To replay it, add a `script_replay` metric to your task JSON:
+> ```json
+> { "type": "script_replay", "script_path": "desktest_replay.py" }
+> ```
 
 ## Architecture
 
@@ -67,7 +72,7 @@ Developer writes task.json
 
 ## Requirements
 
-- Linux host with Docker installed
+- Linux or macOS host with Docker installed
 - Rust toolchain (`cargo`)
 - An LLM API key (OpenAI, Anthropic, or compatible)
 
