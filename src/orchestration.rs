@@ -170,11 +170,25 @@ pub(crate) async fn run_task(
     info!("Cleaning up container...");
     let _ = session.cleanup().await;
 
+    finalize_run(result, &test_id, &task_def, &artifacts_dir, &output_dir, start)
+}
+
+/// Shared post-inner logic: save task.json, write results.json, map to outcome.
+///
+/// Used by both `run_task` and `run_attach` to avoid duplication.
+fn finalize_run(
+    result: Result<TaskRunResult, AppError>,
+    test_id: &str,
+    task_def: &task::TaskDefinition,
+    artifacts_dir: &std::path::Path,
+    output_dir: &std::path::Path,
+    start: Instant,
+) -> Result<AgentOutcome, AppError> {
     let duration_ms = start.elapsed().as_millis() as u64;
 
     // Save task definition to artifacts for review HTML
     let task_json_path = artifacts_dir.join("task.json");
-    match serde_json::to_string_pretty(&task_def) {
+    match serde_json::to_string_pretty(task_def) {
         Ok(json) => {
             if let Err(e) = std::fs::write(&task_json_path, &json) {
                 tracing::warn!("Failed to write task.json to artifacts: {e}");
@@ -186,22 +200,21 @@ pub(crate) async fn run_task(
     // Write results.json
     let test_result = match &result {
         Ok(run_result) if !run_result.agent_ran => {
-            // Programmatic-only mode: no agent verdict
             results::from_evaluation(
-                &test_id,
+                test_id,
                 run_result.eval_result.as_ref().expect("programmatic mode has eval_result"),
                 duration_ms,
             )
         }
         Ok(run_result) => results::from_outcome(
-            &test_id,
+            test_id,
             &run_result.outcome,
             run_result.eval_result.as_ref(),
             duration_ms,
         ),
-        Err(e) => results::from_error(&test_id, e, duration_ms),
+        Err(e) => results::from_error(test_id, e, duration_ms),
     };
-    if let Err(e) = results::write_results(&test_result, &output_dir) {
+    if let Err(e) = results::write_results(&test_result, output_dir) {
         tracing::warn!("Failed to write results.json: {e}");
     }
 
@@ -348,7 +361,30 @@ async fn run_task_inner(
         });
     }
 
-    // 7. Start video recording (after app is ready so we skip the boot/setup filler)
+    // 7-8. Start recording and run agent loop / evaluation
+    run_eval_loop(task_def, config, session, artifacts_dir, eval_mode, debug, verbose, no_recording, monitor, start_time).await
+}
+
+/// Build an AgentLoopV2Config from a task definition, probing the a11y tree
+/// timing if no explicit override is set.
+/// Shared logic for recording, agent loop, and evaluation.
+///
+/// Used by both `run_task_inner` and `run_attach_inner` to avoid duplication.
+async fn run_eval_loop(
+    task_def: &task::TaskDefinition,
+    config: &Config,
+    session: &docker::DockerSession,
+    artifacts_dir: &std::path::Path,
+    eval_mode: &task::EvaluatorMode,
+    debug: bool,
+    verbose: bool,
+    no_recording: bool,
+    monitor: Option<&monitor::MonitorHandle>,
+    start_time: Instant,
+) -> Result<TaskRunResult, AppError> {
+    use task::EvaluatorMode;
+
+    // Start video recording
     let recording = if no_recording {
         None
     } else {
@@ -361,10 +397,8 @@ async fn run_task_inner(
         }
     };
 
-    // 8. Run agent loop and/or evaluation based on mode
     let result = match eval_mode {
         EvaluatorMode::Programmatic => {
-            // Programmatic mode: skip agent loop, run evaluation directly
             info!("Programmatic mode: skipping agent loop, running evaluation...");
 
             let evaluator = task_def.evaluator.as_ref().expect(
@@ -373,17 +407,14 @@ async fn run_task_inner(
             let eval_result =
                 evaluator::run_evaluation(session, evaluator, artifacts_dir).await;
 
-            // Stop recording unconditionally (before propagating any error)
             if let Some(rec) = &recording {
                 rec.stop(session).await;
                 rec.collect(session, artifacts_dir).await;
             }
 
             let eval_result = eval_result?;
-
             print_validation_results(None, Some(&eval_result));
 
-            // Publish TestComplete for programmatic mode (no agent loop to emit it)
             if let Some(m) = monitor {
                 m.send(monitor::MonitorEvent::TestComplete {
                     test_id: task_def.id.clone(),
@@ -404,18 +435,15 @@ async fn run_task_inner(
             })
         }
         EvaluatorMode::Llm => {
-            // LLM mode: run agent loop only, use agent verdict
             info!("Starting agent loop v2 (LLM-only evaluation)...");
             let agent_loop_result = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose, recording.as_ref(), monitor).await;
 
-            // Stop recording unconditionally (before propagating any error)
             if let Some(rec) = &recording {
                 rec.stop(session).await;
                 rec.collect(session, artifacts_dir).await;
             }
 
             let agent_outcome = agent_loop_result?;
-
             print_validation_results(Some(&agent_outcome), None);
 
             Ok(TaskRunResult {
@@ -425,11 +453,9 @@ async fn run_task_inner(
             })
         }
         EvaluatorMode::Hybrid => {
-            // Hybrid mode: run agent loop AND programmatic evaluation, both must pass
             info!("Starting agent loop v2 (hybrid evaluation)...");
             let agent_loop_result = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose, recording.as_ref(), monitor).await;
 
-            // Stop recording unconditionally (before propagating any error)
             if let Some(rec) = &recording {
                 rec.stop(session).await;
                 rec.collect(session, artifacts_dir).await;
@@ -445,11 +471,8 @@ async fn run_task_inner(
                 evaluator::run_evaluation(session, evaluator, artifacts_dir).await?;
 
             let both_passed = agent_outcome.passed && eval_result.passed;
-
             print_validation_results(Some(&agent_outcome), Some(&eval_result));
 
-            // Publish corrected TestComplete with hybrid verdict (overrides the
-            // premature one from the agent loop which only had the agent's verdict)
             if let Some(m) = monitor {
                 m.send(monitor::MonitorEvent::TestComplete {
                     test_id: task_def.id.clone(),
@@ -474,8 +497,6 @@ async fn run_task_inner(
     result
 }
 
-/// Build an AgentLoopV2Config from a task definition, probing the a11y tree
-/// timing if no explicit override is set.
 pub(crate) async fn build_agent_loop_config(
     task_def: &task::TaskDefinition,
     session: &docker::DockerSession,
@@ -634,41 +655,7 @@ pub(crate) async fn run_attach(
     info!("Collecting artifacts...");
     let _ = artifacts::collect_artifacts(&session, &artifacts_dir).await;
 
-    let duration_ms = start.elapsed().as_millis() as u64;
-
-    // Save task definition to artifacts
-    let task_json_path = artifacts_dir.join("task.json");
-    match serde_json::to_string_pretty(&task_def) {
-        Ok(json) => {
-            if let Err(e) = std::fs::write(&task_json_path, &json) {
-                tracing::warn!("Failed to write task.json to artifacts: {e}");
-            }
-        }
-        Err(e) => tracing::warn!("Failed to serialize task definition: {e}"),
-    }
-
-    // Write results.json
-    let test_result = match &result {
-        Ok(run_result) if !run_result.agent_ran => {
-            results::from_evaluation(
-                &test_id,
-                run_result.eval_result.as_ref().expect("programmatic mode has eval_result"),
-                duration_ms,
-            )
-        }
-        Ok(run_result) => results::from_outcome(
-            &test_id,
-            &run_result.outcome,
-            run_result.eval_result.as_ref(),
-            duration_ms,
-        ),
-        Err(e) => results::from_error(&test_id, e, duration_ms),
-    };
-    if let Err(e) = results::write_results(&test_result, &output_dir) {
-        tracing::warn!("Failed to write results.json: {e}");
-    }
-
-    result.map(|r| r.outcome)
+    finalize_run(result, &test_id, &task_def, &artifacts_dir, &output_dir, start)
 }
 
 /// Inner logic for attach mode: run setup steps, agent loop, and evaluation.
@@ -687,18 +674,16 @@ async fn run_attach_inner(
     monitor: Option<&monitor::MonitorHandle>,
     start_time: Instant,
 ) -> Result<TaskRunResult, AppError> {
-    use task::EvaluatorMode;
-
     let eval_mode = task_def
         .evaluator
         .as_ref()
         .map(|e| &e.mode)
-        .unwrap_or(&EvaluatorMode::Llm);
+        .unwrap_or(&task::EvaluatorMode::Llm);
 
     info!("Attach mode — evaluation mode: {}", match eval_mode {
-        EvaluatorMode::Llm => "llm",
-        EvaluatorMode::Programmatic => "programmatic",
-        EvaluatorMode::Hybrid => "hybrid",
+        task::EvaluatorMode::Llm => "llm",
+        task::EvaluatorMode::Programmatic => "programmatic",
+        task::EvaluatorMode::Hybrid => "hybrid",
     });
 
     // Run setup steps if any (execute, copy, sleep are useful in attach mode)
@@ -717,117 +702,8 @@ async fn run_attach_inner(
         });
     }
 
-    // Start video recording (optional)
-    let recording = if no_recording {
-        None
-    } else {
-        match recording::Recording::start(session, config.display_width, config.display_height).await {
-            Ok(rec) => Some(rec),
-            Err(e) => {
-                tracing::warn!("Failed to start recording: {e}");
-                None
-            }
-        }
-    };
-
-    // Run agent loop and/or evaluation based on mode
-    let result = match eval_mode {
-        EvaluatorMode::Programmatic => {
-            info!("Programmatic mode: skipping agent loop, running evaluation...");
-            let evaluator = task_def.evaluator.as_ref().expect(
-                "Programmatic mode requires evaluator config",
-            );
-            let eval_result =
-                evaluator::run_evaluation(session, evaluator, artifacts_dir).await;
-
-            if let Some(rec) = &recording {
-                rec.stop(session).await;
-                rec.collect(session, artifacts_dir).await;
-            }
-
-            let eval_result = eval_result?;
-            print_validation_results(None, Some(&eval_result));
-
-            if let Some(m) = monitor {
-                m.send(monitor::MonitorEvent::TestComplete {
-                    test_id: task_def.id.clone(),
-                    passed: eval_result.passed,
-                    reasoning: format_evaluation_reasoning(None, Some(&eval_result)),
-                    duration_ms: start_time.elapsed().as_millis() as u64,
-                });
-            }
-
-            Ok(TaskRunResult {
-                outcome: AgentOutcome {
-                    passed: eval_result.passed,
-                    reasoning: format_evaluation_reasoning(None, Some(&eval_result)),
-                    screenshot_count: 0,
-                },
-                eval_result: Some(eval_result),
-                agent_ran: false,
-            })
-        }
-        EvaluatorMode::Llm => {
-            info!("Starting agent loop v2 (LLM-only evaluation)...");
-            let agent_loop_result = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose, recording.as_ref(), monitor).await;
-
-            if let Some(rec) = &recording {
-                rec.stop(session).await;
-                rec.collect(session, artifacts_dir).await;
-            }
-
-            let agent_outcome = agent_loop_result?;
-            print_validation_results(Some(&agent_outcome), None);
-
-            Ok(TaskRunResult {
-                outcome: agent_outcome,
-                eval_result: None,
-                agent_ran: true,
-            })
-        }
-        EvaluatorMode::Hybrid => {
-            info!("Starting agent loop v2 (hybrid evaluation)...");
-            let agent_loop_result = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose, recording.as_ref(), monitor).await;
-
-            if let Some(rec) = &recording {
-                rec.stop(session).await;
-                rec.collect(session, artifacts_dir).await;
-            }
-
-            let agent_outcome = agent_loop_result?;
-
-            info!("Agent loop complete, running programmatic evaluation...");
-            let evaluator = task_def.evaluator.as_ref().expect(
-                "Hybrid mode requires evaluator config",
-            );
-            let eval_result =
-                evaluator::run_evaluation(session, evaluator, artifacts_dir).await?;
-
-            let both_passed = agent_outcome.passed && eval_result.passed;
-            print_validation_results(Some(&agent_outcome), Some(&eval_result));
-
-            if let Some(m) = monitor {
-                m.send(monitor::MonitorEvent::TestComplete {
-                    test_id: task_def.id.clone(),
-                    passed: both_passed,
-                    reasoning: format_evaluation_reasoning(Some(&agent_outcome), Some(&eval_result)),
-                    duration_ms: start_time.elapsed().as_millis() as u64,
-                });
-            }
-
-            Ok(TaskRunResult {
-                outcome: AgentOutcome {
-                    passed: both_passed,
-                    reasoning: format_evaluation_reasoning(Some(&agent_outcome), Some(&eval_result)),
-                    screenshot_count: agent_outcome.screenshot_count,
-                },
-                eval_result: Some(eval_result),
-                agent_ran: true,
-            })
-        }
-    };
-
-    result
+    // Recording, agent loop, and evaluation (shared with run_task_inner)
+    run_eval_loop(task_def, config, session, artifacts_dir, eval_mode, debug, verbose, no_recording, monitor, start_time).await
 }
 
 pub(crate) async fn run_legacy(cli: Cli) -> Result<AgentOutcome, AppError> {
