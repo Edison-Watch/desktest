@@ -583,6 +583,21 @@ pub(crate) async fn run_attach(
 ) -> Result<AgentOutcome, AppError> {
     let start = Instant::now();
 
+    // Warn if the task isn't designed for attach mode
+    if !matches!(task_def.app, task::AppConfig::VncAttach { .. }) {
+        let app_type = match &task_def.app {
+            task::AppConfig::Appimage { .. } => "appimage",
+            task::AppConfig::Folder { .. } => "folder",
+            task::AppConfig::DockerImage { .. } => "docker_image",
+            task::AppConfig::VncAttach { .. } => unreachable!(),
+        };
+        tracing::warn!(
+            "Task '{}' uses app type '{}', but 'desktest attach' skips app deployment. \
+             Consider using app type 'vnc_attach' for attach-mode tasks.",
+            task_def.id, app_type
+        );
+    }
+
     // Set up artifacts directory
     let artifacts_dir = std::env::current_dir()
         .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
