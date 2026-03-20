@@ -54,9 +54,10 @@ impl DockerSession {
                 info!("Deployed folder app, entrypoint: {entrypoint_path}");
                 Ok(entrypoint_path)
             }
-            crate::config::AppType::DockerImage => {
-                // Nothing to deploy — the app is already part of the custom Docker image.
-                info!("DockerImage app type: no deployment needed (app is in custom image)");
+            crate::config::AppType::DockerImage | crate::config::AppType::VncAttach => {
+                // Nothing to deploy — the app is already part of the custom Docker image
+                // or managed externally (attach mode).
+                info!("No deployment needed for this app type");
                 Ok(String::new())
             }
         }

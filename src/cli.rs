@@ -158,6 +158,21 @@ EXAMPLES:
         delay: f64,
     },
 
+    /// Attach to an existing running container and run a task against it
+    #[command(after_help = "\
+EXAMPLES:
+  desktest attach task.json --container my-container
+  desktest attach task.json --container abc123 --config config.json
+  desktest attach task.json --container my-container --resolution 1280x720")]
+    Attach {
+        /// Path to the task JSON file
+        task: std::path::PathBuf,
+
+        /// Docker container ID or name to attach to (must be running)
+        #[arg(long)]
+        container: String,
+    },
+
     /// Generate a web-based trajectory review viewer
     #[command(after_help = "\
 EXAMPLES:

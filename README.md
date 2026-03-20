@@ -16,6 +16,7 @@ Desktest is a CLI tool for automated end-to-end testing of Linux desktop applica
 - **Custom Docker images**: bring your own image for apps with complex dependencies
 - **Live monitoring dashboard**: real-time web UI to watch agent actions as they happen
 - **Interactive mode**: step through agent actions one at a time for debugging
+- **[Attach mode](docs/attach-mode.md)**: connect to an already-running container for integration with external orchestration
 
 ## Developer Workflow
 
@@ -111,6 +112,7 @@ Commands:
   run           Run a single test from a task JSON file
   suite         Run all *.json task files in a directory
   interactive   Start container and pause for debugging
+  attach        Attach to an existing running container
   validate      Check task JSON against schema without running
   codify        Convert trajectory to deterministic Python replay script
   review        Generate web-based trajectory review viewer
@@ -155,6 +157,7 @@ See `examples/` for more examples including folder deploys and custom Docker ima
 | `appimage` | Deploy a single AppImage file |
 | `folder` | Deploy a directory with an entrypoint script |
 | `docker_image` | Use a pre-built custom Docker image |
+| `vnc_attach` | Attach to an existing running desktop (see [Attach Mode](docs/attach-mode.md)) |
 
 > **Electron apps**: Add `"electron": true` to your app config to use the `desktest-desktop:electron` image with Node.js pre-installed. See [examples/ELECTRON_QUICKSTART.md](examples/ELECTRON_QUICKSTART.md).
 

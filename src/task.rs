@@ -81,6 +81,13 @@ pub enum AppConfig {
         #[serde(default)]
         entrypoint_cmd: Option<String>,
     },
+    /// Attach to an existing running desktop (used with `desktest attach`).
+    /// The app section is ignored in attach mode; this variant exists so
+    /// task JSON files can signal they are designed for attach mode.
+    VncAttach {
+        #[serde(default)]
+        note: Option<String>,
+    },
 }
 
 /// A setup step to execute before the agent loop.
@@ -1014,5 +1021,58 @@ mod tests {
 
         let task = TaskDefinition::parse_and_validate(json).unwrap();
         assert_eq!(task.evaluator.unwrap().eval_timeout_secs, Some(60));
+    }
+
+    #[test]
+    fn test_parse_vnc_attach_app() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "attach-test",
+            "instruction": "Click the OK button",
+            "app": {
+                "type": "vnc_attach",
+                "note": "This task is designed for desktest attach mode"
+            }
+        }"#;
+
+        let task = TaskDefinition::parse_and_validate(json).unwrap();
+        match &task.app {
+            AppConfig::VncAttach { note } => {
+                assert_eq!(note.as_deref(), Some("This task is designed for desktest attach mode"));
+            }
+            _ => panic!("Expected VncAttach app config"),
+        }
+    }
+
+    #[test]
+    fn test_parse_vnc_attach_app_minimal() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "attach-test",
+            "instruction": "Click the OK button",
+            "app": {"type": "vnc_attach"}
+        }"#;
+
+        let task = TaskDefinition::parse_and_validate(json).unwrap();
+        assert!(matches!(task.app, AppConfig::VncAttach { .. }));
+    }
+
+    #[test]
+    fn test_vnc_attach_with_evaluator() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "attach-eval-test",
+            "instruction": "Approve the dialog",
+            "app": {"type": "vnc_attach"},
+            "evaluator": {"mode": "llm"},
+            "timeout": 60,
+            "max_steps": 10
+        }"#;
+
+        let task = TaskDefinition::parse_and_validate(json).unwrap();
+        assert!(matches!(task.app, AppConfig::VncAttach { .. }));
+        assert_eq!(task.timeout, 60);
+        assert_eq!(task.max_steps, 10);
+        assert_eq!(task.evaluator.unwrap().mode, EvaluatorMode::Llm);
     }
 }

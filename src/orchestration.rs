@@ -115,6 +115,13 @@ pub(crate) async fn run_task(
 ) -> Result<AgentOutcome, AppError> {
     let start = Instant::now();
 
+    // Guard: vnc_attach tasks must use `desktest attach`, not `desktest run`
+    if matches!(task_def.app, task::AppConfig::VncAttach { .. }) {
+        return Err(AppError::Config(
+            "Task uses 'vnc_attach' app type — use 'desktest attach' instead of 'desktest run'.".into()
+        ));
+    }
+
     // Populate config app fields from task definition (needed when no --config file)
     config.apply_task_app(&task_def.app);
 
@@ -163,11 +170,25 @@ pub(crate) async fn run_task(
     info!("Cleaning up container...");
     let _ = session.cleanup().await;
 
+    finalize_run(result, &test_id, &task_def, &artifacts_dir, &output_dir, start)
+}
+
+/// Shared post-inner logic: save task.json, write results.json, map to outcome.
+///
+/// Used by both `run_task` and `run_attach` to avoid duplication.
+fn finalize_run(
+    result: Result<TaskRunResult, AppError>,
+    test_id: &str,
+    task_def: &task::TaskDefinition,
+    artifacts_dir: &std::path::Path,
+    output_dir: &std::path::Path,
+    start: Instant,
+) -> Result<AgentOutcome, AppError> {
     let duration_ms = start.elapsed().as_millis() as u64;
 
     // Save task definition to artifacts for review HTML
     let task_json_path = artifacts_dir.join("task.json");
-    match serde_json::to_string_pretty(&task_def) {
+    match serde_json::to_string_pretty(task_def) {
         Ok(json) => {
             if let Err(e) = std::fs::write(&task_json_path, &json) {
                 tracing::warn!("Failed to write task.json to artifacts: {e}");
@@ -179,22 +200,21 @@ pub(crate) async fn run_task(
     // Write results.json
     let test_result = match &result {
         Ok(run_result) if !run_result.agent_ran => {
-            // Programmatic-only mode: no agent verdict
             results::from_evaluation(
-                &test_id,
+                test_id,
                 run_result.eval_result.as_ref().expect("programmatic mode has eval_result"),
                 duration_ms,
             )
         }
         Ok(run_result) => results::from_outcome(
-            &test_id,
+            test_id,
             &run_result.outcome,
             run_result.eval_result.as_ref(),
             duration_ms,
         ),
-        Err(e) => results::from_error(&test_id, e, duration_ms),
+        Err(e) => results::from_error(test_id, e, duration_ms),
     };
-    if let Err(e) = results::write_results(&test_result, &output_dir) {
+    if let Err(e) = results::write_results(&test_result, output_dir) {
         tracing::warn!("Failed to write results.json: {e}");
     }
 
@@ -341,7 +361,28 @@ async fn run_task_inner(
         });
     }
 
-    // 7. Start video recording (after app is ready so we skip the boot/setup filler)
+    // 7-8. Start recording and run agent loop / evaluation
+    run_eval_loop(task_def, config, session, artifacts_dir, eval_mode, debug, verbose, no_recording, monitor, start_time).await
+}
+
+/// Shared logic for recording, agent loop, and evaluation.
+///
+/// Used by both `run_task_inner` and `run_attach_inner` to avoid duplication.
+async fn run_eval_loop(
+    task_def: &task::TaskDefinition,
+    config: &Config,
+    session: &docker::DockerSession,
+    artifacts_dir: &std::path::Path,
+    eval_mode: &task::EvaluatorMode,
+    debug: bool,
+    verbose: bool,
+    no_recording: bool,
+    monitor: Option<&monitor::MonitorHandle>,
+    start_time: Instant,
+) -> Result<TaskRunResult, AppError> {
+    use task::EvaluatorMode;
+
+    // Start video recording
     let recording = if no_recording {
         None
     } else {
@@ -354,10 +395,8 @@ async fn run_task_inner(
         }
     };
 
-    // 8. Run agent loop and/or evaluation based on mode
     let result = match eval_mode {
         EvaluatorMode::Programmatic => {
-            // Programmatic mode: skip agent loop, run evaluation directly
             info!("Programmatic mode: skipping agent loop, running evaluation...");
 
             let evaluator = task_def.evaluator.as_ref().expect(
@@ -366,17 +405,14 @@ async fn run_task_inner(
             let eval_result =
                 evaluator::run_evaluation(session, evaluator, artifacts_dir).await;
 
-            // Stop recording unconditionally (before propagating any error)
             if let Some(rec) = &recording {
                 rec.stop(session).await;
                 rec.collect(session, artifacts_dir).await;
             }
 
             let eval_result = eval_result?;
-
             print_validation_results(None, Some(&eval_result));
 
-            // Publish TestComplete for programmatic mode (no agent loop to emit it)
             if let Some(m) = monitor {
                 m.send(monitor::MonitorEvent::TestComplete {
                     test_id: task_def.id.clone(),
@@ -397,18 +433,15 @@ async fn run_task_inner(
             })
         }
         EvaluatorMode::Llm => {
-            // LLM mode: run agent loop only, use agent verdict
             info!("Starting agent loop v2 (LLM-only evaluation)...");
             let agent_loop_result = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose, recording.as_ref(), monitor).await;
 
-            // Stop recording unconditionally (before propagating any error)
             if let Some(rec) = &recording {
                 rec.stop(session).await;
                 rec.collect(session, artifacts_dir).await;
             }
 
             let agent_outcome = agent_loop_result?;
-
             print_validation_results(Some(&agent_outcome), None);
 
             Ok(TaskRunResult {
@@ -418,11 +451,9 @@ async fn run_task_inner(
             })
         }
         EvaluatorMode::Hybrid => {
-            // Hybrid mode: run agent loop AND programmatic evaluation, both must pass
             info!("Starting agent loop v2 (hybrid evaluation)...");
             let agent_loop_result = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose, recording.as_ref(), monitor).await;
 
-            // Stop recording unconditionally (before propagating any error)
             if let Some(rec) = &recording {
                 rec.stop(session).await;
                 rec.collect(session, artifacts_dir).await;
@@ -438,11 +469,8 @@ async fn run_task_inner(
                 evaluator::run_evaluation(session, evaluator, artifacts_dir).await?;
 
             let both_passed = agent_outcome.passed && eval_result.passed;
-
             print_validation_results(Some(&agent_outcome), Some(&eval_result));
 
-            // Publish corrected TestComplete with hybrid verdict (overrides the
-            // premature one from the agent loop which only had the agent's verdict)
             if let Some(m) = monitor {
                 m.send(monitor::MonitorEvent::TestComplete {
                     test_id: task_def.id.clone(),
@@ -564,6 +592,118 @@ async fn run_agent_loop(
         task_def.id.clone(),
     );
     agent_loop.run().await
+}
+
+/// Run a task against an already-running container (attach mode).
+///
+/// Unlike `run_task`, this does not create, start, or clean up a container.
+/// It connects to the given container by ID/name and runs the agent loop
+/// and evaluation against it.
+pub(crate) async fn run_attach(
+    task_def: task::TaskDefinition,
+    mut config: Config,
+    container: &str,
+    debug: bool,
+    verbose: bool,
+    no_recording: bool,
+    output_dir: std::path::PathBuf,
+    monitor: Option<monitor::MonitorHandle>,
+) -> Result<AgentOutcome, AppError> {
+    let start = Instant::now();
+
+    // Warn if the task isn't designed for attach mode
+    if !matches!(task_def.app, task::AppConfig::VncAttach { .. }) {
+        let app_type = match &task_def.app {
+            task::AppConfig::Appimage { .. } => "appimage",
+            task::AppConfig::Folder { .. } => "folder",
+            task::AppConfig::DockerImage { .. } => "docker_image",
+            task::AppConfig::VncAttach { .. } => unreachable!(),
+        };
+        tracing::warn!(
+            "Task '{}' uses app type '{}', but 'desktest attach' skips app deployment. \
+             Consider using app type 'vnc_attach' for attach-mode tasks.",
+            task_def.id, app_type
+        );
+    }
+
+    // Populate config app fields from task definition (needed when no --config file)
+    config.apply_task_app(&task_def.app);
+
+    // Set up artifacts directory
+    let artifacts_dir = std::env::current_dir()
+        .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
+        .join("desktest_artifacts");
+    std::fs::create_dir_all(&artifacts_dir)
+        .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
+
+    // Attach to existing container (no lifecycle management)
+    info!("Attaching to container '{container}'...");
+    let session = docker::DockerSession::attach(container).await?;
+
+    let test_id = task_def.id.clone();
+
+    let result = tokio::select! {
+        biased;
+        _ = tokio::signal::ctrl_c() => {
+            eprintln!("\nInterrupted (Ctrl+C)");
+            Err(AppError::Infra("Interrupted by user".into()))
+        }
+        r = run_attach_inner(&task_def, &config, &session, &artifacts_dir, debug, verbose, no_recording, monitor.as_ref(), start) => r,
+    };
+
+    // Collect artifacts but do NOT clean up the container (we don't own it)
+    info!("Collecting artifacts...");
+    let _ = artifacts::collect_artifacts(&session, &artifacts_dir).await;
+
+    finalize_run(result, &test_id, &task_def, &artifacts_dir, &output_dir, start)
+}
+
+/// Inner logic for attach mode: run setup steps, agent loop, and evaluation.
+///
+/// Skips container creation, desktop readiness wait, image validation,
+/// and app deployment/launch — all of which are handled by the external
+/// orchestration script.
+async fn run_attach_inner(
+    task_def: &task::TaskDefinition,
+    config: &Config,
+    session: &docker::DockerSession,
+    artifacts_dir: &std::path::Path,
+    debug: bool,
+    verbose: bool,
+    no_recording: bool,
+    monitor: Option<&monitor::MonitorHandle>,
+    start_time: Instant,
+) -> Result<TaskRunResult, AppError> {
+    let eval_mode = task_def
+        .evaluator
+        .as_ref()
+        .map(|e| &e.mode)
+        .unwrap_or(&task::EvaluatorMode::Llm);
+
+    info!("Attach mode — evaluation mode: {}", match eval_mode {
+        task::EvaluatorMode::Llm => "llm",
+        task::EvaluatorMode::Programmatic => "programmatic",
+        task::EvaluatorMode::Hybrid => "hybrid",
+    });
+
+    // Run setup steps if any (execute, copy, sleep are useful in attach mode)
+    if !task_def.config.is_empty() {
+        info!("Running {} setup steps...", task_def.config.len());
+        setup::run_setup_steps(session, &task_def.config).await?;
+    }
+
+    // Publish TestStart for live monitoring
+    if let Some(m) = monitor {
+        m.send(monitor::MonitorEvent::TestStart {
+            test_id: task_def.id.clone(),
+            instruction: task_def.instruction.clone(),
+            vnc_url: String::new(),
+            max_steps: task_def.max_steps as usize,
+        });
+    }
+
+    // Recording, agent loop, and evaluation (shared with run_task_inner)
+    run_eval_loop(task_def, config, session, artifacts_dir, eval_mode, debug, verbose, no_recording, monitor, start_time).await
 }
 
 pub(crate) async fn run_legacy(cli: Cli) -> Result<AgentOutcome, AppError> {

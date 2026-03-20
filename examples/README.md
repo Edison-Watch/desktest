@@ -110,7 +110,7 @@ See `src/task.rs` for the full schema definition. Key fields:
   "schema_version": "1.0",
   "id": "unique-test-id",
   "instruction": "What the agent should do",
-  "app": { "type": "appimage|folder|docker_image", "..." : "..." },
+  "app": { "type": "appimage|folder|docker_image|vnc_attach", "..." : "..." },
   "config": [ { "type": "execute|copy|open|sleep", "..." : "..." } ],
   "evaluator": {
     "mode": "llm|programmatic|hybrid",

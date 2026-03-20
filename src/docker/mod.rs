@@ -136,6 +136,39 @@ impl DockerSession {
         })
     }
 
+    /// Attach to an existing running container by ID or name.
+    ///
+    /// Unlike `create()`, this does not create, start, or manage the container
+    /// lifecycle. The container must already be running. Use with `desktest attach`.
+    pub async fn attach(container: &str) -> Result<Self, AppError> {
+        let client = Docker::connect_with_local_defaults()
+            .map_err(|e| AppError::Infra(format!("Cannot connect to Docker: {e}")))?;
+
+        let inspect = client
+            .inspect_container(container, None)
+            .await
+            .map_err(|e| AppError::Infra(format!("Cannot find container '{container}': {e}")))?;
+
+        let running = inspect
+            .state
+            .as_ref()
+            .and_then(|s| s.running)
+            .unwrap_or(false);
+        if !running {
+            return Err(AppError::Infra(format!(
+                "Container '{container}' is not running"
+            )));
+        }
+
+        let container_id = inspect.id.unwrap_or_else(|| container.to_string());
+        info!("Attached to container {container_id}");
+
+        Ok(Self {
+            client,
+            container_id,
+        })
+    }
+
     /// Required binaries that must exist in custom Docker images.
     const REQUIRED_BINARIES: &[&str] = &[
         "xdotool",
@@ -356,5 +389,34 @@ mod tests {
     #[test]
     fn test_image_name_constant() {
         assert_eq!(IMAGE_NAME, "desktest-desktop:latest");
+    }
+
+    #[tokio::test]
+    #[ignore] // Requires Docker daemon
+    async fn test_attach_nonexistent_container() {
+        match DockerSession::attach("nonexistent-container-id-12345").await {
+            Err(e) => assert!(e.to_string().contains("Cannot find container")),
+            Ok(_) => panic!("Expected error for nonexistent container"),
+        }
+    }
+
+    #[tokio::test]
+    #[ignore] // Requires Docker daemon with a running container
+    async fn test_attach_to_running_container() {
+        // Create a container, then attach to it
+        let config = test_config();
+        let session = DockerSession::create(&config, None).await.unwrap();
+        let container_id = session.container_id.clone();
+
+        // Attach to it by ID
+        let attached = DockerSession::attach(&container_id).await.unwrap();
+        assert_eq!(attached.container_id, container_id);
+
+        // Run a command via the attached session
+        let output = attached.exec(&["echo", "attached"]).await.unwrap();
+        assert!(output.trim().contains("attached"));
+
+        // Clean up (only via the original session)
+        session.cleanup().await.unwrap();
     }
 }

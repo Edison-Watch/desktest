@@ -89,7 +89,16 @@ Create `elcalc-test.json`:
 - [ ] Verify the container starts from that image instead of the default
 - [ ] App inside the custom image is accessible to the agent
 
-## 12. Error Cases
+## 12. Attach Mode
+
+- [ ] Start a container manually: `docker run -d --name test-attach desktest-desktop:latest`
+- [ ] Create a task file with `"app": {"type": "vnc_attach"}`
+- [ ] `cargo run -- attach attach-task.json --container test-attach` connects and runs
+- [ ] Verify desktest does NOT stop or remove the container after completion
+- [ ] Try with a non-existent container name — confirm exit code 3 with clear error
+- [ ] Clean up: `docker rm -f test-attach`
+
+## 13. Error Cases
 
 - [ ] **Bad task file:** `cargo run -- validate not-valid.json` → exit code 2, clear error message
 - [ ] **Missing API key:** Unset all API key env vars, run a test → exit code 2, error mentions missing key

@@ -38,6 +38,7 @@ pub enum AppType {
     Appimage,
     Folder,
     DockerImage,
+    VncAttach,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -130,6 +131,10 @@ impl Config {
                 self.app_type = AppType::DockerImage;
                 self.electron = false;
             }
+            crate::task::AppConfig::VncAttach { .. } => {
+                self.app_type = AppType::VncAttach;
+                self.electron = false;
+            }
         }
     }
 
@@ -186,6 +191,9 @@ impl Config {
             }
             AppType::DockerImage => {
                 // No local file validation needed — image is pulled/used at container creation time
+            }
+            AppType::VncAttach => {
+                // No validation needed — container is managed externally
             }
         }
 
