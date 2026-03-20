@@ -365,8 +365,6 @@ async fn run_task_inner(
     run_eval_loop(task_def, config, session, artifacts_dir, eval_mode, debug, verbose, no_recording, monitor, start_time).await
 }
 
-/// Build an AgentLoopV2Config from a task definition, probing the a11y tree
-/// timing if no explicit override is set.
 /// Shared logic for recording, agent loop, and evaluation.
 ///
 /// Used by both `run_task_inner` and `run_attach_inner` to avoid duplication.
@@ -497,6 +495,8 @@ async fn run_eval_loop(
     result
 }
 
+/// Build an AgentLoopV2Config from a task definition, probing the a11y tree
+/// timing if no explicit override is set.
 pub(crate) async fn build_agent_loop_config(
     task_def: &task::TaskDefinition,
     session: &docker::DockerSession,
