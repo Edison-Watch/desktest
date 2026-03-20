@@ -115,6 +115,13 @@ pub(crate) async fn run_task(
 ) -> Result<AgentOutcome, AppError> {
     let start = Instant::now();
 
+    // Guard: vnc_attach tasks must use `desktest attach`, not `desktest run`
+    if matches!(task_def.app, task::AppConfig::VncAttach { .. }) {
+        return Err(AppError::Config(
+            "Task uses 'vnc_attach' app type — use 'desktest attach' instead of 'desktest run'.".into()
+        ));
+    }
+
     // Populate config app fields from task definition (needed when no --config file)
     config.apply_task_app(&task_def.app);
 
