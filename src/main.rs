@@ -256,6 +256,53 @@ async fn main() {
                     }
                 }
             }
+            Command::Replay { task, script, screenshots_dir } => {
+                let mut task_def = match task::TaskDefinition::load(task) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        eprintln!("Task load error: {e}");
+                        std::process::exit(e.exit_code());
+                    }
+                };
+
+                // Inject script_replay metric into programmatic mode
+                let script_path = script.to_string_lossy().to_string();
+                let screenshots_dir_str = screenshots_dir.as_ref().map(|p| p.to_string_lossy().to_string());
+                let replay_metric = task::MetricConfig::ScriptReplay {
+                    script_path,
+                    screenshots_dir: screenshots_dir_str,
+                };
+
+                match &mut task_def.evaluator {
+                    Some(evaluator) => {
+                        evaluator.mode = task::EvaluatorMode::Programmatic;
+                        evaluator.metrics.insert(0, replay_metric);
+                    }
+                    None => {
+                        task_def.evaluator = Some(task::EvaluatorConfig {
+                            mode: task::EvaluatorMode::Programmatic,
+                            metrics: vec![replay_metric],
+                            conjunction: task::Conjunction::And,
+                            eval_timeout_secs: None,
+                        });
+                    }
+                }
+
+                let run_config = orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
+                let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
+
+                let result = orchestration::run_task(task_def, run_config, cli.debug, cli.verbose, !cli.record, cli.output.clone(), monitor_handle).await;
+                match result {
+                    Ok(outcome) => {
+                        println!("{outcome}");
+                        std::process::exit(if outcome.passed { 0 } else { 1 });
+                    }
+                    Err(e) => {
+                        eprintln!("Error: {e}");
+                        std::process::exit(e.exit_code());
+                    }
+                }
+            }
             Command::Review { artifacts_dir, output, no_open } => {
                 match review::generate_review_html(artifacts_dir, output) {
                     Ok(()) => {

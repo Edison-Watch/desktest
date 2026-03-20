@@ -173,6 +173,24 @@ EXAMPLES:
         container: String,
     },
 
+    /// Replay a codified Python script inside a container
+    #[command(after_help = "\
+EXAMPLES:
+  desktest replay task.json --script desktest_replay.py
+  desktest replay task.json --script desktest_replay.py --screenshots-dir desktest_artifacts/")]
+    Replay {
+        /// Path to the task JSON file (for container/app/setup config)
+        task: std::path::PathBuf,
+
+        /// Path to the Python replay script
+        #[arg(long)]
+        script: std::path::PathBuf,
+
+        /// Optional directory containing expected screenshots for visual assertions
+        #[arg(long)]
+        screenshots_dir: Option<std::path::PathBuf>,
+    },
+
     /// Generate a web-based trajectory review viewer
     #[command(after_help = "\
 EXAMPLES:
