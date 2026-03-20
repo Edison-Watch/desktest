@@ -100,7 +100,7 @@ async fn run_interactive_pause(
     info!("Collecting artifacts...");
     let artifacts_dir = std::env::current_dir()
         .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
-        .join("artifacts");
+        .join("desktest_artifacts");
     let _ = artifacts::collect_artifacts(&session, &artifacts_dir).await;
 
     info!("Cleaning up container...");
@@ -188,7 +188,7 @@ async fn run_interactive_step(
 
     let artifacts_dir = std::env::current_dir()
         .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
-        .join("artifacts");
+        .join("desktest_artifacts");
     std::fs::create_dir_all(&artifacts_dir)
         .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
 

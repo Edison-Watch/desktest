@@ -121,7 +121,7 @@ pub(crate) async fn run_task(
     // Set up artifacts directory
     let artifacts_dir = std::env::current_dir()
         .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
-        .join("artifacts");
+        .join("desktest_artifacts");
     std::fs::create_dir_all(&artifacts_dir)
         .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
 
@@ -583,7 +583,7 @@ pub(crate) async fn run_legacy(cli: Cli) -> Result<AgentOutcome, AppError> {
     // 3. Set up artifacts directory
     let artifacts_dir = std::env::current_dir()
         .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
-        .join("artifacts");
+        .join("desktest_artifacts");
     std::fs::create_dir_all(&artifacts_dir)
         .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
 
