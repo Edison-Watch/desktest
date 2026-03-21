@@ -135,7 +135,7 @@ pub fn create_provider(
             if base_url != "https://api.openai.com" {
                 client = client.with_base_url(base_url);
             }
-            Ok(Box::new(client) as Box<dyn LlmProvider>)
+            Ok(Box::new(client))
         }
         "anthropic" => {
             validate_image_support(provider_name, model)?;
