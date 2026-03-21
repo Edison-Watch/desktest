@@ -9,8 +9,25 @@ permissions:
   contents: write
 
 jobs:
+  check-version:
+    name: Verify tag matches Cargo.toml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check version consistency
+        run: |
+          CARGO_VERSION="$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$CARGO_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Version mismatch: Cargo.toml has ${CARGO_VERSION} but tag is ${TAG_VERSION}"
+            exit 1
+          fi
+          echo "Version ${CARGO_VERSION} matches tag ${GITHUB_REF_NAME}"
+
   build:
     name: Build ${{ matrix.target }}
+    needs: check-version
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -18,6 +35,10 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
           - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
             os: ubuntu-latest
           - target: x86_64-apple-darwin
             os: macos-13
@@ -32,15 +53,31 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install cross-compilation tools
+      - name: Install cross-compilation tools (aarch64-gnu)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
 
+      - name: Install musl tools (x86_64)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Install musl cross-compilation tools (aarch64)
+        if: matrix.target == 'aarch64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu musl-tools
+          # Install aarch64 musl cross toolchain
+          curl -fsSL https://musl.cc/aarch64-linux-musl-cross.tgz | sudo tar xz -C /opt
+          echo "/opt/aarch64-linux-musl-cross/bin" >> $GITHUB_PATH
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-musl-gcc" >> $GITHUB_ENV
+
       - name: Run tests
-        if: matrix.target != 'aarch64-unknown-linux-gnu'
+        if: "!contains(matrix.target, 'aarch64')"
         run: cargo test --release --target ${{ matrix.target }}
 
       - name: Build release binary

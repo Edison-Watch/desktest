@@ -1,84 +1,135 @@
-#!/bin/bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
-# desktest installer — downloads the latest release binary for your platform.
-# Usage: curl -fsSL https://raw.githubusercontent.com/Edison-Watch/desktest/master/install.sh | bash
+# Desktest installer
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/Edison-Watch/desktest/master/install.sh | sh
+#   DESKTEST_VERSION=0.2.0 curl -fsSL ... | sh
+#   DESKTEST_INSTALL_DIR=/custom/path curl -fsSL ... | sh
 
-REPO="${DESKTEST_REPO:-Edison-Watch/desktest}"
-INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
+REPO="Edison-Watch/desktest"
+INSTALL_DIR="${DESKTEST_INSTALL_DIR:-/usr/local/bin}"
 
-# Detect OS and architecture
-OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-ARCH=$(uname -m)
+main() {
+    detect_platform
+    resolve_version
+    download_and_install
+    verify_installation
+}
 
-case "$OS" in
-  linux)  TARGET_OS="unknown-linux-gnu" ;;
-  darwin) TARGET_OS="apple-darwin" ;;
-  *)      echo "Error: Unsupported OS: $OS"; exit 1 ;;
-esac
+detect_platform() {
+    OS="$(uname -s)"
+    ARCH="$(uname -m)"
 
-case "$ARCH" in
-  x86_64|amd64)  TARGET_ARCH="x86_64" ;;
-  aarch64|arm64) TARGET_ARCH="aarch64" ;;
-  *)             echo "Error: Unsupported architecture: $ARCH"; exit 1 ;;
-esac
+    case "$OS" in
+        Linux)  OS_TAG="unknown-linux" ;;
+        Darwin) OS_TAG="apple-darwin" ;;
+        *)      err "Unsupported OS: $OS" ;;
+    esac
 
-TARGET="${TARGET_ARCH}-${TARGET_OS}"
+    case "$ARCH" in
+        x86_64|amd64)  ARCH_TAG="x86_64" ;;
+        aarch64|arm64) ARCH_TAG="aarch64" ;;
+        *)             err "Unsupported architecture: $ARCH" ;;
+    esac
 
-echo "Detecting platform: ${TARGET}"
+    # On Linux, prefer musl builds (works on both glibc and musl systems)
+    if [ "$OS" = "Linux" ]; then
+        TARGET="${ARCH_TAG}-${OS_TAG}-musl"
+    else
+        TARGET="${ARCH_TAG}-${OS_TAG}"
+    fi
 
-# Get latest release tag
-LATEST=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | head -1 | cut -d'"' -f4)
-if [ -z "$LATEST" ]; then
-  echo "Error: Could not determine latest release"
-  exit 1
-fi
+    log "Detected platform: ${TARGET}"
+}
 
-echo "Latest release: ${LATEST}"
+resolve_version() {
+    if [ -n "${DESKTEST_VERSION:-}" ]; then
+        VERSION="v${DESKTEST_VERSION#v}"
+        log "Using pinned version: ${VERSION}"
+    else
+        log "Fetching latest release..."
+        VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
+            | grep '"tag_name"' \
+            | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')" \
+            || err "Failed to fetch latest release. Set DESKTEST_VERSION to install a specific version."
+        log "Latest version: ${VERSION}"
+    fi
+}
 
-# Download
-URL="https://github.com/${REPO}/releases/download/${LATEST}/desktest-${LATEST}-${TARGET}.tar.gz"
-CHECKSUMS_URL="https://github.com/${REPO}/releases/download/${LATEST}/SHA256SUMS.txt"
+download_and_install() {
+    TARBALL="desktest-${VERSION}-${TARGET}.tar.gz"
+    URL="https://github.com/${REPO}/releases/download/${VERSION}/${TARBALL}"
+    CHECKSUMS_URL="https://github.com/${REPO}/releases/download/${VERSION}/SHA256SUMS.txt"
 
-TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TMPDIR"' EXIT
+    TMPDIR="$(mktemp -d)"
+    trap 'rm -rf "$TMPDIR"' EXIT
 
-echo "Downloading desktest ${LATEST} for ${TARGET}..."
-curl -fsSL "$URL" -o "$TMPDIR/desktest.tar.gz"
-curl -fsSL "$CHECKSUMS_URL" -o "$TMPDIR/SHA256SUMS.txt"
+    log "Downloading ${TARBALL}..."
+    curl -fsSL -o "${TMPDIR}/${TARBALL}" "$URL" \
+        || err "Download failed. Check that version ${VERSION} exists and has a build for ${TARGET}."
 
-# Verify checksum
-echo "Verifying checksum..."
-EXPECTED=$(grep "desktest-${LATEST}-${TARGET}.tar.gz" "$TMPDIR/SHA256SUMS.txt" | awk '{print $1}')
-if [ -n "$EXPECTED" ]; then
-  if command -v sha256sum &>/dev/null; then
-    ACTUAL=$(sha256sum "$TMPDIR/desktest.tar.gz" | awk '{print $1}')
-  else
-    ACTUAL=$(shasum -a 256 "$TMPDIR/desktest.tar.gz" | awk '{print $1}')
-  fi
-  if [ "$EXPECTED" != "$ACTUAL" ]; then
-    echo "Error: Checksum mismatch!"
-    echo "  Expected: $EXPECTED"
-    echo "  Actual:   $ACTUAL"
+    log "Verifying checksum..."
+    curl -fsSL -o "${TMPDIR}/SHA256SUMS.txt" "$CHECKSUMS_URL" \
+        || err "Failed to download checksums file."
+
+    EXPECTED="$(grep "${TARBALL}" "${TMPDIR}/SHA256SUMS.txt" | awk '{print $1}')"
+    if [ -z "$EXPECTED" ]; then
+        err "No checksum found for ${TARBALL} in SHA256SUMS.txt"
+    fi
+
+    if command -v sha256sum >/dev/null 2>&1; then
+        ACTUAL="$(sha256sum "${TMPDIR}/${TARBALL}" | awk '{print $1}')"
+    elif command -v shasum >/dev/null 2>&1; then
+        ACTUAL="$(shasum -a 256 "${TMPDIR}/${TARBALL}" | awk '{print $1}')"
+    else
+        warn "Neither sha256sum nor shasum found, skipping checksum verification"
+        ACTUAL="$EXPECTED"
+    fi
+
+    if [ "$EXPECTED" != "$ACTUAL" ]; then
+        err "Checksum mismatch!\n  Expected: ${EXPECTED}\n  Actual:   ${ACTUAL}"
+    fi
+    log "Checksum verified."
+
+    log "Extracting to ${INSTALL_DIR}..."
+    tar xzf "${TMPDIR}/${TARBALL}" -C "$TMPDIR"
+
+    if [ -w "$INSTALL_DIR" ]; then
+        mkdir -p "$INSTALL_DIR"
+        mv "${TMPDIR}/desktest" "${INSTALL_DIR}/desktest"
+    else
+        log "Elevated permissions required to install to ${INSTALL_DIR}"
+        sudo mkdir -p "$INSTALL_DIR"
+        sudo mv "${TMPDIR}/desktest" "${INSTALL_DIR}/desktest"
+    fi
+    chmod +x "${INSTALL_DIR}/desktest"
+}
+
+verify_installation() {
+    if command -v desktest >/dev/null 2>&1; then
+        log "Installed desktest $(desktest --version)"
+    else
+        log "Installed to ${INSTALL_DIR}/desktest"
+        if echo "$PATH" | tr ':' '\n' | grep -qx "$INSTALL_DIR"; then
+            :
+        else
+            warn "${INSTALL_DIR} is not in your PATH. Add it with:\n  export PATH=\"${INSTALL_DIR}:\$PATH\""
+        fi
+    fi
+}
+
+log() {
+    printf '\033[1;32m==>\033[0m %s\n' "$1"
+}
+
+warn() {
+    printf '\033[1;33mwarning:\033[0m %s\n' "$1" >&2
+}
+
+err() {
+    printf '\033[1;31merror:\033[0m %s\n' "$1" >&2
     exit 1
-  fi
-  echo "Checksum verified."
-else
-  echo "Error: Checksum for desktest-${LATEST}-${TARGET}.tar.gz not found in SHA256SUMS.txt"
-  exit 1
-fi
+}
 
-# Install
-mkdir -p "$INSTALL_DIR"
-tar xzf "$TMPDIR/desktest.tar.gz" -C "$INSTALL_DIR"
-chmod +x "$INSTALL_DIR/desktest"
-
-echo ""
-echo "desktest ${LATEST} installed to ${INSTALL_DIR}/desktest"
-
-# Check if install dir is in PATH
-if ! echo "$PATH" | tr ':' '\n' | grep -q "^${INSTALL_DIR}$"; then
-  echo ""
-  echo "Add ${INSTALL_DIR} to your PATH:"
-  echo "  export PATH=\"${INSTALL_DIR}:\$PATH\""
-fi
+main
