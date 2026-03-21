@@ -103,12 +103,13 @@ download_and_install() {
     if [ -w "$INSTALL_DIR" ] || { [ ! -e "$INSTALL_DIR" ] && [ -w "$(dirname "$INSTALL_DIR")" ]; }; then
         mkdir -p "$INSTALL_DIR"
         mv "${DL_TMPDIR}/desktest" "${INSTALL_DIR}/desktest"
+        chmod +x "${INSTALL_DIR}/desktest"
     else
         log "Elevated permissions required to install to ${INSTALL_DIR}"
         sudo mkdir -p "$INSTALL_DIR"
         sudo mv "${DL_TMPDIR}/desktest" "${INSTALL_DIR}/desktest"
+        sudo chmod +x "${INSTALL_DIR}/desktest"
     fi
-    chmod +x "${INSTALL_DIR}/desktest"
 }
 
 verify_installation() {
