@@ -83,7 +83,7 @@ jobs:
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-musl-gcc" >> $GITHUB_ENV
 
       - name: Run tests
-        if: "!contains(matrix.target, 'aarch64')"
+        if: "!contains(matrix.target, 'aarch64-unknown-linux')"
         run: cargo test --release --target ${{ matrix.target }}
 
       - name: Build release binary

@@ -34,10 +34,13 @@ detect_platform() {
     esac
 
     # On Linux, prefer musl builds (works on both glibc and musl systems)
+    # Fall back to gnu for older releases that predate musl builds
     if [ "$OS" = "Linux" ]; then
         TARGET="${ARCH_TAG}-${OS_TAG}-musl"
+        GNU_FALLBACK="${ARCH_TAG}-${OS_TAG}-gnu"
     else
         TARGET="${ARCH_TAG}-${OS_TAG}"
+        GNU_FALLBACK=""
     fi
 
     log "Detected platform: ${TARGET}"
@@ -69,8 +72,18 @@ download_and_install() {
     trap 'rm -rf "$DL_TMPDIR"' EXIT
 
     log "Downloading ${TARBALL}..."
-    curl -fsSL -o "${DL_TMPDIR}/${TARBALL}" "$URL" \
-        || err "Download failed. Check that version ${VERSION} exists and has a build for ${TARGET}."
+    if ! curl -fsSL -o "${DL_TMPDIR}/${TARBALL}" "$URL" 2>/dev/null; then
+        if [ -n "$GNU_FALLBACK" ]; then
+            log "musl build not found, falling back to: ${GNU_FALLBACK}"
+            TARGET="$GNU_FALLBACK"
+            TARBALL="desktest-${VERSION}-${TARGET}.tar.gz"
+            URL="https://github.com/${REPO}/releases/download/${VERSION}/${TARBALL}"
+            curl -fsSL -o "${DL_TMPDIR}/${TARBALL}" "$URL" \
+                || err "Download failed. Check that version ${VERSION} exists and has a build for ${TARGET}."
+        else
+            err "Download failed. Check that version ${VERSION} exists and has a build for ${TARGET}."
+        fi
+    fi
 
     log "Verifying checksum..."
     curl -fsSL -o "${DL_TMPDIR}/SHA256SUMS.txt" "$CHECKSUMS_URL" \
