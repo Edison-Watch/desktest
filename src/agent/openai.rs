@@ -10,4 +10,4 @@ pub use crate::provider::{
     ChatMessage, FunctionCall, ToolCall,
 };
 #[allow(unused_imports)]
-pub use crate::provider::openai::OpenAiProvider as OpenAiClient;
+pub use crate::provider::http_base::HttpProvider as OpenAiClient;

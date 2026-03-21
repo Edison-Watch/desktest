@@ -2,6 +2,7 @@
 
 pub mod anthropic;
 pub mod custom;
+pub mod http_base;
 pub mod openai;
 
 use std::future::Future;
@@ -134,7 +135,7 @@ pub fn create_provider(
             if base_url != "https://api.openai.com" {
                 client = client.with_base_url(base_url);
             }
-            Ok(Box::new(client))
+            Ok(Box::new(client) as Box<dyn LlmProvider>)
         }
         "anthropic" => {
             validate_image_support(provider_name, model)?;
