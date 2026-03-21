@@ -14,7 +14,7 @@ ifndef VERSION
 endif
 	@echo "Bumping version: $(CURRENT_VERSION) -> $(VERSION)"
 	@sed -i.bak 's/^version = "$(CURRENT_VERSION)"/version = "$(VERSION)"/' Cargo.toml && rm -f Cargo.toml.bak
-	@cargo check --quiet 2>/dev/null || true
+	@cargo check --quiet || (echo "cargo check failed — version bump aborted"; exit 1)
 	@git add Cargo.toml Cargo.lock
 	@git commit -m "chore: bump version to $(VERSION)"
 	@git tag "v$(VERSION)"

@@ -68,11 +68,17 @@ jobs:
 
       - name: Install musl cross-compilation tools (aarch64)
         if: matrix.target == 'aarch64-unknown-linux-musl'
+        env:
+          MUSL_CROSS_URL: "https://musl.cc/aarch64-linux-musl-cross.tgz"
+          MUSL_CROSS_SHA256: "c909817856d6ceda86aa510894fa3527eac7989f0ef6e87b5721c58737a06c38"
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu musl-tools
-          # Install aarch64 musl cross toolchain
-          curl -fsSL https://musl.cc/aarch64-linux-musl-cross.tgz | sudo tar xz -C /opt
+          # Install aarch64 musl cross toolchain (checksum-verified)
+          curl -fsSL "$MUSL_CROSS_URL" -o /tmp/musl-cross.tgz
+          echo "${MUSL_CROSS_SHA256}  /tmp/musl-cross.tgz" | sha256sum -c -
+          sudo tar xz -C /opt < /tmp/musl-cross.tgz
+          rm /tmp/musl-cross.tgz
           echo "/opt/aarch64-linux-musl-cross/bin" >> $GITHUB_PATH
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-musl-gcc" >> $GITHUB_ENV
 

@@ -52,7 +52,10 @@ resolve_version() {
         VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
             | grep '"tag_name"' \
             | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')" \
-            || err "Failed to fetch latest release. Set DESKTEST_VERSION to install a specific version."
+            || true
+        if [ -z "$VERSION" ]; then
+            err "Failed to fetch latest release. Set DESKTEST_VERSION to install a specific version."
+        fi
         log "Latest version: ${VERSION}"
     fi
 }
@@ -62,46 +65,48 @@ download_and_install() {
     URL="https://github.com/${REPO}/releases/download/${VERSION}/${TARBALL}"
     CHECKSUMS_URL="https://github.com/${REPO}/releases/download/${VERSION}/SHA256SUMS.txt"
 
-    TMPDIR="$(mktemp -d)"
-    trap 'rm -rf "$TMPDIR"' EXIT
+    DL_TMPDIR="$(mktemp -d)"
+    trap 'rm -rf "$DL_TMPDIR"' EXIT
 
     log "Downloading ${TARBALL}..."
-    curl -fsSL -o "${TMPDIR}/${TARBALL}" "$URL" \
+    curl -fsSL -o "${DL_TMPDIR}/${TARBALL}" "$URL" \
         || err "Download failed. Check that version ${VERSION} exists and has a build for ${TARGET}."
 
     log "Verifying checksum..."
-    curl -fsSL -o "${TMPDIR}/SHA256SUMS.txt" "$CHECKSUMS_URL" \
+    curl -fsSL -o "${DL_TMPDIR}/SHA256SUMS.txt" "$CHECKSUMS_URL" \
         || err "Failed to download checksums file."
 
-    EXPECTED="$(grep "${TARBALL}" "${TMPDIR}/SHA256SUMS.txt" | awk '{print $1}')"
+    EXPECTED="$(grep "${TARBALL}" "${DL_TMPDIR}/SHA256SUMS.txt" | awk '{print $1}')"
     if [ -z "$EXPECTED" ]; then
         err "No checksum found for ${TARBALL} in SHA256SUMS.txt"
     fi
 
     if command -v sha256sum >/dev/null 2>&1; then
-        ACTUAL="$(sha256sum "${TMPDIR}/${TARBALL}" | awk '{print $1}')"
+        ACTUAL="$(sha256sum "${DL_TMPDIR}/${TARBALL}" | awk '{print $1}')"
     elif command -v shasum >/dev/null 2>&1; then
-        ACTUAL="$(shasum -a 256 "${TMPDIR}/${TARBALL}" | awk '{print $1}')"
+        ACTUAL="$(shasum -a 256 "${DL_TMPDIR}/${TARBALL}" | awk '{print $1}')"
     else
         warn "Neither sha256sum nor shasum found, skipping checksum verification"
         ACTUAL="$EXPECTED"
     fi
 
     if [ "$EXPECTED" != "$ACTUAL" ]; then
-        err "Checksum mismatch!\n  Expected: ${EXPECTED}\n  Actual:   ${ACTUAL}"
+        err "Checksum mismatch!
+  Expected: ${EXPECTED}
+  Actual:   ${ACTUAL}"
     fi
     log "Checksum verified."
 
     log "Extracting to ${INSTALL_DIR}..."
-    tar xzf "${TMPDIR}/${TARBALL}" -C "$TMPDIR"
+    tar xzf "${DL_TMPDIR}/${TARBALL}" -C "$DL_TMPDIR"
 
-    if [ -w "$INSTALL_DIR" ]; then
+    if [ -w "$INSTALL_DIR" ] || { [ ! -e "$INSTALL_DIR" ] && [ -w "$(dirname "$INSTALL_DIR")" ]; }; then
         mkdir -p "$INSTALL_DIR"
-        mv "${TMPDIR}/desktest" "${INSTALL_DIR}/desktest"
+        mv "${DL_TMPDIR}/desktest" "${INSTALL_DIR}/desktest"
     else
         log "Elevated permissions required to install to ${INSTALL_DIR}"
         sudo mkdir -p "$INSTALL_DIR"
-        sudo mv "${TMPDIR}/desktest" "${INSTALL_DIR}/desktest"
+        sudo mv "${DL_TMPDIR}/desktest" "${INSTALL_DIR}/desktest"
     fi
     chmod +x "${INSTALL_DIR}/desktest"
 }
@@ -114,21 +119,22 @@ verify_installation() {
         if echo "$PATH" | tr ':' '\n' | grep -qx "$INSTALL_DIR"; then
             :
         else
-            warn "${INSTALL_DIR} is not in your PATH. Add it with:\n  export PATH=\"${INSTALL_DIR}:\$PATH\""
+            warn "${INSTALL_DIR} is not in your PATH. Add it with:
+  export PATH=\"${INSTALL_DIR}:\$PATH\""
         fi
     fi
 }
 
 log() {
-    printf '\033[1;32m==>\033[0m %s\n' "$1"
+    printf '\033[1;32m==>\033[0m %b\n' "$1"
 }
 
 warn() {
-    printf '\033[1;33mwarning:\033[0m %s\n' "$1" >&2
+    printf '\033[1;33mwarning:\033[0m %b\n' "$1" >&2
 }
 
 err() {
-    printf '\033[1;31merror:\033[0m %s\n' "$1" >&2
+    printf '\033[1;31merror:\033[0m %b\n' "$1" >&2
     exit 1
 }
 
