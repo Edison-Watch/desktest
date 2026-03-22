@@ -18,7 +18,8 @@ pub struct TrajectoryEntry {
     pub step: usize,
     /// ISO 8601 timestamp of when this step was recorded.
     pub timestamp: String,
-    /// Extracted PyAutoGUI code blocks executed in this step (joined with newlines).
+    /// Extracted code blocks executed in this step (joined with newlines).
+    /// Includes both PyAutoGUI (Python) and bash blocks; bash blocks are prefixed with `# [bash]`.
     pub action_code: String,
     /// Agent's reasoning/reflection text before the action (if any).
     #[serde(skip_serializing_if = "Option::is_none")]
