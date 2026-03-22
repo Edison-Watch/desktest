@@ -255,6 +255,7 @@ async fn run_interactive_step(
             &run_result.outcome,
             run_result.eval_result.as_ref(),
             duration_ms,
+            qa,
         ),
         Err(e) => results::from_error(&test_id, e, duration_ms),
     };

@@ -35,8 +35,8 @@ impl BugReporter {
         screenshot_path: Option<&str>,
         a11y_tree_text: Option<&str>,
     ) -> std::io::Result<String> {
-        self.counter += 1;
-        let bug_id = format!("BUG-{:03}", self.counter);
+        let next = self.counter + 1;
+        let bug_id = format!("BUG-{:03}", next);
 
         let summary = description.lines().next().unwrap_or("No summary");
 
@@ -58,7 +58,7 @@ impl BugReporter {
         if let Some(a11y) = a11y_tree_text {
             // Truncate large a11y trees to keep reports readable
             let truncated: String = a11y.chars().take(3000).collect();
-            let suffix = if a11y.len() > 3000 { "\n... (truncated)" } else { "" };
+            let suffix = if a11y.chars().count() > 3000 { "\n... (truncated)" } else { "" };
             md.push_str(&format!(
                 "## Accessibility Tree State\n\n\
                  ```\n{truncated}{suffix}\n```\n"
@@ -68,6 +68,8 @@ impl BugReporter {
         let path = self.bugs_dir.join(format!("{bug_id}.md"));
         std::fs::write(&path, &md)?;
 
+        // Only increment after successful write
+        self.counter = next;
         info!("Wrote bug report: {} -> {}", bug_id, path.display());
 
         Ok(bug_id)

@@ -172,7 +172,7 @@ pub(crate) async fn run_task(
     info!("Cleaning up container...");
     let _ = session.cleanup().await;
 
-    finalize_run(result, &test_id, &task_def, &artifacts_dir, &output_dir, start)
+    finalize_run(result, &test_id, &task_def, &artifacts_dir, &output_dir, start, qa)
 }
 
 /// Shared post-inner logic: save task.json, write results.json, map to outcome.
@@ -185,6 +185,7 @@ fn finalize_run(
     artifacts_dir: &std::path::Path,
     output_dir: &std::path::Path,
     start: Instant,
+    qa: bool,
 ) -> Result<AgentOutcome, AppError> {
     let duration_ms = start.elapsed().as_millis() as u64;
 
@@ -213,6 +214,7 @@ fn finalize_run(
             &run_result.outcome,
             run_result.eval_result.as_ref(),
             duration_ms,
+            qa,
         ),
         Err(e) => results::from_error(test_id, e, duration_ms),
     };
@@ -670,7 +672,7 @@ pub(crate) async fn run_attach(
     info!("Collecting artifacts...");
     let _ = artifacts::collect_artifacts(&session, &artifacts_dir).await;
 
-    finalize_run(result, &test_id, &task_def, &artifacts_dir, &output_dir, start)
+    finalize_run(result, &test_id, &task_def, &artifacts_dir, &output_dir, start, qa)
 }
 
 /// Inner logic for attach mode: run setup steps, agent loop, and evaluation.
