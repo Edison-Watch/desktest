@@ -21,7 +21,8 @@ pub fn print_logs(artifacts_dir: &Path, brief: bool, step: Option<usize>) -> Res
     let task_id = load_task_id(artifacts_dir);
 
     // Compute summary
-    let total_steps = entries.last().map(|e| e.step).unwrap_or(0);
+    let total_steps = entries.len();
+    let last_step_num = entries.last().map(|e| e.step).unwrap_or(0);
     let final_result = entries.last().map(|e| e.result.as_str()).unwrap_or("unknown");
     let duration = compute_duration(&entries);
 
@@ -31,11 +32,15 @@ pub fn print_logs(artifacts_dir: &Path, brief: bool, step: Option<usize>) -> Res
         println!("Task:       {id}");
     }
     println!("Steps:      {total_steps}");
-    println!("Result:     {}", format_result(final_result, total_steps));
+    println!("Result:     {}", format_result(final_result, last_step_num));
     if let Some(dur) = &duration {
         println!("Duration:   {dur}");
     }
     println!();
+
+    if brief && step.is_some() {
+        return Err(AppError::Config("--brief and --step cannot be used together".into()));
+    }
 
     if brief {
         print_brief(&entries);
@@ -145,8 +150,10 @@ fn parse_timestamp_secs(ts: &str) -> Option<u64> {
     let sec_str = time_parts.next()?;
     let sec: u64 = sec_str.split('.').next()?.parse().ok()?;
 
-    // Approximate epoch seconds (good enough for duration calculation between nearby timestamps)
-    let days = year * 365 + year / 4 - year / 100 + year / 400 + month * 30 + day;
+    // Accumulated days at the start of each month (non-leap year approximation)
+    const MONTH_DAYS: [u64; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+    let month_idx = (month.saturating_sub(1) as usize).min(11);
+    let days = year * 365 + year / 4 - year / 100 + year / 400 + MONTH_DAYS[month_idx] + day;
     Some(days * 86400 + hour * 3600 + min * 60 + sec)
 }
 
