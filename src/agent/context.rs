@@ -42,8 +42,9 @@ impl ContextManager {
         display_height: u32,
         instruction: &str,
         max_trajectory_length: usize,
+        bash_enabled: bool,
     ) -> Self {
-        let system_prompt = build_system_prompt(display_width, display_height);
+        let system_prompt = build_system_prompt(display_width, display_height, bash_enabled);
         Self {
             system_prompt,
             instruction: instruction.to_string(),
@@ -209,7 +210,40 @@ fn observation_to_message(observation: &Observation) -> Vec<ChatMessage> {
 /// - Special commands (DONE, FAIL, WAIT)
 /// - Display dimensions
 /// - Coordinate system
-pub fn build_system_prompt(display_width: u32, display_height: u32) -> String {
+pub fn build_system_prompt(display_width: u32, display_height: u32, bash_enabled: bool) -> String {
+    let bash_section = if bash_enabled {
+        r#"
+
+## Bash Debugging Tool
+
+You also have access to a bash shell for **debugging purposes only**. Use this when something is going wrong and you need to investigate — for example, to check if a process is running, inspect file contents, examine logs, check environment variables, or diagnose why the GUI is not behaving as expected.
+
+**IMPORTANT: Your primary interface is PyAutoGUI. Always prefer PyAutoGUI for interacting with the desktop. Only use bash when you need to debug or investigate an issue.**
+
+To run a bash command, use a fenced bash code block:
+
+```bash
+# Example: check if the application process is running
+ps aux | grep myapp
+
+# Example: inspect a log file
+cat /tmp/app.log
+
+# Example: check file system state
+ls -la /home/tester/Documents/
+```
+
+The command runs inside the container as the `tester` user. You will receive the stdout/stderr output of the command. After running a bash command, you will still receive a fresh screenshot and accessibility tree observation.
+
+### When to use bash vs PyAutoGUI
+- **PyAutoGUI** (primary): clicking, typing, keyboard shortcuts, all GUI interaction
+- **Bash** (debugging only): checking process state, reading files/logs, inspecting environment, verifying file changes, diagnosing issues when the GUI is unresponsive or behaving unexpectedly
+
+Do NOT use bash to launch GUI applications or perform actions that should be done through the GUI. The bash tool is strictly for observation and debugging."#
+    } else {
+        ""
+    };
+
     format!(
         r#"You are a professional software tester controlling a Linux desktop environment. Your task is to interact with the desktop GUI to complete a given objective.
 
@@ -249,7 +283,7 @@ You interact with the desktop using PyAutoGUI Python code. The following modules
 
 ### Timing
 - `time.sleep(seconds)` — wait for the specified duration
-
+{bash_section}
 ## Output Format
 
 For each step, you MUST respond with:
@@ -300,6 +334,7 @@ Use BOTH the screenshot and accessibility tree to understand the current state. 
         display_height = display_height,
         max_x = display_width.saturating_sub(1),
         max_y = display_height.saturating_sub(1),
+        bash_section = bash_section,
     )
 }
 
@@ -359,7 +394,7 @@ mod tests {
 
     #[test]
     fn test_system_prompt_contains_display_dimensions() {
-        let prompt = build_system_prompt(1920, 1080);
+        let prompt = build_system_prompt(1920, 1080, false);
         assert!(prompt.contains("1920x1080"));
         assert!(prompt.contains("1919"));
         assert!(prompt.contains("1079"));
@@ -367,7 +402,7 @@ mod tests {
 
     #[test]
     fn test_system_prompt_contains_action_space() {
-        let prompt = build_system_prompt(1280, 800);
+        let prompt = build_system_prompt(1280, 800, false);
         assert!(prompt.contains("pyautogui.click"));
         assert!(prompt.contains("pyautogui.typewrite"));
         assert!(prompt.contains("pyautogui.hotkey"));
@@ -377,7 +412,7 @@ mod tests {
 
     #[test]
     fn test_system_prompt_contains_special_commands() {
-        let prompt = build_system_prompt(1280, 800);
+        let prompt = build_system_prompt(1280, 800, false);
         assert!(prompt.contains("DONE"));
         assert!(prompt.contains("FAIL"));
         assert!(prompt.contains("WAIT"));
@@ -385,7 +420,7 @@ mod tests {
 
     #[test]
     fn test_system_prompt_contains_output_format() {
-        let prompt = build_system_prompt(1280, 800);
+        let prompt = build_system_prompt(1280, 800, false);
         assert!(prompt.contains("Reflection"));
         assert!(prompt.contains("Action"));
         assert!(prompt.contains("```python"));
@@ -393,7 +428,7 @@ mod tests {
 
     #[test]
     fn test_system_prompt_contains_coordinate_system() {
-        let prompt = build_system_prompt(1280, 800);
+        let prompt = build_system_prompt(1280, 800, false);
         assert!(prompt.contains("(0, 0)"));
         assert!(prompt.contains("top-left"));
     }
@@ -402,7 +437,7 @@ mod tests {
 
     #[test]
     fn test_context_manager_new() {
-        let ctx = ContextManager::new(1920, 1080, "Click the button", 3);
+        let ctx = ContextManager::new(1920, 1080, "Click the button", 3, false);
         assert_eq!(ctx.trajectory_len(), 0);
         assert!(ctx.system_prompt.contains("1920x1080"));
         assert_eq!(ctx.instruction, "Click the button");
@@ -411,7 +446,7 @@ mod tests {
 
     #[test]
     fn test_build_messages_no_trajectory() {
-        let ctx = ContextManager::new(1920, 1080, "Click the button", 3);
+        let ctx = ContextManager::new(1920, 1080, "Click the button", 3, false);
         let obs = make_screenshot_observation();
         let messages = ctx.build_messages(&obs);
 
@@ -431,7 +466,7 @@ mod tests {
 
     #[test]
     fn test_build_messages_with_trajectory() {
-        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 3);
+        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 3, false);
         ctx.push_turn(TrajectoryTurn {
             observation: make_screenshot_observation(),
             response_text: "I see a button. I'll click it.".into(),
@@ -452,7 +487,7 @@ mod tests {
 
     #[test]
     fn test_build_messages_with_error_feedback() {
-        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 3);
+        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 3, false);
         ctx.push_turn(TrajectoryTurn {
             observation: make_screenshot_observation(),
             response_text: "I'll click at (100, 200)".into(),
@@ -471,7 +506,7 @@ mod tests {
 
     #[test]
     fn test_sliding_window_truncation() {
-        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 2);
+        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 2, false);
 
         // Push 4 turns
         for i in 0..4 {
@@ -511,7 +546,7 @@ mod tests {
 
     #[test]
     fn test_sliding_window_exact_fit() {
-        let mut ctx = ContextManager::new(1920, 1080, "test", 3);
+        let mut ctx = ContextManager::new(1920, 1080, "test", 3, false);
 
         // Push exactly 3 turns
         for i in 0..3 {
@@ -531,7 +566,7 @@ mod tests {
 
     #[test]
     fn test_fallback_messages_no_trajectory() {
-        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 3);
+        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 3, false);
         ctx.push_turn(TrajectoryTurn {
             observation: make_screenshot_observation(),
             response_text: "Turn 0".into(),
@@ -552,7 +587,7 @@ mod tests {
 
     #[test]
     fn test_clear_trajectory() {
-        let mut ctx = ContextManager::new(1920, 1080, "test", 3);
+        let mut ctx = ContextManager::new(1920, 1080, "test", 3, false);
         ctx.push_turn(TrajectoryTurn {
             observation: make_screenshot_observation(),
             response_text: "Turn 0".into(),
@@ -651,7 +686,7 @@ mod tests {
 
     #[test]
     fn test_trajectory_with_mixed_observations() {
-        let mut ctx = ContextManager::new(1920, 1080, "test", 3);
+        let mut ctx = ContextManager::new(1920, 1080, "test", 3, false);
 
         // Turn 1: screenshot only
         ctx.push_turn(TrajectoryTurn {
@@ -684,7 +719,7 @@ mod tests {
 
     #[test]
     fn test_zero_trajectory_length() {
-        let mut ctx = ContextManager::new(1920, 1080, "test", 0);
+        let mut ctx = ContextManager::new(1920, 1080, "test", 0, false);
         ctx.push_turn(TrajectoryTurn {
             observation: make_screenshot_observation(),
             response_text: "Turn 0".into(),

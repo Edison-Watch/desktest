@@ -88,7 +88,7 @@ async fn main() {
                 let run_config = orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
                 let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
 
-                let result = orchestration::run_task(task_def, run_config, cli.debug, cli.verbose, !cli.record, cli.output.clone(), monitor_handle).await;
+                let result = orchestration::run_task(task_def, run_config, cli.debug, cli.verbose, cli.with_bash, !cli.record, cli.output.clone(), monitor_handle).await;
                 match result {
                     Ok(outcome) => {
                         println!("{outcome}");
@@ -110,6 +110,7 @@ async fn main() {
                     &cli.output,
                     cli.debug,
                     cli.verbose,
+                    cli.with_bash,
                     !cli.record,
                     cli.resolution.as_deref(),
                     monitor_handle,
@@ -143,6 +144,7 @@ async fn main() {
                     container,
                     cli.debug,
                     cli.verbose,
+                    cli.with_bash,
                     !cli.record,
                     cli.output.clone(),
                     monitor_handle,
@@ -174,6 +176,7 @@ async fn main() {
                     run_config,
                     cli.debug,
                     cli.verbose,
+                    cli.with_bash,
                     !cli.record,
                     cli.output.clone(),
                     *step,
@@ -291,7 +294,7 @@ async fn main() {
                 let run_config = orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
                 let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
 
-                let result = orchestration::run_task(task_def, run_config, cli.debug, cli.verbose, !cli.record, cli.output.clone(), monitor_handle).await;
+                let result = orchestration::run_task(task_def, run_config, cli.debug, cli.verbose, cli.with_bash, !cli.record, cli.output.clone(), monitor_handle).await;
                 match result {
                     Ok(outcome) => {
                         println!("{outcome}");

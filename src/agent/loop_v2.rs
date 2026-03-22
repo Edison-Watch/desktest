@@ -46,6 +46,8 @@ pub struct AgentLoopV2Config {
     pub debug: bool,
     /// Enable verbose trajectory logging (includes full LLM responses).
     pub verbose: bool,
+    /// Allow the agent to execute bash commands for debugging.
+    pub bash_enabled: bool,
 }
 
 impl Default for AgentLoopV2Config {
@@ -58,6 +60,7 @@ impl Default for AgentLoopV2Config {
             max_trajectory_length: crate::agent::context::DEFAULT_MAX_TRAJECTORY_LENGTH,
             debug: false,
             verbose: false,
+            bash_enabled: false,
         }
     }
 }
@@ -102,6 +105,7 @@ impl<'a> AgentLoopV2<'a> {
             display_height,
             instruction,
             config.max_trajectory_length,
+            config.bash_enabled,
         );
 
         let trajectory = match TrajectoryLogger::new(&artifacts_dir, config.verbose) {
@@ -232,6 +236,7 @@ impl<'a> AgentLoopV2<'a> {
                 self.session,
                 &response_text,
                 Some(self.config.step_timeout),
+                self.config.bash_enabled,
             )
             .await?;
 
@@ -448,6 +453,7 @@ impl<'a> AgentLoopV2<'a> {
                 self.session,
                 &response_text,
                 Some(self.config.step_timeout),
+                self.config.bash_enabled,
             )
             .await?;
 
@@ -673,6 +679,7 @@ mod tests {
         assert_eq!(config.max_trajectory_length, 3);
         assert!(!config.debug);
         assert!(!config.verbose);
+        assert!(!config.bash_enabled);
     }
 
     #[test]
@@ -685,6 +692,7 @@ mod tests {
             max_trajectory_length: 5,
             debug: true,
             verbose: true,
+            bash_enabled: true,
         };
         assert_eq!(config.max_steps, 25);
         assert_eq!(config.step_timeout.as_secs(), 120);
