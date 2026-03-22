@@ -12,8 +12,11 @@ bump_version:
 ifndef VERSION
 	$(error VERSION is required. Usage: make bump_version VERSION=0.3.0)
 endif
+	@if git tag | grep -qx "v$(VERSION)"; then \
+	    echo "Tag v$(VERSION) already exists — aborting."; exit 1; \
+	fi
 	@echo "Bumping version: $(CURRENT_VERSION) -> $(VERSION)"
-	@sed -i.bak 's/^version = "$(CURRENT_VERSION)"/version = "$(VERSION)"/' Cargo.toml && rm -f Cargo.toml.bak
+	@sed -i.bak 's/^version = "$(subst .,\.,$(CURRENT_VERSION))"/version = "$(VERSION)"/' Cargo.toml && rm -f Cargo.toml.bak
 	@cargo check --quiet || (echo "cargo check failed — version bump aborted"; exit 1)
 	@git add Cargo.toml Cargo.lock
 	@git commit -m "chore: bump version to $(VERSION)"
