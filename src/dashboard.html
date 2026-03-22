@@ -57,7 +57,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .task-item:hover { background: #1c2128; }
 .task-item.active { background: #1f6feb22; border-left: 3px solid #1f6feb; }
 .task-item svg { width: 16px; height: 16px; fill: currentColor; }
-.task-instruction { font-size: 15px; line-height: 1.6; color: #c9d1d9; padding: 16px; background: #1c2128; border-radius: 6px; margin-bottom: 16px; }
+.task-instruction { font-size: 14px; line-height: 1.6; color: #c9d1d9; padding: 16px; background: #1c2128; border-radius: 6px; }
 .task-meta { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 13px; }
 .task-meta dt { color: #8b949e; font-weight: 600; }
 .task-meta dd { color: #c9d1d9; }
@@ -125,8 +125,13 @@ function showTask() {
   var t = TASK_JSON;
   var html = '<div class="detail-header"><h2>Task: ' + escapeHtml(t.id || 'Unknown') + '</h2></div>';
 
-  // Instruction
-  html += '<div class="section"><h3>Instruction</h3><div class="task-instruction">' + escapeHtml(t.instruction || '') + '</div></div>';
+  // Instruction (collapsible)
+  html += '<div class="section"><h3 class="collapsible open" onclick="toggleCollapse(this)"><span class="arrow">&#9654;</span> Instruction</h3><div class="collapse-content"><div class="task-instruction">' + escapeHtml(t.instruction || '') + '</div></div></div>';
+
+  // Completion Condition (collapsible, shown only if present)
+  if (t.completion_condition) {
+    html += '<div class="section"><h3 class="collapsible open" onclick="toggleCollapse(this)"><span class="arrow">&#9654;</span> Completion Condition</h3><div class="collapse-content"><div class="task-instruction">' + escapeHtml(t.completion_condition) + '</div></div></div>';
+  }
 
   // Metadata summary
   html += '<div class="section"><h3>Details</h3><dl class="task-meta">';

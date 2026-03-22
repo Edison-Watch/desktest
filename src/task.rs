@@ -18,6 +18,10 @@ pub struct TaskDefinition {
     /// Natural language instruction for the agent.
     pub instruction: String,
 
+    /// Optional completion condition — when the agent should consider the task done.
+    #[serde(default)]
+    pub completion_condition: Option<String>,
+
     /// Application to test.
     pub app: AppConfig,
 
