@@ -263,16 +263,35 @@ async fn main() {
                     screenshots_dir_name.as_deref(),
                 );
 
-                // If --overwrite and the task JSON already has a replay_script, write to that path instead
-                let effective_output = if let Some(task_path) = &overwrite {
-                    match task::TaskDefinition::load(task_path) {
-                        Ok(existing) if existing.replay_script.is_some() => {
-                            let task_dir = task_path.parent().unwrap_or(std::path::Path::new("."));
-                            let existing_script = existing.replay_script.unwrap();
-                            let resolved = task_dir.join(&existing_script);
-                            std::borrow::Cow::Owned(resolved)
+                // Load task JSON once if --overwrite is provided (used for both path resolution and update)
+                let overwrite_json: Option<(std::path::PathBuf, serde_json::Value)> = if let Some(task_path) = &overwrite {
+                    let raw = match std::fs::read_to_string(task_path) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            eprintln!("Error reading task JSON for --overwrite: {e}");
+                            std::process::exit(2);
                         }
-                        _ => std::borrow::Cow::Borrowed(output.as_path()),
+                    };
+                    let value: serde_json::Value = match serde_json::from_str(&raw) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            eprintln!("Error parsing task JSON for --overwrite: {e}");
+                            std::process::exit(2);
+                        }
+                    };
+                    Some((task_path.clone(), value))
+                } else {
+                    None
+                };
+
+                // If the task JSON already has a replay_script, write to that path instead
+                let effective_output = if let Some((ref task_path, ref value)) = overwrite_json {
+                    if let Some(existing_script) = value.get("replay_script").and_then(|v| v.as_str()) {
+                        let task_dir = task_path.parent().unwrap_or(std::path::Path::new("."));
+                        let resolved = task_dir.join(existing_script);
+                        std::borrow::Cow::Owned(resolved)
+                    } else {
+                        std::borrow::Cow::Borrowed(output.as_path())
                     }
                 } else {
                     std::borrow::Cow::Borrowed(output.as_path())
@@ -289,40 +308,33 @@ async fn main() {
                     }
                 }
 
-                // Update the task JSON with replay_script path if --overwrite was provided
-                if let Some(task_path) = &overwrite {
-                    match task::TaskDefinition::load(task_path) {
-                        Ok(mut task_def) => {
-                            // Compute relative path from task JSON dir to the script
-                            let task_dir = task_path.parent().unwrap_or(std::path::Path::new("."));
-                            // Try to make a relative path; fall back to the effective output path
-                            let script_abs = std::fs::canonicalize(&*effective_output).unwrap_or_else(|_| effective_output.to_path_buf());
-                            let task_dir_abs = std::fs::canonicalize(task_dir).unwrap_or_else(|_| task_dir.to_path_buf());
-                            let script_rel = script_abs.strip_prefix(&task_dir_abs)
-                                .map(|p| p.to_path_buf())
-                                .unwrap_or_else(|_| effective_output.to_path_buf());
-                            task_def.replay_script = Some(script_rel.to_string_lossy().to_string());
+                // Patch the task JSON with replay_script/replay_screenshots_dir (preserves unknown fields)
+                if let Some((task_path, mut value)) = overwrite_json {
+                    let task_dir = task_path.parent().unwrap_or(std::path::Path::new("."));
+                    let script_abs = std::fs::canonicalize(&*effective_output).unwrap_or_else(|_| effective_output.to_path_buf());
+                    let task_dir_abs = std::fs::canonicalize(task_dir).unwrap_or_else(|_| task_dir.to_path_buf());
+                    let script_rel = script_abs.strip_prefix(&task_dir_abs)
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|_| effective_output.to_path_buf());
 
-                            if *with_screenshots {
-                                let screenshots_dir_name = screenshots_dir_name.as_deref().unwrap_or("desktest_artifacts");
-                                task_def.replay_screenshots_dir = Some(screenshots_dir_name.to_string());
-                            }
+                    let obj = value.as_object_mut().expect("task JSON must be an object");
+                    obj.insert("replay_script".to_string(), serde_json::Value::String(script_rel.to_string_lossy().to_string()));
 
-                            // Write back as pretty JSON
-                            let json = serde_json::to_string_pretty(&task_def).expect("serialize task");
-                            match std::fs::write(task_path, json) {
-                                Ok(()) => {
-                                    println!("Updated {} with replay_script", task_path.display());
-                                }
-                                Err(e) => {
-                                    eprintln!("Error updating task JSON: {e}");
-                                    std::process::exit(3);
-                                }
-                            }
+                    if *with_screenshots {
+                        let dir_name = screenshots_dir_name.as_deref().unwrap_or("desktest_artifacts");
+                        obj.insert("replay_screenshots_dir".to_string(), serde_json::Value::String(dir_name.to_string()));
+                    } else {
+                        obj.remove("replay_screenshots_dir");
+                    }
+
+                    let json = serde_json::to_string_pretty(&value).expect("serialize task JSON");
+                    match std::fs::write(&task_path, json) {
+                        Ok(()) => {
+                            println!("Updated {} with replay_script", task_path.display());
                         }
                         Err(e) => {
-                            eprintln!("Error loading task JSON for --overwrite: {e}");
-                            std::process::exit(e.exit_code());
+                            eprintln!("Error updating task JSON: {e}");
+                            std::process::exit(3);
                         }
                     }
                 }

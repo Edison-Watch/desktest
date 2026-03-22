@@ -274,6 +274,8 @@ impl TaskDefinition {
         match &mut self.evaluator {
             Some(evaluator) => {
                 evaluator.mode = EvaluatorMode::Programmatic;
+                // Remove any existing ScriptReplay metrics to avoid duplicates
+                evaluator.metrics.retain(|m| !matches!(m, MetricConfig::ScriptReplay { .. }));
                 evaluator.metrics.insert(0, replay_metric);
             }
             None => {
