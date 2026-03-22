@@ -102,6 +102,8 @@ fn build_steps_json(entries: &[TrajectoryRecord], artifacts_dir: &Path) -> Strin
                 "action_code": entry.action_code,
                 "result": entry.result,
                 "screenshot": screenshot_b64,
+                "bash_output": entry.bash_output,
+                "error_feedback": entry.error_feedback,
             })
         })
         .collect();
@@ -170,6 +172,8 @@ mod tests {
             thought: Some("Click button".into()),
             screenshot_path: None,
             result: "success".into(),
+            bash_output: None,
+            error_feedback: None,
         }];
         let json = build_steps_json(&entries, dir.path());
         assert!(json.contains("Click button"));

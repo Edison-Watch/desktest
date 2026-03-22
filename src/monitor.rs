@@ -24,6 +24,12 @@ pub enum MonitorEvent {
         result: String,
         screenshot_base64: Option<String>,
         timestamp: String,
+        /// Captured bash command stdout/stderr (only present when --with-bash is enabled).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        bash_output: Option<String>,
+        /// Error feedback from execution failures (bash or Python).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error_feedback: Option<String>,
     },
     /// Emitted when a test finishes.
     TestComplete {

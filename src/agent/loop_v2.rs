@@ -161,6 +161,8 @@ impl<'a> AgentLoopV2<'a> {
                     &current_observation,
                     "timeout",
                     None,
+                    None,
+                    None,
                 );
                 self.save_conversation_log();
                 let reasoning = format!(
@@ -185,6 +187,8 @@ impl<'a> AgentLoopV2<'a> {
                     &[],
                     &current_observation,
                     "max_steps",
+                    None,
+                    None,
                     None,
                 );
                 self.save_conversation_log();
@@ -259,13 +263,23 @@ impl<'a> AgentLoopV2<'a> {
                             &current_observation,
                             "done",
                             Some(&response_text),
+                            turn_result.bash_output.as_deref(),
+                            turn_result.error_feedback.as_deref(),
                         );
-                        self.publish_step_event(step_index, &response_text, &all_blocks, &current_observation, "done");
+                        self.publish_step_event(
+                            step_index,
+                            &response_text,
+                            &all_blocks,
+                            &current_observation,
+                            "done",
+                            turn_result.bash_output.as_deref(),
+                            turn_result.error_feedback.as_deref(),
+                        );
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
-                            error_feedback: None,
-                            bash_output: None,
+                            error_feedback: turn_result.error_feedback.clone(),
+                            bash_output: turn_result.bash_output.clone(),
                         });
                         self.save_conversation_log();
                         let reasoning = extract_reasoning(&response_text);
@@ -285,13 +299,23 @@ impl<'a> AgentLoopV2<'a> {
                             &current_observation,
                             "fail",
                             Some(&response_text),
+                            turn_result.bash_output.as_deref(),
+                            turn_result.error_feedback.as_deref(),
                         );
-                        self.publish_step_event(step_index, &response_text, &all_blocks, &current_observation, "fail");
+                        self.publish_step_event(
+                            step_index,
+                            &response_text,
+                            &all_blocks,
+                            &current_observation,
+                            "fail",
+                            turn_result.bash_output.as_deref(),
+                            turn_result.error_feedback.as_deref(),
+                        );
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
-                            error_feedback: None,
-                            bash_output: None,
+                            error_feedback: turn_result.error_feedback.clone(),
+                            bash_output: turn_result.bash_output.clone(),
                         });
                         self.save_conversation_log();
                         let reasoning = extract_reasoning(&response_text);
@@ -311,13 +335,23 @@ impl<'a> AgentLoopV2<'a> {
                             &current_observation,
                             "wait",
                             Some(&response_text),
+                            turn_result.bash_output.as_deref(),
+                            turn_result.error_feedback.as_deref(),
                         );
-                        self.publish_step_event(step_index, &response_text, &all_blocks, &current_observation, "wait");
+                        self.publish_step_event(
+                            step_index,
+                            &response_text,
+                            &all_blocks,
+                            &current_observation,
+                            "wait",
+                            turn_result.bash_output.as_deref(),
+                            turn_result.error_feedback.as_deref(),
+                        );
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
-                            error_feedback: None,
-                            bash_output: None,
+                            error_feedback: turn_result.error_feedback.clone(),
+                            bash_output: turn_result.bash_output.clone(),
                         });
                         // Re-observe without executing any code
                         current_observation =
@@ -348,8 +382,18 @@ impl<'a> AgentLoopV2<'a> {
                 &current_observation,
                 &result_str,
                 Some(&response_text),
+                turn_result.bash_output.as_deref(),
+                turn_result.error_feedback.as_deref(),
             );
-            self.publish_step_event(step_index, &response_text, &all_blocks, &current_observation, &result_str);
+            self.publish_step_event(
+                step_index,
+                &response_text,
+                &all_blocks,
+                &current_observation,
+                &result_str,
+                turn_result.bash_output.as_deref(),
+                turn_result.error_feedback.as_deref(),
+            );
 
             // Record the turn in trajectory
             self.context.push_turn(TrajectoryTurn {
@@ -479,12 +523,16 @@ impl<'a> AgentLoopV2<'a> {
                 match command {
                     SpecialCommand::Done => {
                         println!("  => Agent signalled DONE");
-                        self.log_trajectory_entry(step_index, &response_text, &all_blocks, &current_observation, "done", Some(&response_text));
+                        self.log_trajectory_entry(
+                            step_index, &response_text, &all_blocks, &current_observation,
+                            "done", Some(&response_text),
+                            turn_result.bash_output.as_deref(), turn_result.error_feedback.as_deref(),
+                        );
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
-                            error_feedback: None,
-                            bash_output: None,
+                            error_feedback: turn_result.error_feedback.clone(),
+                            bash_output: turn_result.bash_output.clone(),
                         });
                         self.save_conversation_log();
                         return Ok(AgentOutcome {
@@ -495,12 +543,16 @@ impl<'a> AgentLoopV2<'a> {
                     }
                     SpecialCommand::Fail => {
                         println!("  => Agent signalled FAIL");
-                        self.log_trajectory_entry(step_index, &response_text, &all_blocks, &current_observation, "fail", Some(&response_text));
+                        self.log_trajectory_entry(
+                            step_index, &response_text, &all_blocks, &current_observation,
+                            "fail", Some(&response_text),
+                            turn_result.bash_output.as_deref(), turn_result.error_feedback.as_deref(),
+                        );
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
-                            error_feedback: None,
-                            bash_output: None,
+                            error_feedback: turn_result.error_feedback.clone(),
+                            bash_output: turn_result.bash_output.clone(),
                         });
                         self.save_conversation_log();
                         return Ok(AgentOutcome {
@@ -511,12 +563,16 @@ impl<'a> AgentLoopV2<'a> {
                     }
                     SpecialCommand::Wait => {
                         println!("  => Agent signalled WAIT, re-observing...");
-                        self.log_trajectory_entry(step_index, &response_text, &all_blocks, &current_observation, "wait", Some(&response_text));
+                        self.log_trajectory_entry(
+                            step_index, &response_text, &all_blocks, &current_observation,
+                            "wait", Some(&response_text),
+                            turn_result.bash_output.as_deref(), turn_result.error_feedback.as_deref(),
+                        );
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
-                            error_feedback: None,
-                            bash_output: None,
+                            error_feedback: turn_result.error_feedback.clone(),
+                            bash_output: turn_result.bash_output.clone(),
                         });
                         current_observation = self.capture_observation_for_step(step_index).await?;
                         execution_elapsed += step_start.elapsed();
@@ -535,7 +591,7 @@ impl<'a> AgentLoopV2<'a> {
                 format!("error:{err}")
             };
 
-            self.log_trajectory_entry(step_index, &response_text, &all_blocks, &current_observation, &result_str, Some(&response_text));
+            self.log_trajectory_entry(step_index, &response_text, &all_blocks, &current_observation, &result_str, Some(&response_text), turn_result.bash_output.as_deref(), turn_result.error_feedback.as_deref());
             self.context.push_turn(TrajectoryTurn {
                 observation: current_observation,
                 response_text: response_text.clone(),
@@ -557,6 +613,8 @@ impl<'a> AgentLoopV2<'a> {
         code_blocks: &[String],
         observation: &Observation,
         result: &str,
+        bash_output: Option<&str>,
+        error_feedback: Option<&str>,
     ) {
         if let Some(ref m) = self.monitor {
             let thought = crate::trajectory::extract_thought(response_text, code_blocks);
@@ -572,6 +630,8 @@ impl<'a> AgentLoopV2<'a> {
                 result: result.to_string(),
                 screenshot_base64,
                 timestamp,
+                bash_output: bash_output.map(|s| s.to_string()),
+                error_feedback: error_feedback.map(|s| s.to_string()),
             });
         }
     }
@@ -597,6 +657,8 @@ impl<'a> AgentLoopV2<'a> {
         observation: &Observation,
         result: &str,
         raw_response: Option<&str>,
+        bash_output: Option<&str>,
+        error_feedback: Option<&str>,
     ) {
         if let Some(ref mut trajectory) = self.trajectory {
             let entry = trajectory.build_entry(
@@ -607,6 +669,8 @@ impl<'a> AgentLoopV2<'a> {
                 observation.a11y_tree_text.as_deref(),
                 result,
                 raw_response,
+                bash_output,
+                error_feedback,
             );
             trajectory.log_entry(&entry);
         }
