@@ -216,7 +216,9 @@ For an interactive visual viewer, use `desktest review` instead.\n\n\
 EXAMPLES:
   desktest logs desktest_artifacts/
   desktest logs desktest_artifacts/ --brief
-  desktest logs desktest_artifacts/ --step 3")]
+  desktest logs desktest_artifacts/ --step 3
+  desktest logs desktest_artifacts/ --steps 3-7
+  desktest logs desktest_artifacts/ --steps 1,3,5-8")]
     Logs {
         /// Path to artifacts directory containing trajectory.jsonl
         artifacts_dir: std::path::PathBuf,
@@ -226,8 +228,12 @@ EXAMPLES:
         brief: bool,
 
         /// Show only a specific step number
-        #[arg(long)]
+        #[arg(long, conflicts_with = "steps")]
         step: Option<usize>,
+
+        /// Show specific step numbers and ranges (comma-separated, e.g. "1,3,5-8")
+        #[arg(long, conflicts_with = "step")]
+        steps: Option<String>,
     },
 
     /// Generate an interactive HTML trajectory viewer (best for human review in a browser)

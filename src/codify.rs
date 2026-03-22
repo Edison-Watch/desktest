@@ -83,11 +83,13 @@ pub fn generate_replay_script(
     script.push_str("\n");
 
     // Filter entries
+    let filter_set: Option<std::collections::HashSet<usize>> =
+        steps.map(|s| s.iter().copied().collect());
     let filtered: Vec<&TrajectoryRecord> = entries
         .iter()
         .filter(|e| {
-            if let Some(step_filter) = steps {
-                step_filter.contains(&e.step)
+            if let Some(ref set) = filter_set {
+                set.contains(&e.step)
             } else {
                 // By default, include only successful action steps
                 e.result == "success" || e.result == "done"
@@ -96,8 +98,8 @@ pub fn generate_replay_script(
         .filter(|e| {
             let keep = !e.action_code.trim().is_empty();
             if !keep {
-                if let Some(step_filter) = steps {
-                    if step_filter.contains(&e.step) {
+                if let Some(ref set) = filter_set {
+                    if set.contains(&e.step) {
                         eprintln!("Warning: step {} has empty action_code and will be skipped", e.step);
                     }
                 }
@@ -213,16 +215,37 @@ pub fn generate_replay_script(
     (script, count)
 }
 
-/// Parse a comma-separated list of step numbers.
+/// Parse a comma-separated list of step numbers and ranges (e.g. "1,3,5-8").
 pub fn parse_steps(steps_str: &str) -> Result<Vec<usize>, AppError> {
-    steps_str
-        .split(',')
-        .map(|s| {
-            s.trim()
-                .parse::<usize>()
-                .map_err(|e| AppError::Config(format!("Invalid step number '{s}': {e}")))
-        })
-        .collect()
+    let mut result = Vec::new();
+    for part in steps_str.split(',') {
+        let part = part.trim();
+        if let Some((start_str, end_str)) = part.split_once('-') {
+            if start_str.trim().is_empty() || end_str.trim().is_empty() {
+                return Err(AppError::Config(format!(
+                    "Invalid step range '{part}': expected format N-M"
+                )));
+            }
+            let start: usize = start_str.trim().parse().map_err(|e| {
+                AppError::Config(format!("Invalid step number '{start_str}': {e}"))
+            })?;
+            let end: usize = end_str.trim().parse().map_err(|e| {
+                AppError::Config(format!("Invalid step number '{end_str}': {e}"))
+            })?;
+            if start > end {
+                return Err(AppError::Config(format!(
+                    "Invalid step range '{part}': start ({start}) is greater than end ({end})"
+                )));
+            }
+            result.extend(start..=end);
+        } else {
+            let n: usize = part.parse().map_err(|e| {
+                AppError::Config(format!("Invalid step number '{part}': {e}"))
+            })?;
+            result.push(n);
+        }
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -306,8 +329,43 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_steps_with_range() {
+        let steps = parse_steps("3-7").unwrap();
+        assert_eq!(steps, vec![3, 4, 5, 6, 7]);
+    }
+
+    #[test]
+    fn test_parse_steps_mixed_ranges_and_singles() {
+        let steps = parse_steps("1,3,5-8").unwrap();
+        assert_eq!(steps, vec![1, 3, 5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn test_parse_steps_single_element_range() {
+        let steps = parse_steps("5-5").unwrap();
+        assert_eq!(steps, vec![5]);
+    }
+
+    #[test]
+    fn test_parse_steps_invalid_range() {
+        assert!(parse_steps("7-3").is_err());
+    }
+
+    #[test]
     fn test_parse_steps_invalid() {
         assert!(parse_steps("1,abc,3").is_err());
+    }
+
+    #[test]
+    fn test_parse_steps_leading_dash() {
+        let err = parse_steps("-5").unwrap_err();
+        assert!(err.to_string().contains("expected format N-M"));
+    }
+
+    #[test]
+    fn test_parse_steps_trailing_dash() {
+        let err = parse_steps("5-").unwrap_err();
+        assert!(err.to_string().contains("expected format N-M"));
     }
 
     #[test]
