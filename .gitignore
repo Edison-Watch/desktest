@@ -14,3 +14,12 @@ instructions.md
 # desktest CLI artifacts
 desktest_replay.py
 desktest_review.html
+eyetest_review.html
+
+# Build artifacts and binaries
+artifacts/
+desktest-linux-*
+desktest-darwin-*
+
+# Install script
+install
