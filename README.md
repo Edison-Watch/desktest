@@ -44,7 +44,8 @@ Use desktest as the eyes for your coding agent. You watch the test live, then ha
 
 ```
 1. RUN       →  desktest run task.json --monitor     # Watch the agent live in the browser
-2. DIAGNOSE  →  desktest logs desktest_artifacts/    # Hand off to your coding agent for analysis
+2. DIAGNOSE  →  desktest logs desktest_artifacts/              # Hand off to your coding agent for analysis
+                desktest logs desktest_artifacts/ --steps 3-7  # Or drill into specific steps
 3. FIX       →  Coding agent reads the logs, diagnoses the issue, and fixes the code
 4. RERUN     →  desktest run task.json --monitor     # Verify the fix
 ```
@@ -139,7 +140,7 @@ Commands:
   validate      Check task JSON against schema without running
   codify        Convert trajectory to deterministic Python replay script
   review        Generate web-based trajectory review viewer
-  logs          View trajectory logs in the terminal
+  logs          View trajectory logs in the terminal (supports --step N or --steps N-M)
 
 Options:
   --config <FILE>        Config JSON file (optional; API key can come from env vars)

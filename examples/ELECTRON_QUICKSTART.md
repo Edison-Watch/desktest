@@ -166,8 +166,9 @@ Convert a successful trajectory into a deterministic replay script:
 # Generate replay script from all successful steps
 desktest codify test-results/trajectory.jsonl --output test_replay.py
 
-# Or select specific steps from the review UI
+# Or select specific steps (supports ranges)
 desktest codify test-results/trajectory.jsonl --steps 1,2,5,6 --output test_replay.py
+desktest codify test-results/trajectory.jsonl --steps 1-3,5-8 --output test_replay.py
 ```
 
 ## Step 7: Run the Codified Test

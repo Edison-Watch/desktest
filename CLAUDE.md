@@ -19,6 +19,7 @@ cargo run -- suite examples/                   # Run test suite
 cargo run -- interactive task.json             # Interactive debugging
 cargo run -- attach task.json --container ID  # Attach to existing container
 cargo run -- logs desktest_artifacts/          # View trajectory in terminal
+cargo run -- logs desktest_artifacts/ --steps 3-7  # View specific step range
 cargo test                                     # All non-ignored tests
 cargo test -- --ignored --test-threads=1       # Integration tests (require Docker)
 ```
