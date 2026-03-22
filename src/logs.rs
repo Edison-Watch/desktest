@@ -12,6 +12,10 @@ pub fn print_logs(artifacts_dir: &Path, brief: bool, step: Option<usize>) -> Res
     let trajectory_path = artifacts_dir.join("trajectory.jsonl");
     let entries = codify::load_trajectory(&trajectory_path)?;
 
+    if brief && step.is_some() {
+        return Err(AppError::Config("--brief and --step cannot be used together".into()));
+    }
+
     if entries.is_empty() {
         println!("No trajectory entries found.");
         return Ok(());
@@ -37,10 +41,6 @@ pub fn print_logs(artifacts_dir: &Path, brief: bool, step: Option<usize>) -> Res
         println!("Duration:   {dur}");
     }
     println!();
-
-    if brief && step.is_some() {
-        return Err(AppError::Config("--brief and --step cannot be used together".into()));
-    }
 
     if brief {
         print_brief(&entries);
