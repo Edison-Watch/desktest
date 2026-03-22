@@ -160,7 +160,7 @@ fn parse_timestamp_secs(ts: &str) -> Option<u64> {
     let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
     let leap_offset: u64 = if is_leap && month > 2 { 1 } else { 0 };
     // Use year-1 for leap day accumulation so current year's leap day isn't double-counted
-    let yp = year - 1;
+    let yp = year.saturating_sub(1);
     let days = year * 365 + yp / 4 - yp / 100 + yp / 400 + MONTH_DAYS[month_idx] + day + leap_offset;
     let raw_secs = (days * 86400 + hour * 3600 + min * 60 + sec) as i64;
     // Apply timezone offset to get UTC-relative seconds
