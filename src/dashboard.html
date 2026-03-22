@@ -61,6 +61,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .task-meta { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 13px; }
 .task-meta dt { color: #8b949e; font-weight: 600; }
 .task-meta dd { color: #c9d1d9; }
+.collapsible { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px; }
+.collapsible:hover { color: #c9d1d9; }
+.collapsible .arrow { font-size: 10px; transition: transform 0.15s; display: inline-block; }
+.collapsible.open .arrow { transform: rotate(90deg); }
+.collapse-content { margin-top: 12px; }
 </style>
 </head>
 <body>
@@ -173,6 +178,12 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+function toggleCollapse(el) {
+  el.classList.toggle('open');
+  var content = el.nextElementSibling;
+  if (content) content.style.display = content.style.display === 'none' ? '' : 'none';
+}
+
 function showRecording() {
   document.querySelectorAll('.step-item').forEach(function(el) { el.classList.remove('active'); });
   var taskNav = document.getElementById('task-nav');
@@ -205,6 +216,14 @@ function selectStep(index) {
 
   if (s.action_code) {
     html += '<div class="section"><h3>Action Code</h3><pre>' + escapeHtml(s.action_code) + '</pre></div>';
+  }
+
+  if (s.bash_output) {
+    html += '<div class="section"><h3 class="collapsible" onclick="toggleCollapse(this)"><span class="arrow">&#9654;</span> Bash Output</h3><pre class="collapse-content" style="display:none">' + escapeHtml(s.bash_output) + '</pre></div>';
+  }
+
+  if (s.error_feedback) {
+    html += '<div class="section"><h3 class="collapsible" onclick="toggleCollapse(this)"><span class="arrow">&#9654;</span> Error Details</h3><pre class="collapse-content" style="display:none">' + escapeHtml(s.error_feedback) + '</pre></div>';
   }
 
   mainPanel.innerHTML = html;
@@ -309,7 +328,9 @@ if (MODE === 'live') {
       action_code: data.action_code,
       result: data.result,
       screenshot: data.screenshot_base64,
-      timestamp: data.timestamp
+      timestamp: data.timestamp,
+      bash_output: data.bash_output,
+      error_feedback: data.error_feedback
     };
     var index = STEPS.length;
     STEPS.push(step);

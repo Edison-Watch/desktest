@@ -35,6 +35,12 @@ pub struct TrajectoryEntry {
     /// Full raw LLM response (only included with --verbose flag).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub llm_raw_response: Option<String>,
+    /// Captured bash command stdout/stderr (only present when --with-bash is enabled).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bash_output: Option<String>,
+    /// Error feedback from execution failures (bash or Python).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_feedback: Option<String>,
 }
 
 /// Incremental trajectory logger that writes JSONL (one JSON object per line).
@@ -96,6 +102,8 @@ impl TrajectoryLogger {
         a11y_tree_text: Option<&str>,
         result: &str,
         raw_response: Option<&str>,
+        bash_output: Option<&str>,
+        error_feedback: Option<&str>,
     ) -> TrajectoryEntry {
         let action_code = code_blocks.join("\n\n");
         let thought = extract_thought(response_text, code_blocks);
@@ -138,6 +146,8 @@ impl TrajectoryLogger {
             a11y_tree_path,
             result: result.to_string(),
             llm_raw_response,
+            bash_output: bash_output.map(|s| s.to_string()),
+            error_feedback: error_feedback.map(|s| s.to_string()),
         }
     }
 }
@@ -317,6 +327,8 @@ mod tests {
             a11y_tree_path: Some("step_001_a11y.txt".to_string()),
             result: "success".to_string(),
             llm_raw_response: None,
+            bash_output: None,
+            error_feedback: None,
         };
 
         let json = serde_json::to_string(&entry).unwrap();
@@ -339,6 +351,8 @@ mod tests {
             a11y_tree_path: None,
             result: "error:timeout".to_string(),
             llm_raw_response: Some("Full LLM response here".to_string()),
+            bash_output: None,
+            error_feedback: None,
         };
 
         let json = serde_json::to_string(&entry).unwrap();
@@ -360,6 +374,8 @@ mod tests {
                 a11y_tree_path: None,
                 result: result_str.to_string(),
                 llm_raw_response: None,
+                bash_output: None,
+                error_feedback: None,
             };
             let json = serde_json::to_string(&entry).unwrap();
             assert!(json.contains(&format!("\"result\":\"{result_str}\"")));
@@ -378,13 +394,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // Non-verbose: build_entry should NOT include raw response
         let logger = TrajectoryLogger::new(dir.path(), false).unwrap();
-        let entry = logger.build_entry(1, "text", &[], None, None, "done", Some("raw"));
+        let entry = logger.build_entry(1, "text", &[], None, None, "done", Some("raw"), None, None);
         assert!(entry.llm_raw_response.is_none());
 
         // Verbose: build_entry SHOULD include raw response
         let dir2 = tempfile::tempdir().unwrap();
         let logger2 = TrajectoryLogger::new(dir2.path(), true).unwrap();
-        let entry2 = logger2.build_entry(1, "text", &[], None, None, "done", Some("raw"));
+        let entry2 = logger2.build_entry(1, "text", &[], None, None, "done", Some("raw"), None, None);
         assert!(entry2.llm_raw_response.is_some());
     }
 
@@ -402,6 +418,8 @@ mod tests {
             a11y_tree_path: None,
             result: "success".to_string(),
             llm_raw_response: None,
+            bash_output: None,
+            error_feedback: None,
         };
 
         let entry2 = TrajectoryEntry {
@@ -413,6 +431,8 @@ mod tests {
             a11y_tree_path: None,
             result: "done".to_string(),
             llm_raw_response: None,
+            bash_output: None,
+            error_feedback: None,
         };
 
         logger.log_entry(&entry1);
@@ -445,6 +465,8 @@ mod tests {
             None,
             "success",
             Some("full response"),
+            None,
+            None,
         );
 
         assert_eq!(entry.step, 1);
@@ -469,6 +491,8 @@ mod tests {
             None,
             "done",
             Some("full LLM response"),
+            None,
+            None,
         );
 
         assert!(entry.llm_raw_response.is_some());
@@ -488,6 +512,8 @@ mod tests {
             None,
             Some(a11y_text),
             "success",
+            None,
+            None,
             None,
         );
 
@@ -539,6 +565,8 @@ mod tests {
             None,
             None,
             "success",
+            None,
+            None,
             None,
         );
 

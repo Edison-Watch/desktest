@@ -20,6 +20,10 @@ pub struct TrajectoryRecord {
     #[serde(default)]
     pub screenshot_path: Option<String>,
     pub result: String,
+    #[serde(default)]
+    pub bash_output: Option<String>,
+    #[serde(default)]
+    pub error_feedback: Option<String>,
 }
 
 /// Load trajectory entries from a JSONL file.
@@ -234,6 +238,8 @@ mod tests {
                 thought: Some("Click the button".into()),
                 screenshot_path: Some("step_001.png".into()),
                 result: "success".into(),
+                bash_output: None,
+                error_feedback: None,
             },
             TrajectoryRecord {
                 step: 2,
@@ -242,6 +248,8 @@ mod tests {
                 thought: Some("Type hello".into()),
                 screenshot_path: Some("step_002.png".into()),
                 result: "success".into(),
+                bash_output: None,
+                error_feedback: None,
             },
             TrajectoryRecord {
                 step: 3,
@@ -250,6 +258,8 @@ mod tests {
                 thought: Some("Task complete".into()),
                 screenshot_path: None,
                 result: "done".into(),
+                bash_output: None,
+                error_feedback: None,
             },
         ]
     }
