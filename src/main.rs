@@ -9,6 +9,7 @@ mod error;
 mod evaluator;
 mod input;
 mod interactive;
+mod logs;
 mod monitor;
 mod monitor_server;
 mod observation;
@@ -309,6 +310,15 @@ async fn main() {
                         println!("{outcome}");
                         std::process::exit(if outcome.passed { 0 } else { 1 });
                     }
+                    Err(e) => {
+                        eprintln!("Error: {e}");
+                        std::process::exit(e.exit_code());
+                    }
+                }
+            }
+            Command::Logs { artifacts_dir, brief, step } => {
+                match logs::print_logs(artifacts_dir, *brief, *step) {
+                    Ok(()) => std::process::exit(0),
                     Err(e) => {
                         eprintln!("Error: {e}");
                         std::process::exit(e.exit_code());

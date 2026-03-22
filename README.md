@@ -19,7 +19,11 @@ Desktest is a CLI tool for automated end-to-end testing of Linux desktop applica
 - **[Attach mode](docs/attach-mode.md)**: connect to an already-running container for integration with external orchestration
 - **QA mode** (`--qa`): agent reports application bugs it encounters as structured markdown reports
 
-## Developer Workflow
+## Developer Workflows
+
+### Workflow 1: Test Authoring (Explore → Codify → CI)
+
+Build deterministic regression tests by watching an LLM agent explore your app, then converting the trajectory into a replayable script:
 
 ```
 1. EXPLORE   →  desktest run task.json --monitor  # LLM agent explores your app (watch live!)
@@ -33,6 +37,19 @@ Desktest is a CLI tool for automated end-to-end testing of Linux desktop applica
 > ```json
 > { "type": "script_replay", "script_path": "desktest_replay.py" }
 > ```
+
+### Workflow 2: Live Monitoring + Agent-Assisted Debugging
+
+Use desktest as the eyes for your coding agent. You watch the test live, then hand off investigation to your coding agent (e.g. Claude Code) via the CLI-friendly `logs` command:
+
+```
+1. RUN       →  desktest run task.json --monitor     # Watch the agent live in the browser
+2. DIAGNOSE  →  desktest logs desktest_artifacts/    # Hand off to your coding agent for analysis
+3. FIX       →  Coding agent reads the logs, diagnoses the issue, and fixes the code
+4. RERUN     →  desktest run task.json --monitor     # Verify the fix
+```
+
+`--monitor` is designed for human eyes (real-time web dashboard), while `logs` is designed for agent consumption (structured terminal output). Together they close the loop between observing a failure and fixing it.
 
 ## Architecture
 
@@ -122,6 +139,7 @@ Commands:
   validate      Check task JSON against schema without running
   codify        Convert trajectory to deterministic Python replay script
   review        Generate web-based trajectory review viewer
+  logs          View trajectory logs in the terminal
 
 Options:
   --config <FILE>        Config JSON file (optional; API key can come from env vars)
@@ -132,7 +150,7 @@ Options:
   --monitor              Enable live monitoring web dashboard
   --monitor-port <PORT>  Port for the monitoring dashboard (default: 7860)
   --qa                   Enable QA mode: agent reports app bugs during testing
-  --with-bash            Allow agent to run bash commands for debugging
+  --with-bash            Allow the agent to run bash commands inside the container (disabled by default)
 ```
 
 ## Task Definition
