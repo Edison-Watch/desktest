@@ -8,7 +8,7 @@ Desktest is a CLI tool for automated end-to-end testing of Linux desktop applica
 
 Copy-paste the following prompt into Claude Code (or any coding agent) to install desktest and set up the agent skill:
 
-> Install the desktest CLI by running `curl -fsSL https://raw.githubusercontent.com/Edison-Watch/desktest/master/install.sh | sh`. Then copy `skills/claude-code-skill.md` from the desktest repo (https://raw.githubusercontent.com/Edison-Watch/desktest/master/skills/claude-code-skill.md) to `~/.claude/skills/desktest/SKILL.md` so you have context on how to use it.
+> Install the desktest CLI by running `curl -fsSL https://raw.githubusercontent.com/Edison-Watch/desktest/master/install.sh | sh`. Then copy `skills/desktest-skill.md` from the desktest repo (https://raw.githubusercontent.com/Edison-Watch/desktest/master/skills/desktest-skill.md) to `~/.claude/skills/desktest/SKILL.md` so you have context on how to use it.
 
 ## Features
 
