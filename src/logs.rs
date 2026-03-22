@@ -119,23 +119,27 @@ fn compute_duration(entries: &[codify::TrajectoryRecord]) -> Option<String> {
     }
 }
 
-/// Parse an ISO 8601 / RFC 3339 timestamp into epoch seconds (best effort).
+/// Parse an ISO 8601 / RFC 3339 timestamp into approximate epoch seconds.
 fn parse_timestamp_secs(ts: &str) -> Option<u64> {
     // Expected format: 2026-02-26T12:00:01Z or 2026-02-26T12:00:01+00:00
     let ts = ts.trim();
-    let date_time = ts.strip_suffix('Z').or_else(|| {
-        // Strip timezone offset like +00:00 or -05:00
-        if ts.len() > 6 {
-            let tail = &ts[ts.len() - 6..];
-            if (tail.starts_with('+') || tail.starts_with('-')) && tail.as_bytes()[3] == b':' {
-                Some(&ts[..ts.len() - 6])
-            } else {
-                None
-            }
+
+    // Parse timezone offset (seconds from UTC), then strip it from the timestamp
+    let (date_time, offset_secs): (&str, i64) = if let Some(dt) = ts.strip_suffix('Z') {
+        (dt, 0)
+    } else if ts.len() > 6 {
+        let tail = &ts[ts.len() - 6..];
+        if (tail.starts_with('+') || tail.starts_with('-')) && tail.as_bytes()[3] == b':' {
+            let sign: i64 = if tail.starts_with('-') { -1 } else { 1 };
+            let oh: i64 = tail[1..3].parse().ok()?;
+            let om: i64 = tail[4..6].parse().ok()?;
+            (&ts[..ts.len() - 6], sign * (oh * 3600 + om * 60))
         } else {
-            None
+            return None;
         }
-    })?;
+    } else {
+        return None;
+    };
 
     let (date, time) = date_time.split_once('T')?;
     let mut date_parts = date.split('-');
@@ -150,13 +154,18 @@ fn parse_timestamp_secs(ts: &str) -> Option<u64> {
     let sec_str = time_parts.next()?;
     let sec: u64 = sec_str.split('.').next()?.parse().ok()?;
 
-    // Accumulated days at the start of each month (non-leap year approximation)
+    // Accumulated days at the start of each month (non-leap year)
     const MONTH_DAYS: [u64; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
     let month_idx = (month.saturating_sub(1) as usize).min(11);
     let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
     let leap_offset: u64 = if is_leap && month > 2 { 1 } else { 0 };
-    let days = year * 365 + year / 4 - year / 100 + year / 400 + MONTH_DAYS[month_idx] + day + leap_offset;
-    Some(days * 86400 + hour * 3600 + min * 60 + sec)
+    // Use year-1 for leap day accumulation so current year's leap day isn't double-counted
+    let yp = year - 1;
+    let days = year * 365 + yp / 4 - yp / 100 + yp / 400 + MONTH_DAYS[month_idx] + day + leap_offset;
+    let raw_secs = (days * 86400 + hour * 3600 + min * 60 + sec) as i64;
+    // Apply timezone offset to get UTC-relative seconds
+    let utc_secs = raw_secs - offset_secs;
+    Some(utc_secs.max(0) as u64)
 }
 
 fn load_task_id(artifacts_dir: &Path) -> Option<String> {
