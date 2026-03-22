@@ -258,6 +258,7 @@ impl<'a> AgentLoopV2<'a> {
                             observation: current_observation,
                             response_text: response_text.clone(),
                             error_feedback: None,
+                            bash_output: None,
                         });
                         self.save_conversation_log();
                         let reasoning = extract_reasoning(&response_text);
@@ -283,6 +284,7 @@ impl<'a> AgentLoopV2<'a> {
                             observation: current_observation,
                             response_text: response_text.clone(),
                             error_feedback: None,
+                            bash_output: None,
                         });
                         self.save_conversation_log();
                         let reasoning = extract_reasoning(&response_text);
@@ -308,6 +310,7 @@ impl<'a> AgentLoopV2<'a> {
                             observation: current_observation,
                             response_text: response_text.clone(),
                             error_feedback: None,
+                            bash_output: None,
                         });
                         // Re-observe without executing any code
                         current_observation =
@@ -346,6 +349,7 @@ impl<'a> AgentLoopV2<'a> {
                 observation: current_observation,
                 response_text: response_text.clone(),
                 error_feedback: turn_result.error_feedback.clone(),
+                bash_output: turn_result.bash_output.clone(),
             });
 
             // If no code blocks were extracted (text-only response without special commands)
@@ -467,6 +471,7 @@ impl<'a> AgentLoopV2<'a> {
                             observation: current_observation,
                             response_text: response_text.clone(),
                             error_feedback: None,
+                            bash_output: None,
                         });
                         self.save_conversation_log();
                         return Ok(AgentOutcome {
@@ -482,6 +487,7 @@ impl<'a> AgentLoopV2<'a> {
                             observation: current_observation,
                             response_text: response_text.clone(),
                             error_feedback: None,
+                            bash_output: None,
                         });
                         self.save_conversation_log();
                         return Ok(AgentOutcome {
@@ -497,6 +503,7 @@ impl<'a> AgentLoopV2<'a> {
                             observation: current_observation,
                             response_text: response_text.clone(),
                             error_feedback: None,
+                            bash_output: None,
                         });
                         current_observation = self.capture_observation_for_step(step_index).await?;
                         execution_elapsed += step_start.elapsed();
@@ -520,6 +527,7 @@ impl<'a> AgentLoopV2<'a> {
                 observation: current_observation,
                 response_text: response_text.clone(),
                 error_feedback: turn_result.error_feedback.clone(),
+                bash_output: turn_result.bash_output.clone(),
             });
 
             // Capture new observation

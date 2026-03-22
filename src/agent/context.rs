@@ -21,6 +21,8 @@ pub struct TrajectoryTurn {
     pub response_text: String,
     /// Error feedback from action execution (if any).
     pub error_feedback: Option<String>,
+    /// Captured bash command output (if any bash blocks were executed).
+    pub bash_output: Option<String>,
 }
 
 /// Manages sliding window context for the v2 agent loop.
@@ -95,6 +97,13 @@ impl ContextManager {
                 tool_calls: None,
                 tool_call_id: None,
             });
+
+            // Bash output (if any)
+            if let Some(ref output) = turn.bash_output {
+                messages.push(user_message(&format!(
+                    "Bash command output:\n{output}"
+                )));
+            }
 
             // Error feedback (if any)
             if let Some(ref feedback) = turn.error_feedback {
@@ -471,6 +480,7 @@ mod tests {
             observation: make_screenshot_observation(),
             response_text: "I see a button. I'll click it.".into(),
             error_feedback: None,
+            bash_output: None,
         });
 
         let obs = make_full_observation();
@@ -492,6 +502,7 @@ mod tests {
             observation: make_screenshot_observation(),
             response_text: "I'll click at (100, 200)".into(),
             error_feedback: Some("NameError: name 'foo' is not defined".into()),
+            bash_output: None,
         });
 
         let obs = make_screenshot_observation();
@@ -514,6 +525,7 @@ mod tests {
                 observation: make_screenshot_observation(),
                 response_text: format!("Turn {i}"),
                 error_feedback: None,
+                bash_output: None,
             });
         }
 
@@ -554,6 +566,7 @@ mod tests {
                 observation: make_screenshot_observation(),
                 response_text: format!("Turn {i}"),
                 error_feedback: None,
+                bash_output: None,
             });
         }
 
@@ -571,6 +584,7 @@ mod tests {
             observation: make_screenshot_observation(),
             response_text: "Turn 0".into(),
             error_feedback: None,
+            bash_output: None,
         });
 
         let obs = make_full_observation();
@@ -592,6 +606,7 @@ mod tests {
             observation: make_screenshot_observation(),
             response_text: "Turn 0".into(),
             error_feedback: None,
+            bash_output: None,
         });
         assert_eq!(ctx.trajectory_len(), 1);
 
@@ -693,6 +708,7 @@ mod tests {
             observation: make_screenshot_observation(),
             response_text: "Clicked button".into(),
             error_feedback: None,
+            bash_output: None,
         });
 
         // Turn 2: full observation
@@ -700,6 +716,7 @@ mod tests {
             observation: make_full_observation(),
             response_text: "Typed text".into(),
             error_feedback: None,
+            bash_output: None,
         });
 
         // Turn 3: a11y only
@@ -707,6 +724,7 @@ mod tests {
             observation: make_a11y_only_observation(),
             response_text: "Checked state".into(),
             error_feedback: Some("timeout".into()),
+            bash_output: None,
         });
 
         let obs = make_full_observation();
@@ -724,6 +742,7 @@ mod tests {
             observation: make_screenshot_observation(),
             response_text: "Turn 0".into(),
             error_feedback: None,
+            bash_output: None,
         });
 
         let obs = make_screenshot_observation();

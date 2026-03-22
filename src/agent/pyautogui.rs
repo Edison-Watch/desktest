@@ -44,6 +44,9 @@ pub struct ParsedResponse {
 pub struct ExecutionResult {
     pub success: bool,
     pub error: Option<String>,
+    /// Captured stdout/stderr output (used by bash execution to return command output).
+    #[serde(default)]
+    pub output: Option<String>,
     pub duration_ms: u64,
 }
 
@@ -58,6 +61,8 @@ pub struct TurnResult {
     pub all_succeeded: bool,
     /// Error feedback to send back to the agent (if any execution failed).
     pub error_feedback: Option<String>,
+    /// Captured bash command output to feed back to the agent (regardless of success/failure).
+    pub bash_output: Option<String>,
 }
 
 /// Parse an LLM response for special commands and Python code blocks.
@@ -187,7 +192,8 @@ pub async fn execute_bash_code(
             debug!("Bash output ({} bytes): {}", output.len(), &output[..output.len().min(500)]);
             Ok(ExecutionResult {
                 success: true,
-                error: if output.trim().is_empty() { None } else { Some(format!("bash output:\n{output}")) },
+                error: None,
+                output: if output.trim().is_empty() { None } else { Some(output) },
                 duration_ms,
             })
         }
@@ -196,6 +202,7 @@ pub async fn execute_bash_code(
             Ok(ExecutionResult {
                 success: false,
                 error: Some(format!("Bash exec error: {e}")),
+                output: None,
                 duration_ms: 0,
             })
         }
@@ -207,6 +214,7 @@ pub async fn execute_bash_code(
                     "Bash execution timed out after {} seconds",
                     timeout.as_secs()
                 )),
+                output: None,
                 duration_ms: timeout.as_millis() as u64,
             })
         }
@@ -247,6 +255,7 @@ pub async fn execute_code(
             Ok(ExecutionResult {
                 success: false,
                 error: Some(format!("Docker exec error: {e}")),
+                output: None,
                 duration_ms: 0,
             })
         }
@@ -263,6 +272,7 @@ pub async fn execute_code(
                     "Execution timed out after {} seconds",
                     timeout.as_secs()
                 )),
+                output: None,
                 duration_ms: timeout.as_millis() as u64,
             })
         }
@@ -290,6 +300,7 @@ fn parse_executor_response(output: &str) -> Result<ExecutionResult, AppError> {
                 Ok(ExecutionResult {
                     success: false,
                     error: Some(format!("Failed to parse executor response: {e}")),
+                    output: None,
                     duration_ms: 0,
                 })
             }
@@ -299,6 +310,7 @@ fn parse_executor_response(output: &str) -> Result<ExecutionResult, AppError> {
         Ok(ExecutionResult {
             success: false,
             error: Some(format!("No JSON in executor output: {trimmed}")),
+            output: None,
             duration_ms: 0,
         })
     }
@@ -329,12 +341,14 @@ pub async fn process_turn(
             executions: vec![],
             all_succeeded: true,
             error_feedback: None,
+            bash_output: None,
         });
     }
 
     let mut executions = Vec::new();
     let mut all_succeeded = true;
     let mut error_feedback = None;
+    let mut bash_outputs: Vec<String> = Vec::new();
 
     // Execute bash blocks first (debugging/investigation before action)
     if bash_enabled {
@@ -350,6 +364,11 @@ pub async fn process_turn(
                 if error_feedback.is_none() {
                     error_feedback = Some(feedback);
                 }
+            }
+
+            // Always capture bash output (success or failure) so the agent can see results
+            if let Some(ref output) = result.output {
+                bash_outputs.push(format!("$ bash block {}:\n{}", i + 1, output));
             }
 
             executions.push(result);
@@ -383,11 +402,18 @@ pub async fn process_turn(
         executions.push(result);
     }
 
+    let bash_output = if bash_outputs.is_empty() {
+        None
+    } else {
+        Some(bash_outputs.join("\n"))
+    };
+
     Ok(TurnResult {
         command: parsed.command,
         executions,
         all_succeeded,
         error_feedback,
+        bash_output,
     })
 }
 
@@ -639,5 +665,49 @@ This should type the text into the editor."#;
         let parsed = parse_response(text);
         assert_eq!(parsed.command, Some(SpecialCommand::Fail));
         assert!(parsed.code_blocks.is_empty());
+    }
+
+    // --- extract_bash_blocks tests ---
+
+    #[test]
+    fn test_extract_single_bash_block() {
+        let text = "Let me check the process.\n\n```bash\nps aux | grep myapp\n```";
+        let parsed = parse_response(text);
+        assert_eq!(parsed.bash_blocks.len(), 1);
+        assert_eq!(parsed.bash_blocks[0], "ps aux | grep myapp");
+    }
+
+    #[test]
+    fn test_extract_sh_block() {
+        let text = "```sh\nls -la /tmp\n```";
+        let parsed = parse_response(text);
+        assert_eq!(parsed.bash_blocks.len(), 1);
+        assert_eq!(parsed.bash_blocks[0], "ls -la /tmp");
+    }
+
+    #[test]
+    fn test_extract_multiple_bash_blocks() {
+        let text = "```bash\nps aux\n```\n\nNow checking logs:\n\n```bash\ncat /tmp/app.log\n```";
+        let parsed = parse_response(text);
+        assert_eq!(parsed.bash_blocks.len(), 2);
+        assert_eq!(parsed.bash_blocks[0], "ps aux");
+        assert_eq!(parsed.bash_blocks[1], "cat /tmp/app.log");
+    }
+
+    #[test]
+    fn test_empty_bash_block_ignored() {
+        let text = "```bash\n\n```";
+        let parsed = parse_response(text);
+        assert!(parsed.bash_blocks.is_empty());
+    }
+
+    #[test]
+    fn test_bash_and_python_blocks_both_extracted() {
+        let text = "```bash\nps aux\n```\n\n```python\npyautogui.click(100, 200)\n```";
+        let parsed = parse_response(text);
+        assert_eq!(parsed.bash_blocks.len(), 1);
+        assert_eq!(parsed.bash_blocks[0], "ps aux");
+        assert_eq!(parsed.code_blocks.len(), 1);
+        assert_eq!(parsed.code_blocks[0], "pyautogui.click(100, 200)");
     }
 }
