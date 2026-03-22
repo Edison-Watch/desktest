@@ -98,7 +98,7 @@ jobs:
           cd target/${{ matrix.target }}/release
           tar czf ../../../desktest-${{ github.ref_name }}-${{ matrix.target }}.tar.gz desktest
           cd ../../..
-          if command -v sha256sum &>/dev/null; then
+          if command -v sha256sum >/dev/null 2>&1; then
             sha256sum desktest-${{ github.ref_name }}-${{ matrix.target }}.tar.gz >> checksums.txt
           else
             shasum -a 256 desktest-${{ github.ref_name }}-${{ matrix.target }}.tar.gz >> checksums.txt
