@@ -8,9 +8,9 @@ use crate::codify;
 use crate::error::AppError;
 
 /// Print trajectory logs to stdout.
-pub fn print_logs(artifacts_dir: &Path, brief: bool, step: Option<usize>) -> Result<(), AppError> {
-    if brief && step.is_some() {
-        return Err(AppError::Config("--brief and --step cannot be used together".into()));
+pub fn print_logs(artifacts_dir: &Path, brief: bool, step_filter: Option<Vec<usize>>) -> Result<(), AppError> {
+    if brief && step_filter.is_some() {
+        return Err(AppError::Config("--brief and --step/--steps cannot be used together".into()));
     }
 
     let trajectory_path = artifacts_dir.join("trajectory.jsonl");
@@ -44,10 +44,10 @@ pub fn print_logs(artifacts_dir: &Path, brief: bool, step: Option<usize>) -> Res
 
     if brief {
         print_brief(&entries);
-    } else if let Some(n) = step {
-        let matching: Vec<_> = entries.iter().filter(|e| e.step == n).collect();
+    } else if let Some(ref filter) = step_filter {
+        let matching: Vec<_> = entries.iter().filter(|e| filter.contains(&e.step)).collect();
         if matching.is_empty() {
-            println!("No entry found for step {n}.");
+            println!("No entries found for the requested steps.");
         } else {
             for entry in matching {
                 print_step_detail(entry);

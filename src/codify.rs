@@ -213,16 +213,32 @@ pub fn generate_replay_script(
     (script, count)
 }
 
-/// Parse a comma-separated list of step numbers.
+/// Parse a comma-separated list of step numbers and ranges (e.g. "1,3,5-8").
 pub fn parse_steps(steps_str: &str) -> Result<Vec<usize>, AppError> {
-    steps_str
-        .split(',')
-        .map(|s| {
-            s.trim()
-                .parse::<usize>()
-                .map_err(|e| AppError::Config(format!("Invalid step number '{s}': {e}")))
-        })
-        .collect()
+    let mut result = Vec::new();
+    for part in steps_str.split(',') {
+        let part = part.trim();
+        if let Some((start_str, end_str)) = part.split_once('-') {
+            let start: usize = start_str.trim().parse().map_err(|e| {
+                AppError::Config(format!("Invalid step number '{start_str}': {e}"))
+            })?;
+            let end: usize = end_str.trim().parse().map_err(|e| {
+                AppError::Config(format!("Invalid step number '{end_str}': {e}"))
+            })?;
+            if start > end {
+                return Err(AppError::Config(format!(
+                    "Invalid step range '{part}': start ({start}) is greater than end ({end})"
+                )));
+            }
+            result.extend(start..=end);
+        } else {
+            let n: usize = part.parse().map_err(|e| {
+                AppError::Config(format!("Invalid step number '{part}': {e}"))
+            })?;
+            result.push(n);
+        }
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -303,6 +319,29 @@ mod tests {
     fn test_parse_steps_with_spaces() {
         let steps = parse_steps("1, 2, 3").unwrap();
         assert_eq!(steps, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_parse_steps_with_range() {
+        let steps = parse_steps("3-7").unwrap();
+        assert_eq!(steps, vec![3, 4, 5, 6, 7]);
+    }
+
+    #[test]
+    fn test_parse_steps_mixed_ranges_and_singles() {
+        let steps = parse_steps("1,3,5-8").unwrap();
+        assert_eq!(steps, vec![1, 3, 5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn test_parse_steps_single_element_range() {
+        let steps = parse_steps("5-5").unwrap();
+        assert_eq!(steps, vec![5]);
+    }
+
+    #[test]
+    fn test_parse_steps_invalid_range() {
+        assert!(parse_steps("7-3").is_err());
     }
 
     #[test]

@@ -307,8 +307,19 @@ async fn main() {
                     }
                 }
             }
-            Command::Logs { artifacts_dir, brief, step } => {
-                match logs::print_logs(artifacts_dir, *brief, *step) {
+            Command::Logs { artifacts_dir, brief, step, steps } => {
+                let step_filter = match (step, steps) {
+                    (Some(n), _) => Some(vec![*n]),
+                    (_, Some(s)) => match codify::parse_steps(s) {
+                        Ok(v) => Some(v),
+                        Err(e) => {
+                            eprintln!("Error parsing steps: {e}");
+                            std::process::exit(2);
+                        }
+                    },
+                    _ => None,
+                };
+                match logs::print_logs(artifacts_dir, *brief, step_filter) {
                     Ok(()) => std::process::exit(0),
                     Err(e) => {
                         eprintln!("Error: {e}");
