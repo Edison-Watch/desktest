@@ -223,7 +223,11 @@ function selectStep(index) {
   }
 
   if (s.error_feedback) {
-    html += '<div class="section"><h3 class="collapsible" onclick="toggleCollapse(this)"><span class="arrow">&#9654;</span> Error Details</h3><pre class="collapse-content" style="display:none">' + escapeHtml(s.error_feedback) + '</pre></div>';
+    // Only show Error Details if it adds info beyond the result badge (which already shows "error:<feedback>")
+    var resultError = (s.result && s.result.startsWith('error:')) ? s.result.substring(6) : '';
+    if (s.error_feedback !== resultError) {
+      html += '<div class="section"><h3 class="collapsible" onclick="toggleCollapse(this)"><span class="arrow">&#9654;</span> Error Details</h3><pre class="collapse-content" style="display:none">' + escapeHtml(s.error_feedback) + '</pre></div>';
+    }
   }
 
   mainPanel.innerHTML = html;
