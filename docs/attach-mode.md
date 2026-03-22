@@ -24,6 +24,7 @@ Task files for attach mode use the `vnc_attach` app type. The `app` section is o
   "schema_version": "1.0",
   "id": "approve-dialog",
   "instruction": "A dialog titled 'Confirm' is visible. Click the OK button.",
+  "completion_condition": "The dialog has been dismissed and is no longer visible.",
   "app": { "type": "vnc_attach" },
   "evaluator": { "mode": "llm" },
   "timeout": 60,
