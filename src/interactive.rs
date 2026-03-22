@@ -25,6 +25,7 @@ pub(crate) async fn run_interactive(
     config: Config,
     debug: bool,
     verbose: bool,
+    bash_enabled: bool,
     no_recording: bool,
     output_dir: std::path::PathBuf,
     step: bool,
@@ -53,12 +54,12 @@ pub(crate) async fn run_interactive(
             eval.mode = task::EvaluatorMode::Programmatic;
         }
 
-        return run_task(task_def, config, debug, verbose, no_recording, output_dir, None).await;
+        return run_task(task_def, config, debug, verbose, bash_enabled, no_recording, output_dir, None).await;
     }
 
     if step {
         // --step: run agent one step at a time, pausing after each
-        return run_interactive_step(task_def, config, debug, verbose, no_recording, output_dir).await;
+        return run_interactive_step(task_def, config, debug, verbose, bash_enabled, no_recording, output_dir).await;
     }
 
     // Default interactive: start container, run setup, print VNC info, pause
@@ -187,6 +188,7 @@ async fn run_interactive_step(
     mut config: Config,
     debug: bool,
     verbose: bool,
+    bash_enabled: bool,
     no_recording: bool,
     output_dir: std::path::PathBuf,
 ) -> Result<AgentOutcome, AppError> {
@@ -226,7 +228,7 @@ async fn run_interactive_step(
             eprintln!("\nInterrupted (Ctrl+C), cleaning up...");
             Err(AppError::Infra("Interrupted by user".into()))
         }
-        r = run_interactive_step_inner(&task_def, &config, &session, &artifacts_dir, timeout, debug, verbose, no_recording) => r,
+        r = run_interactive_step_inner(&task_def, &config, &session, &artifacts_dir, timeout, debug, verbose, bash_enabled, no_recording) => r,
     };
 
     // Collect artifacts and clean up
@@ -269,6 +271,7 @@ async fn run_interactive_step_inner(
     timeout: Duration,
     debug: bool,
     verbose: bool,
+    bash_enabled: bool,
     no_recording: bool,
 ) -> Result<TaskRunResult, AppError> {
     use task::EvaluatorMode;
@@ -347,7 +350,7 @@ async fn run_interactive_step_inner(
         &config.api_base_url,
     )?;
 
-    let loop_config = build_agent_loop_config(&task_def, session, debug, verbose).await;
+    let loop_config = build_agent_loop_config(&task_def, session, debug, verbose, bash_enabled).await;
     let mut agent_loop = agent::loop_v2::AgentLoopV2::new(
         llm_client,
         session,

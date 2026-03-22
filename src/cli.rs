@@ -61,6 +61,10 @@ pub struct Cli {
     #[arg(long, default_value_t = 7860, global = true)]
     pub monitor_port: u16,
 
+    /// Allow the agent to run bash commands inside the container for debugging
+    #[arg(long = "with-bash", default_value_t = false, global = true)]
+    pub with_bash: bool,
+
     /// Interactive mode: start container and app, then wait for Ctrl+C (no agent) [legacy flag]
     #[arg(long, default_value_t = false, hide = true)]
     pub interactive: bool,

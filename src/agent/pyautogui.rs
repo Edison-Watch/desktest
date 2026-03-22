@@ -33,6 +33,8 @@ pub struct ParsedResponse {
     pub command: Option<SpecialCommand>,
     /// Python code blocks extracted from the response (may be multiple).
     pub code_blocks: Vec<String>,
+    /// Bash code blocks extracted from the response (for debugging).
+    pub bash_blocks: Vec<String>,
     /// The full raw text of the LLM response (for logging/context).
     pub raw_text: String,
 }
@@ -65,10 +67,12 @@ pub struct TurnResult {
 pub fn parse_response(text: &str) -> ParsedResponse {
     let command = detect_special_command(text);
     let code_blocks = extract_code_blocks(text);
+    let bash_blocks = extract_bash_blocks(text);
 
     ParsedResponse {
         command,
         code_blocks,
+        bash_blocks,
         raw_text: text.to_string(),
     }
 }
@@ -126,6 +130,87 @@ fn extract_code_blocks(text: &str) -> Vec<String> {
     }
 
     blocks
+}
+
+/// Extract bash code blocks from fenced markdown (```bash ... ``` or ```sh ... ```).
+fn extract_bash_blocks(text: &str) -> Vec<String> {
+    let mut blocks = Vec::new();
+    let mut in_block = false;
+    let mut current_block = String::new();
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if !in_block {
+            if trimmed.starts_with("```bash") || trimmed.starts_with("```sh") {
+                in_block = true;
+                current_block.clear();
+                continue;
+            }
+        } else {
+            if trimmed == "```" {
+                in_block = false;
+                let block = current_block.trim().to_string();
+                if !block.is_empty() {
+                    blocks.push(block);
+                }
+                current_block.clear();
+                continue;
+            }
+            current_block.push_str(line);
+            current_block.push('\n');
+        }
+    }
+
+    blocks
+}
+
+/// Execute a bash command inside the container and return the result.
+pub async fn execute_bash_code(
+    session: &DockerSession,
+    code: &str,
+    step_timeout: Option<Duration>,
+) -> Result<ExecutionResult, AppError> {
+    let timeout = step_timeout.unwrap_or(Duration::from_secs(DEFAULT_STEP_TIMEOUT_SECS));
+
+    debug!("Executing bash command ({} bytes, timeout {:?})", code.len(), timeout);
+
+    let start = std::time::Instant::now();
+    let result = tokio::time::timeout(
+        timeout,
+        session.exec_with_stdin(&["bash"], code.as_bytes()),
+    )
+    .await;
+
+    match result {
+        Ok(Ok(output)) => {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            debug!("Bash output ({} bytes): {}", output.len(), &output[..output.len().min(500)]);
+            Ok(ExecutionResult {
+                success: true,
+                error: if output.trim().is_empty() { None } else { Some(format!("bash output:\n{output}")) },
+                duration_ms,
+            })
+        }
+        Ok(Err(e)) => {
+            warn!("Bash exec failed: {e}");
+            Ok(ExecutionResult {
+                success: false,
+                error: Some(format!("Bash exec error: {e}")),
+                duration_ms: 0,
+            })
+        }
+        Err(_) => {
+            warn!("Bash execution timed out after {:?}", timeout);
+            Ok(ExecutionResult {
+                success: false,
+                error: Some(format!(
+                    "Bash execution timed out after {} seconds",
+                    timeout.as_secs()
+                )),
+                duration_ms: timeout.as_millis() as u64,
+            })
+        }
+    }
 }
 
 /// Execute a Python code block inside the container via the execute-action script.
@@ -226,17 +311,19 @@ pub async fn process_turn(
     session: &DockerSession,
     llm_response: &str,
     step_timeout: Option<Duration>,
+    bash_enabled: bool,
 ) -> Result<TurnResult, AppError> {
     let parsed = parse_response(llm_response);
 
     info!(
-        "Parsed LLM response: command={:?}, code_blocks={}",
+        "Parsed LLM response: command={:?}, code_blocks={}, bash_blocks={}",
         parsed.command,
-        parsed.code_blocks.len()
+        parsed.code_blocks.len(),
+        parsed.bash_blocks.len(),
     );
 
     // If there's a special command and no code, return immediately
-    if parsed.command.is_some() && parsed.code_blocks.is_empty() {
+    if parsed.command.is_some() && parsed.code_blocks.is_empty() && parsed.bash_blocks.is_empty() {
         return Ok(TurnResult {
             command: parsed.command,
             executions: vec![],
@@ -245,11 +332,33 @@ pub async fn process_turn(
         });
     }
 
-    // Execute all code blocks in order
     let mut executions = Vec::new();
     let mut all_succeeded = true;
     let mut error_feedback = None;
 
+    // Execute bash blocks first (debugging/investigation before action)
+    if bash_enabled {
+        for (i, code) in parsed.bash_blocks.iter().enumerate() {
+            debug!("Executing bash block {} of {}", i + 1, parsed.bash_blocks.len());
+            let result = execute_bash_code(session, code, step_timeout).await?;
+
+            if !result.success {
+                all_succeeded = false;
+                let err_msg = result.error.as_deref().unwrap_or("Unknown error");
+                let feedback = format!("Bash block {} failed: {}", i + 1, err_msg);
+                warn!("{}", feedback);
+                if error_feedback.is_none() {
+                    error_feedback = Some(feedback);
+                }
+            }
+
+            executions.push(result);
+        }
+    } else if !parsed.bash_blocks.is_empty() {
+        warn!("Agent emitted bash blocks but bash is not enabled — ignoring");
+    }
+
+    // Execute Python/PyAutoGUI code blocks
     for (i, code) in parsed.code_blocks.iter().enumerate() {
         debug!("Executing code block {} of {}", i + 1, parsed.code_blocks.len());
         let result = execute_code(session, code, step_timeout).await?;
@@ -266,7 +375,6 @@ pub async fn process_turn(
                 err_msg,
             );
             warn!("{}", feedback);
-            // Capture the first error as feedback for the agent
             if error_feedback.is_none() {
                 error_feedback = Some(feedback);
             }
