@@ -156,6 +156,7 @@ impl<'a> AgentLoop<'a> {
                                 passed,
                                 reasoning,
                                 screenshot_count: screenshot_counter,
+                                bugs_found: 0,
                             });
                         }
                         ToolResult::ScreenshotTaken(data_url) => {

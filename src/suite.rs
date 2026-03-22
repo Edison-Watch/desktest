@@ -245,6 +245,7 @@ pub async fn run_suite(
     no_recording: bool,
     resolution: Option<&str>,
     monitor: Option<crate::monitor::MonitorHandle>,
+    qa: bool,
 ) -> Result<SuiteResult, AppError> {
     let entries = discover_tasks(dir, filter)?;
 
@@ -303,6 +304,7 @@ pub async fn run_suite(
             no_recording,
             test_output_dir.clone(),
             monitor.clone(),
+            qa,
         )
         .await;
 
@@ -368,6 +370,7 @@ mod tests {
             agent_verdict: None,
             error_category,
             error_detail,
+            bugs_found: None,
         }
     }
 

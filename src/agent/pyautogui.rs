@@ -35,6 +35,8 @@ pub struct ParsedResponse {
     pub code_blocks: Vec<String>,
     /// Bash code blocks extracted from the response (for debugging).
     pub bash_blocks: Vec<String>,
+    /// Bug report descriptions extracted from BUG commands in the response.
+    pub bug_reports: Vec<String>,
     /// The full raw text of the LLM response (for logging/context).
     pub raw_text: String,
 }
@@ -63,6 +65,8 @@ pub struct TurnResult {
     pub error_feedback: Option<String>,
     /// Captured bash command output to feed back to the agent (regardless of success/failure).
     pub bash_output: Option<String>,
+    /// Bug reports detected in the LLM response.
+    pub bug_reports: Vec<String>,
 }
 
 /// Parse an LLM response for special commands and Python code blocks.
@@ -73,11 +77,13 @@ pub fn parse_response(text: &str) -> ParsedResponse {
     let command = detect_special_command(text);
     let code_blocks = extract_code_blocks(text);
     let bash_blocks = extract_bash_blocks(text);
+    let bug_reports = extract_bug_reports(text);
 
     ParsedResponse {
         command,
         code_blocks,
         bash_blocks,
+        bug_reports,
         raw_text: text.to_string(),
     }
 }
@@ -167,6 +173,58 @@ fn extract_bash_blocks(text: &str) -> Vec<String> {
     }
 
     blocks
+}
+
+/// Extract bug report descriptions from the LLM response.
+///
+/// A bug report starts with `BUG` on its own line, followed by description
+/// lines until a blank line, code fence, or another special command.
+fn extract_bug_reports(text: &str) -> Vec<String> {
+    let mut reports = Vec::new();
+    let mut current_report: Option<Vec<String>> = None;
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+
+        if trimmed == "BUG" {
+            // Flush any in-progress report
+            if let Some(lines) = current_report.take() {
+                let desc = lines.join("\n").trim().to_string();
+                if !desc.is_empty() {
+                    reports.push(desc);
+                }
+            }
+            // Start a new report
+            current_report = Some(Vec::new());
+            continue;
+        }
+
+        if let Some(ref mut lines) = current_report {
+            // End the report on blank line, code fence, or special command
+            if trimmed.is_empty()
+                || trimmed.starts_with("```")
+                || matches!(trimmed, "DONE" | "FAIL" | "WAIT")
+            {
+                let desc = lines.join("\n").trim().to_string();
+                if !desc.is_empty() {
+                    reports.push(desc);
+                }
+                current_report = None;
+            } else {
+                lines.push(line.to_string());
+            }
+        }
+    }
+
+    // Flush any remaining report at end of text
+    if let Some(lines) = current_report {
+        let desc = lines.join("\n").trim().to_string();
+        if !desc.is_empty() {
+            reports.push(desc);
+        }
+    }
+
+    reports
 }
 
 /// Execute a bash command inside the container and return the result.
@@ -342,6 +400,7 @@ pub async fn process_turn(
             all_succeeded: true,
             error_feedback: None,
             bash_output: None,
+            bug_reports: parsed.bug_reports,
         });
     }
 
@@ -414,6 +473,7 @@ pub async fn process_turn(
         all_succeeded,
         error_feedback,
         bash_output,
+        bug_reports: parsed.bug_reports,
     })
 }
 
@@ -709,5 +769,57 @@ This should type the text into the editor."#;
         assert_eq!(parsed.bash_blocks[0], "ps aux");
         assert_eq!(parsed.code_blocks.len(), 1);
         assert_eq!(parsed.code_blocks[0], "pyautogui.click(100, 200)");
+    }
+
+    // --- extract_bug_reports tests ---
+
+    #[test]
+    fn test_extract_single_bug_report() {
+        let text = "I noticed something wrong.\n\nBUG\nThe save dialog does not preserve the file extension.\nExpected .txt but got no extension.";
+        let reports = extract_bug_reports(text);
+        assert_eq!(reports.len(), 1);
+        assert!(reports[0].contains("save dialog"));
+        assert!(reports[0].contains("Expected .txt"));
+    }
+
+    #[test]
+    fn test_extract_bug_report_with_code() {
+        let text = "I found a bug.\n\nBUG\nButton is misaligned.\n\n```python\npyautogui.click(100, 200)\n```";
+        let parsed = parse_response(text);
+        assert_eq!(parsed.bug_reports.len(), 1);
+        assert!(parsed.bug_reports[0].contains("misaligned"));
+        assert_eq!(parsed.code_blocks.len(), 1);
+    }
+
+    #[test]
+    fn test_extract_bug_report_with_done() {
+        let text = "Found a bug but task is complete.\n\nBUG\nCrash on save.\n\nDONE";
+        let parsed = parse_response(text);
+        assert_eq!(parsed.bug_reports.len(), 1);
+        assert!(parsed.bug_reports[0].contains("Crash on save"));
+        assert_eq!(parsed.command, Some(SpecialCommand::Done));
+    }
+
+    #[test]
+    fn test_extract_multiple_bug_reports() {
+        let text = "BUG\nFirst bug description.\n\nSome text.\n\nBUG\nSecond bug description.";
+        let reports = extract_bug_reports(text);
+        assert_eq!(reports.len(), 2);
+        assert!(reports[0].contains("First bug"));
+        assert!(reports[1].contains("Second bug"));
+    }
+
+    #[test]
+    fn test_no_bug_reports_in_normal_response() {
+        let text = "I'll click the button.\n\n```python\npyautogui.click(100, 200)\n```";
+        let parsed = parse_response(text);
+        assert!(parsed.bug_reports.is_empty());
+    }
+
+    #[test]
+    fn test_bug_not_detected_as_substring() {
+        let text = "BUGGING out is not a report.\nDEBUG mode is on.";
+        let reports = extract_bug_reports(text);
+        assert!(reports.is_empty());
     }
 }

@@ -43,6 +43,8 @@ pub struct TestResult {
     pub error_category: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bugs_found: Option<usize>,
 }
 
 /// Build a TestResult from a successful test run (Ok(AgentOutcome)).
@@ -77,6 +79,12 @@ pub fn from_outcome(
         (None, None)
     };
 
+    let bugs_found = if outcome.bugs_found > 0 {
+        Some(outcome.bugs_found)
+    } else {
+        None
+    };
+
     TestResult {
         schema_version: RESULTS_SCHEMA_VERSION.to_string(),
         test_id: test_id.to_string(),
@@ -86,6 +94,7 @@ pub fn from_outcome(
         agent_verdict,
         error_category,
         error_detail,
+        bugs_found,
     }
 }
 
@@ -125,6 +134,7 @@ pub fn from_evaluation(
         agent_verdict: None,
         error_category,
         error_detail,
+        bugs_found: None,
     }
 }
 
@@ -145,6 +155,7 @@ pub fn from_error(test_id: &str, error: &AppError, duration_ms: u64) -> TestResu
         agent_verdict: None,
         error_category: Some(error_category.to_string()),
         error_detail: Some(error.to_string()),
+        bugs_found: None,
     }
 }
 
@@ -182,6 +193,7 @@ mod tests {
             passed,
             reasoning: reasoning.into(),
             screenshot_count: 5,
+            bugs_found: 0,
         }
     }
 
@@ -256,6 +268,7 @@ mod tests {
             passed: false,
             reasoning: "Agent passed: Done. Programmatic evaluation failed (1/1 metrics failed: file_exists: File not found)".into(),
             screenshot_count: 3,
+            bugs_found: 0,
         };
         let metrics = vec![make_metric(false, "file_exists", "File not found")];
         let eval = make_eval_result(false, metrics);

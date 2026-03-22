@@ -45,8 +45,9 @@ impl ContextManager {
         instruction: &str,
         max_trajectory_length: usize,
         bash_enabled: bool,
+        qa: bool,
     ) -> Self {
-        let system_prompt = build_system_prompt(display_width, display_height, bash_enabled);
+        let system_prompt = build_system_prompt(display_width, display_height, bash_enabled, qa);
         Self {
             system_prompt,
             instruction: instruction.to_string(),
@@ -219,7 +220,7 @@ fn observation_to_message(observation: &Observation) -> Vec<ChatMessage> {
 /// - Special commands (DONE, FAIL, WAIT)
 /// - Display dimensions
 /// - Coordinate system
-pub fn build_system_prompt(display_width: u32, display_height: u32, bash_enabled: bool) -> String {
+pub fn build_system_prompt(display_width: u32, display_height: u32, bash_enabled: bool, qa: bool) -> String {
     let bash_section = if bash_enabled {
         r#"
 
@@ -249,6 +250,51 @@ The command runs inside the container as the `tester` user. You will receive the
 - **Bash** (debugging only): checking process state, reading files/logs, inspecting environment, verifying file changes, diagnosing issues when the GUI is unresponsive or behaving unexpectedly
 
 Do NOT use bash to launch GUI applications or perform actions that should be done through the GUI. The bash tool is strictly for observation and debugging."#
+    } else {
+        ""
+    };
+
+    let qa_section = if qa {
+        r#"
+
+## QA Bug Reporting Mode (ACTIVE)
+
+You are also acting as a QA tester. While completing your task, watch for **application bugs** — unexpected behavior, UI glitches, crashes, incorrect data, broken workflows, missing features, or accessibility issues in the application under test.
+
+**IMPORTANT: Only report bugs in the application itself.** Do NOT report:
+- PyAutoGUI execution errors (these are your tooling, not app bugs)
+- Screenshot or accessibility tree capture issues
+- Network or Docker infrastructure problems
+- Issues caused by your own incorrect coordinates or actions
+
+### Diagnosing Bugs
+
+Before reporting a bug, use bash commands to gather diagnostic evidence. You have bash access — use it! Run these as appropriate:
+
+- `cat /tmp/app.log` — check application log for errors, stack traces, warnings
+- `ps aux | grep <app_name>` — verify process state (crashed? zombie? high CPU/memory?)
+- `dmesg | tail -20` — check for kernel-level issues (segfaults, OOM kills)
+- `ls -la <relevant_paths>` — verify file state (missing files, wrong permissions, corrupted output)
+- `cat /proc/$(pgrep <app_name>)/status` — check process memory and resource usage
+- `journalctl --no-pager -n 50 2>/dev/null || true` — check system logs for D-Bus errors, GTK warnings
+- `xdotool getactivewindow getwindowname 2>/dev/null || true` — verify current window state
+
+Gather this evidence **before** emitting the BUG command so your report includes concrete data, not just visual observations.
+
+### Reporting a Bug
+
+When you find an app bug, emit the `BUG` command on its own line, followed by a detailed description:
+
+```
+BUG
+<One-line summary of the bug>
+<Detailed description: what you observed, what you expected, relevant log output or evidence>
+<Steps that led to this state>
+```
+
+After reporting a bug, **continue your task normally**. You can include code blocks in the same response as a BUG report. The bug will be logged and you should proceed with your objective.
+
+You may report multiple bugs throughout the test run. Each will receive a unique ID."#
     } else {
         ""
     };
@@ -338,12 +384,14 @@ After each action, you will receive:
 Use BOTH the screenshot and accessibility tree to understand the current state. The accessibility tree is especially useful for:
 - Finding the exact names of buttons and menu items
 - Determining which element has focus
-- Reading text content that might be hard to see in the screenshot"#,
+- Reading text content that might be hard to see in the screenshot
+{qa_section}"#,
         display_width = display_width,
         display_height = display_height,
         max_x = display_width.saturating_sub(1),
         max_y = display_height.saturating_sub(1),
         bash_section = bash_section,
+        qa_section = qa_section,
     )
 }
 
@@ -403,7 +451,7 @@ mod tests {
 
     #[test]
     fn test_system_prompt_contains_display_dimensions() {
-        let prompt = build_system_prompt(1920, 1080, false);
+        let prompt = build_system_prompt(1920, 1080, false, false);
         assert!(prompt.contains("1920x1080"));
         assert!(prompt.contains("1919"));
         assert!(prompt.contains("1079"));
@@ -411,7 +459,7 @@ mod tests {
 
     #[test]
     fn test_system_prompt_contains_action_space() {
-        let prompt = build_system_prompt(1280, 800, false);
+        let prompt = build_system_prompt(1280, 800, false, false);
         assert!(prompt.contains("pyautogui.click"));
         assert!(prompt.contains("pyautogui.typewrite"));
         assert!(prompt.contains("pyautogui.hotkey"));
@@ -421,7 +469,7 @@ mod tests {
 
     #[test]
     fn test_system_prompt_contains_special_commands() {
-        let prompt = build_system_prompt(1280, 800, false);
+        let prompt = build_system_prompt(1280, 800, false, false);
         assert!(prompt.contains("DONE"));
         assert!(prompt.contains("FAIL"));
         assert!(prompt.contains("WAIT"));
@@ -429,7 +477,7 @@ mod tests {
 
     #[test]
     fn test_system_prompt_contains_output_format() {
-        let prompt = build_system_prompt(1280, 800, false);
+        let prompt = build_system_prompt(1280, 800, false, false);
         assert!(prompt.contains("Reflection"));
         assert!(prompt.contains("Action"));
         assert!(prompt.contains("```python"));
@@ -437,7 +485,7 @@ mod tests {
 
     #[test]
     fn test_system_prompt_contains_coordinate_system() {
-        let prompt = build_system_prompt(1280, 800, false);
+        let prompt = build_system_prompt(1280, 800, false, false);
         assert!(prompt.contains("(0, 0)"));
         assert!(prompt.contains("top-left"));
     }
@@ -446,7 +494,7 @@ mod tests {
 
     #[test]
     fn test_context_manager_new() {
-        let ctx = ContextManager::new(1920, 1080, "Click the button", 3, false);
+        let ctx = ContextManager::new(1920, 1080, "Click the button", 3, false, false);
         assert_eq!(ctx.trajectory_len(), 0);
         assert!(ctx.system_prompt.contains("1920x1080"));
         assert_eq!(ctx.instruction, "Click the button");
@@ -455,7 +503,7 @@ mod tests {
 
     #[test]
     fn test_build_messages_no_trajectory() {
-        let ctx = ContextManager::new(1920, 1080, "Click the button", 3, false);
+        let ctx = ContextManager::new(1920, 1080, "Click the button", 3, false, false);
         let obs = make_screenshot_observation();
         let messages = ctx.build_messages(&obs);
 
@@ -475,7 +523,7 @@ mod tests {
 
     #[test]
     fn test_build_messages_with_trajectory() {
-        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 3, false);
+        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 3, false, false);
         ctx.push_turn(TrajectoryTurn {
             observation: make_screenshot_observation(),
             response_text: "I see a button. I'll click it.".into(),
@@ -497,7 +545,7 @@ mod tests {
 
     #[test]
     fn test_build_messages_with_error_feedback() {
-        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 3, false);
+        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 3, false, false);
         ctx.push_turn(TrajectoryTurn {
             observation: make_screenshot_observation(),
             response_text: "I'll click at (100, 200)".into(),
@@ -517,7 +565,7 @@ mod tests {
 
     #[test]
     fn test_sliding_window_truncation() {
-        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 2, false);
+        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 2, false, false);
 
         // Push 4 turns
         for i in 0..4 {
@@ -558,7 +606,7 @@ mod tests {
 
     #[test]
     fn test_sliding_window_exact_fit() {
-        let mut ctx = ContextManager::new(1920, 1080, "test", 3, false);
+        let mut ctx = ContextManager::new(1920, 1080, "test", 3, false, false);
 
         // Push exactly 3 turns
         for i in 0..3 {
@@ -579,7 +627,7 @@ mod tests {
 
     #[test]
     fn test_fallback_messages_no_trajectory() {
-        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 3, false);
+        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 3, false, false);
         ctx.push_turn(TrajectoryTurn {
             observation: make_screenshot_observation(),
             response_text: "Turn 0".into(),
@@ -601,7 +649,7 @@ mod tests {
 
     #[test]
     fn test_clear_trajectory() {
-        let mut ctx = ContextManager::new(1920, 1080, "test", 3, false);
+        let mut ctx = ContextManager::new(1920, 1080, "test", 3, false, false);
         ctx.push_turn(TrajectoryTurn {
             observation: make_screenshot_observation(),
             response_text: "Turn 0".into(),
@@ -701,7 +749,7 @@ mod tests {
 
     #[test]
     fn test_trajectory_with_mixed_observations() {
-        let mut ctx = ContextManager::new(1920, 1080, "test", 3, false);
+        let mut ctx = ContextManager::new(1920, 1080, "test", 3, false, false);
 
         // Turn 1: screenshot only
         ctx.push_turn(TrajectoryTurn {
@@ -737,7 +785,7 @@ mod tests {
 
     #[test]
     fn test_zero_trajectory_length() {
-        let mut ctx = ContextManager::new(1920, 1080, "test", 0, false);
+        let mut ctx = ContextManager::new(1920, 1080, "test", 0, false, false);
         ctx.push_turn(TrajectoryTurn {
             observation: make_screenshot_observation(),
             response_text: "Turn 0".into(),
@@ -750,5 +798,20 @@ mod tests {
 
         // system + instruction + current obs only (no trajectory)
         assert_eq!(messages.len(), 3);
+    }
+
+    #[test]
+    fn test_system_prompt_contains_qa_section_when_enabled() {
+        let prompt = build_system_prompt(1920, 1080, false, true);
+        assert!(prompt.contains("QA Bug Reporting Mode"));
+        assert!(prompt.contains("BUG"));
+        assert!(prompt.contains("cat /tmp/app.log"));
+        assert!(prompt.contains("continue your task normally"));
+    }
+
+    #[test]
+    fn test_system_prompt_no_qa_section_when_disabled() {
+        let prompt = build_system_prompt(1920, 1080, false, false);
+        assert!(!prompt.contains("QA Bug Reporting Mode"));
     }
 }

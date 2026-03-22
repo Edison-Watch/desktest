@@ -84,6 +84,16 @@ desktest validates custom images at startup. If a required dependency is missing
 desktest validate examples/libreoffice-calc.json
 ```
 
+## QA Mode
+
+Any example can be run with `--qa` to enable bug reporting. The agent will complete its task while also watching for application bugs:
+
+```bash
+desktest run examples/gedit-save.json --qa
+```
+
+Bug reports are written as markdown files in `desktest_artifacts/bugs/`. Each report includes a summary, reproduction steps, screenshot references, and diagnostic evidence gathered via bash commands.
+
 ## Live Monitoring
 
 Any example can be run with the `--monitor` flag to open a real-time web dashboard:

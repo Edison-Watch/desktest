@@ -78,6 +78,16 @@ fi
 docker rm -f my-app
 ```
 
+## QA mode
+
+QA bug reporting works with attach mode. Add `--qa` to report application bugs:
+
+```bash
+desktest attach task.json --container my-app --qa
+```
+
+Bug reports are written to `desktest_artifacts/bugs/`.
+
 ## Exit codes
 
 Same as `desktest run`: 0=pass, 1=fail, 2=config error, 3=infra error, 4=agent error.

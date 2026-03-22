@@ -1,5 +1,6 @@
 mod agent;
 mod artifacts;
+mod bug_report;
 mod cli;
 mod codify;
 mod config;
@@ -87,8 +88,9 @@ async fn main() {
 
                 let run_config = orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
                 let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
+                let bash_enabled = cli.with_bash || cli.qa;
 
-                let result = orchestration::run_task(task_def, run_config, cli.debug, cli.verbose, cli.with_bash, !cli.record, cli.output.clone(), monitor_handle).await;
+                let result = orchestration::run_task(task_def, run_config, cli.debug, cli.verbose, bash_enabled, !cli.record, cli.output.clone(), monitor_handle, cli.qa).await;
                 match result {
                     Ok(outcome) => {
                         println!("{outcome}");
@@ -102,6 +104,7 @@ async fn main() {
             }
             Command::Suite { dir, filter } => {
                 let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
+                let bash_enabled = cli.with_bash || cli.qa;
 
                 let result = suite::run_suite(
                     dir,
@@ -110,10 +113,11 @@ async fn main() {
                     &cli.output,
                     cli.debug,
                     cli.verbose,
-                    cli.with_bash,
+                    bash_enabled,
                     !cli.record,
                     cli.resolution.as_deref(),
                     monitor_handle,
+                    cli.qa,
                 ).await;
 
                 match result {
@@ -137,6 +141,7 @@ async fn main() {
 
                 let run_config = orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
                 let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
+                let bash_enabled = cli.with_bash || cli.qa;
 
                 let result = orchestration::run_attach(
                     task_def,
@@ -144,10 +149,11 @@ async fn main() {
                     container,
                     cli.debug,
                     cli.verbose,
-                    cli.with_bash,
+                    bash_enabled,
                     !cli.record,
                     cli.output.clone(),
                     monitor_handle,
+                    cli.qa,
                 ).await;
                 match result {
                     Ok(outcome) => {
@@ -171,16 +177,18 @@ async fn main() {
 
                 let run_config = orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
 
+                let bash_enabled = cli.with_bash || cli.qa;
                 let result = interactive::run_interactive(
                     task_def,
                     run_config,
                     cli.debug,
                     cli.verbose,
-                    cli.with_bash,
+                    bash_enabled,
                     !cli.record,
                     cli.output.clone(),
                     *step,
                     *validate_only,
+                    cli.qa,
                 ).await;
 
                 match result {
@@ -293,8 +301,9 @@ async fn main() {
 
                 let run_config = orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
                 let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
+                let bash_enabled = cli.with_bash || cli.qa;
 
-                let result = orchestration::run_task(task_def, run_config, cli.debug, cli.verbose, cli.with_bash, !cli.record, cli.output.clone(), monitor_handle).await;
+                let result = orchestration::run_task(task_def, run_config, cli.debug, cli.verbose, bash_enabled, !cli.record, cli.output.clone(), monitor_handle, cli.qa).await;
                 match result {
                     Ok(outcome) => {
                         println!("{outcome}");

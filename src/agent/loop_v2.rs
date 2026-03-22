@@ -48,6 +48,8 @@ pub struct AgentLoopV2Config {
     pub verbose: bool,
     /// Allow the agent to execute bash commands for debugging.
     pub bash_enabled: bool,
+    /// Enable QA bug reporting mode.
+    pub qa: bool,
 }
 
 impl Default for AgentLoopV2Config {
@@ -61,6 +63,7 @@ impl Default for AgentLoopV2Config {
             debug: false,
             verbose: false,
             bash_enabled: false,
+            qa: false,
         }
     }
 }
@@ -84,6 +87,7 @@ pub struct AgentLoopV2<'a> {
     pub(super) recording: Option<&'a Recording>,
     pub(super) monitor: Option<MonitorHandle>,
     pub(super) test_id: String,
+    pub(super) bug_reporter: Option<crate::bug_report::BugReporter>,
 }
 
 impl<'a> AgentLoopV2<'a> {
@@ -106,6 +110,7 @@ impl<'a> AgentLoopV2<'a> {
             instruction,
             config.max_trajectory_length,
             config.bash_enabled,
+            config.qa,
         );
 
         let trajectory = match TrajectoryLogger::new(&artifacts_dir, config.verbose) {
@@ -114,6 +119,18 @@ impl<'a> AgentLoopV2<'a> {
                 warn!("Failed to create trajectory logger: {e}");
                 None
             }
+        };
+
+        let bug_reporter = if config.qa {
+            match crate::bug_report::BugReporter::new(&artifacts_dir) {
+                Ok(reporter) => Some(reporter),
+                Err(e) => {
+                    warn!("Failed to create bug reporter: {e}");
+                    None
+                }
+            }
+        } else {
+            None
         };
 
         Self {
@@ -126,6 +143,7 @@ impl<'a> AgentLoopV2<'a> {
             recording,
             monitor,
             test_id,
+            bug_reporter,
         }
     }
 
@@ -175,6 +193,7 @@ impl<'a> AgentLoopV2<'a> {
                     passed: false,
                     reasoning,
                     screenshot_count: step_index,
+                    bugs_found: self.bugs_found(),
                 });
             }
 
@@ -201,6 +220,7 @@ impl<'a> AgentLoopV2<'a> {
                     passed: false,
                     reasoning,
                     screenshot_count: step_index,
+                    bugs_found: self.bugs_found(),
                 });
             }
 
@@ -251,6 +271,9 @@ impl<'a> AgentLoopV2<'a> {
             )
             .await?;
 
+            // Handle bug reports (non-terminal, always process before commands)
+            self.handle_bug_reports(step_index, &turn_result.bug_reports, &current_observation);
+
             // Check for special commands
             if let Some(ref command) = turn_result.command {
                 match command {
@@ -288,6 +311,7 @@ impl<'a> AgentLoopV2<'a> {
                             passed: true,
                             reasoning,
                             screenshot_count: step_index,
+                            bugs_found: self.bugs_found(),
                         });
                     }
                     SpecialCommand::Fail => {
@@ -324,6 +348,7 @@ impl<'a> AgentLoopV2<'a> {
                             passed: false,
                             reasoning,
                             screenshot_count: step_index,
+                            bugs_found: self.bugs_found(),
                         });
                     }
                     SpecialCommand::Wait => {
@@ -440,6 +465,7 @@ impl<'a> AgentLoopV2<'a> {
                         self.config.total_timeout.as_secs(), step_index
                     ),
                     screenshot_count: step_index,
+                    bugs_found: self.bugs_found(),
                 });
             }
 
@@ -450,6 +476,7 @@ impl<'a> AgentLoopV2<'a> {
                     passed: false,
                     reasoning: format!("Max steps ({}) reached", self.config.max_steps),
                     screenshot_count: step_index,
+                    bugs_found: self.bugs_found(),
                 });
             }
 
@@ -468,6 +495,7 @@ impl<'a> AgentLoopV2<'a> {
                         passed: false,
                         reasoning: format!("User quit at step {step_index}"),
                         screenshot_count: step_index - 1,
+                        bugs_found: self.bugs_found(),
                     });
                 }
             }
@@ -518,6 +546,9 @@ impl<'a> AgentLoopV2<'a> {
             )
             .await?;
 
+            // Handle bug reports (non-terminal, always process before commands)
+            self.handle_bug_reports(step_index, &turn_result.bug_reports, &current_observation);
+
             // Check for special commands
             if let Some(ref command) = turn_result.command {
                 match command {
@@ -539,6 +570,7 @@ impl<'a> AgentLoopV2<'a> {
                             passed: true,
                             reasoning: extract_reasoning(&response_text),
                             screenshot_count: step_index,
+                            bugs_found: self.bugs_found(),
                         });
                     }
                     SpecialCommand::Fail => {
@@ -559,6 +591,7 @@ impl<'a> AgentLoopV2<'a> {
                             passed: false,
                             reasoning: extract_reasoning(&response_text),
                             screenshot_count: step_index,
+                            bugs_found: self.bugs_found(),
                         });
                     }
                     SpecialCommand::Wait => {
@@ -602,6 +635,44 @@ impl<'a> AgentLoopV2<'a> {
             // Capture new observation
             current_observation = self.capture_observation_for_step(step_index).await?;
             execution_elapsed += step_start.elapsed();
+        }
+    }
+
+    /// Helper to get bugs_found count from the reporter.
+    fn bugs_found(&self) -> usize {
+        self.bug_reporter.as_ref().map_or(0, |r| r.bug_count())
+    }
+
+    /// Process any bug reports from the current turn.
+    fn handle_bug_reports(
+        &mut self,
+        step_index: usize,
+        bug_reports: &[String],
+        observation: &Observation,
+    ) {
+        if bug_reports.is_empty() {
+            return;
+        }
+        if let Some(ref mut reporter) = self.bug_reporter {
+            for description in bug_reports {
+                let screenshot_path = observation
+                    .screenshot_path
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().to_string());
+                match reporter.report_bug(
+                    step_index,
+                    description,
+                    screenshot_path.as_deref(),
+                    observation.a11y_tree_text.as_deref(),
+                ) {
+                    Ok(bug_id) => {
+                        info!("Bug reported: {bug_id} at step {step_index}");
+                    }
+                    Err(e) => {
+                        warn!("Failed to write bug report: {e}");
+                    }
+                }
+            }
         }
     }
 
@@ -765,6 +836,7 @@ mod tests {
         assert!(!config.debug);
         assert!(!config.verbose);
         assert!(!config.bash_enabled);
+        assert!(!config.qa);
     }
 
     #[test]
@@ -778,6 +850,7 @@ mod tests {
             debug: true,
             verbose: true,
             bash_enabled: true,
+            qa: false,
         };
         assert_eq!(config.max_steps, 25);
         assert_eq!(config.step_timeout.as_secs(), 120);
