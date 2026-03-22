@@ -161,7 +161,7 @@ Tests are defined in JSON files. Here's a complete example that tests a calculat
 {
   "schema_version": "1.0",
   "id": "elcalc-addition",
-  "instruction": "Using the calculator app, compute 42 + 58 and verify the result shows 100.",
+  "instruction": "Using the calculator app, compute 42 + 58.",
   "completion_condition": "The calculator display shows 100 as the result.",
   "app": {
     "type": "appimage",
@@ -175,7 +175,7 @@ Tests are defined in JSON files. Here's a complete example that tests a calculat
 }
 ```
 
-The optional `completion_condition` field separates the task goal from the success criteria. When present, it's appended to the instruction sent to the agent and rendered as a collapsible section in the review and live dashboards.
+The optional `completion_condition` field lets you define the success criteria separately from the task instruction. When present, it's appended to the instruction sent to the agent, and rendered as a collapsible section in the review and live dashboards.
 
 See `examples/` for more examples including folder deploys and custom Docker images.
 
