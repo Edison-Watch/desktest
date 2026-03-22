@@ -299,6 +299,12 @@ You may report multiple bugs throughout the test run. Each will receive a unique
         ""
     };
 
+    let bug_command_line = if qa {
+        "\n- **BUG** — (QA mode) Report an application bug you discovered. Describe the issue on the following lines, then continue your task. Can co-exist with DONE/FAIL in the same response."
+    } else {
+        ""
+    };
+
     format!(
         r#"You are a professional software tester controlling a Linux desktop environment. Your task is to interact with the desktop GUI to complete a given objective.
 
@@ -373,7 +379,7 @@ Instead of (or in addition to) a code block, you can emit these special commands
 
 - **DONE** — The task is complete. Emit this when you have finished the objective.
 - **FAIL** — The task is infeasible or cannot be completed. Emit this if you determine the task cannot be done.
-- **WAIT** — You need more time to observe. Emit this to pause and get a fresh observation without taking any action.
+- **WAIT** — You need more time to observe. Emit this to pause and get a fresh observation without taking any action.{bug_command_line}
 
 ## Observation
 
@@ -391,6 +397,7 @@ Use BOTH the screenshot and accessibility tree to understand the current state. 
         max_x = display_width.saturating_sub(1),
         max_y = display_height.saturating_sub(1),
         bash_section = bash_section,
+        bug_command_line = bug_command_line,
         qa_section = qa_section,
     )
 }
@@ -807,11 +814,21 @@ mod tests {
         assert!(prompt.contains("BUG"));
         assert!(prompt.contains("cat /tmp/app.log"));
         assert!(prompt.contains("continue your task normally"));
+        // BUG should appear in the Special Commands section alongside DONE/FAIL/WAIT
+        let special_cmds_idx = prompt.find("## Special Commands").unwrap();
+        let observation_idx = prompt.find("## Observation").unwrap();
+        let special_section = &prompt[special_cmds_idx..observation_idx];
+        assert!(special_section.contains("**BUG**"), "BUG should be listed in Special Commands when QA is enabled");
     }
 
     #[test]
     fn test_system_prompt_no_qa_section_when_disabled() {
         let prompt = build_system_prompt(1920, 1080, false, false);
         assert!(!prompt.contains("QA Bug Reporting Mode"));
+        // BUG should NOT appear in Special Commands when QA is disabled
+        let special_cmds_idx = prompt.find("## Special Commands").unwrap();
+        let observation_idx = prompt.find("## Observation").unwrap();
+        let special_section = &prompt[special_cmds_idx..observation_idx];
+        assert!(!special_section.contains("**BUG**"));
     }
 }
