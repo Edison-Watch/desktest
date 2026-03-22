@@ -63,7 +63,7 @@ pub fn print_logs(artifacts_dir: &Path, brief: bool, step: Option<usize>) -> Res
 }
 
 fn print_brief(entries: &[codify::TrajectoryRecord]) {
-    println!("{:<6} {:<10} {:<26} {}", "Step", "Result", "Timestamp", "Thought");
+    println!("{:<6} {:<12} {:<26} {}", "Step", "Result", "Timestamp", "Thought");
     println!("{}", "-".repeat(80));
     for entry in entries {
         let thought = entry
@@ -72,9 +72,10 @@ fn print_brief(entries: &[codify::TrajectoryRecord]) {
             .unwrap_or("")
             .replace('\n', " ");
         let thought_truncated: String = thought.chars().take(40).collect();
+        let result_truncated: String = entry.result.chars().take(12).collect();
         println!(
-            "{:<6} {:<10} {:<26} {}",
-            entry.step, entry.result, entry.timestamp, thought_truncated
+            "{:<6} {:<12} {:<26} {}",
+            entry.step, result_truncated, entry.timestamp, thought_truncated
         );
     }
 }
