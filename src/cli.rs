@@ -6,6 +6,7 @@ use crate::results;
 #[command(
     name = "desktest",
     about = "LLM-powered desktop app tester",
+    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("DESKTEST_GIT_SHA"), ")"),
     after_help = "\
 EXAMPLES:
   Legacy mode (backward compatible):
