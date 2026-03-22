@@ -120,6 +120,7 @@ See `src/task.rs` for the full schema definition. Key fields:
   "schema_version": "1.0",
   "id": "unique-test-id",
   "instruction": "What the agent should do",
+  "completion_condition": "Optional — when the agent should consider the task done",
   "app": { "type": "appimage|folder|docker_image|vnc_attach", "..." : "..." },
   "config": [ { "type": "execute|copy|open|sleep", "..." : "..." } ],
   "evaluator": {
