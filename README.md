@@ -4,6 +4,12 @@ Desktest is a CLI tool for automated end-to-end testing of Linux desktop applica
 
 > **Warning:** Desktest is beta software under active development. APIs, task schema, and CLI flags may change between releases.
 
+## Agent Quickstart
+
+Copy-paste the following prompt into Claude Code (or any coding agent) to install desktest and set up the agent skill:
+
+> Install the desktest CLI by running `curl -fsSL https://raw.githubusercontent.com/Edison-Watch/desktest/master/install.sh | sh`. Then copy `skills/desktest-skill.md` from the desktest repo (https://raw.githubusercontent.com/Edison-Watch/desktest/master/skills/desktest-skill.md) to `~/.claude/skills/desktest/SKILL.md` so you have context on how to use it.
+
 ## Features
 
 - **Structured JSON task definitions** with schema validation
@@ -44,7 +50,8 @@ Use desktest as the eyes for your coding agent. You watch the test live, then ha
 
 ```
 1. RUN       →  desktest run task.json --monitor     # Watch the agent live in the browser
-2. DIAGNOSE  →  desktest logs desktest_artifacts/    # Hand off to your coding agent for analysis
+2. DIAGNOSE  →  desktest logs desktest_artifacts/              # Hand off to your coding agent for analysis
+                desktest logs desktest_artifacts/ --steps 3-7  # Or drill into specific steps
 3. FIX       →  Coding agent reads the logs, diagnoses the issue, and fixes the code
 4. RERUN     →  desktest run task.json --monitor     # Verify the fix
 ```
@@ -97,10 +104,12 @@ Developer writes task.json
 ## Installation
 
 ```bash
+# One-line install (downloads pre-built binary)
+curl -fsSL https://raw.githubusercontent.com/Edison-Watch/desktest/master/install.sh | sh
+
+# Or build from source
 git clone https://github.com/Edison-Watch/desktest.git
 cd desktest
-
-# Install the desktest CLI to ~/.cargo/bin/
 make install_cli
 ```
 
@@ -139,7 +148,7 @@ Commands:
   validate      Check task JSON against schema without running
   codify        Convert trajectory to deterministic Python replay script
   review        Generate web-based trajectory review viewer
-  logs          View trajectory logs in the terminal
+  logs          View trajectory logs in the terminal (supports --steps N, N-M, or N,M,X-Y)
 
 Options:
   --config <FILE>        Config JSON file (optional; API key can come from env vars)
