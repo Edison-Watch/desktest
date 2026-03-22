@@ -314,7 +314,6 @@ pub fn is_context_length_error(error_msg: &str) -> bool {
         || lower.contains("maximum context length")
         || lower.contains("prompt is too long")
         || lower.contains("maximum number of tokens")
-        || lower.contains("max_tokens")
         || lower.contains("context window")
         || lower.contains("token limit")
 }
@@ -643,6 +642,9 @@ mod tests {
         assert!(!is_context_length_error("rate limit exceeded"));
         assert!(!is_context_length_error("authentication failed"));
         assert!(!is_context_length_error("internal server error"));
+        assert!(!is_context_length_error(
+            "max_tokens must be less than 128000"
+        ));
     }
 
     // --- Multiple trajectory with mixed observation types ---

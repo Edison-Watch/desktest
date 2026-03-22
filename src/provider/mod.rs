@@ -2,6 +2,7 @@
 
 pub mod anthropic;
 pub mod custom;
+pub mod http_base;
 pub mod openai;
 
 use std::future::Future;
