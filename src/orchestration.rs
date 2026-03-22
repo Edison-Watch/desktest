@@ -113,6 +113,7 @@ pub(crate) async fn run_task(
     no_recording: bool,
     output_dir: std::path::PathBuf,
     monitor: Option<monitor::MonitorHandle>,
+    qa: bool,
 ) -> Result<AgentOutcome, AppError> {
     let start = Instant::now();
 
@@ -161,7 +162,7 @@ pub(crate) async fn run_task(
             eprintln!("\nInterrupted (Ctrl+C), cleaning up...");
             Err(AppError::Infra("Interrupted by user".into()))
         }
-        r = run_task_inner(&task_def, &config, &session, &artifacts_dir, debug, verbose, bash_enabled, no_recording, monitor.as_ref(), start) => r,
+        r = run_task_inner(&task_def, &config, &session, &artifacts_dir, debug, verbose, bash_enabled, no_recording, monitor.as_ref(), start, qa) => r,
     };
 
     // Always collect artifacts and clean up
@@ -171,7 +172,7 @@ pub(crate) async fn run_task(
     info!("Cleaning up container...");
     let _ = session.cleanup().await;
 
-    finalize_run(result, &test_id, &task_def, &artifacts_dir, &output_dir, start)
+    finalize_run(result, &test_id, &task_def, &artifacts_dir, &output_dir, start, qa)
 }
 
 /// Shared post-inner logic: save task.json, write results.json, map to outcome.
@@ -184,6 +185,7 @@ fn finalize_run(
     artifacts_dir: &std::path::Path,
     output_dir: &std::path::Path,
     start: Instant,
+    qa: bool,
 ) -> Result<AgentOutcome, AppError> {
     let duration_ms = start.elapsed().as_millis() as u64;
 
@@ -212,6 +214,7 @@ fn finalize_run(
             &run_result.outcome,
             run_result.eval_result.as_ref(),
             duration_ms,
+            qa,
         ),
         Err(e) => results::from_error(test_id, e, duration_ms),
     };
@@ -233,6 +236,7 @@ async fn run_task_inner(
     no_recording: bool,
     monitor: Option<&monitor::MonitorHandle>,
     start_time: Instant,
+    qa: bool,
 ) -> Result<TaskRunResult, AppError> {
     use task::EvaluatorMode;
 
@@ -364,7 +368,7 @@ async fn run_task_inner(
     }
 
     // 7-8. Start recording and run agent loop / evaluation
-    run_eval_loop(task_def, config, session, artifacts_dir, eval_mode, debug, verbose, bash_enabled, no_recording, monitor, start_time).await
+    run_eval_loop(task_def, config, session, artifacts_dir, eval_mode, debug, verbose, bash_enabled, no_recording, monitor, start_time, qa).await
 }
 
 /// Shared logic for recording, agent loop, and evaluation.
@@ -382,6 +386,7 @@ async fn run_eval_loop(
     no_recording: bool,
     monitor: Option<&monitor::MonitorHandle>,
     start_time: Instant,
+    qa: bool,
 ) -> Result<TaskRunResult, AppError> {
     use task::EvaluatorMode;
 
@@ -430,6 +435,7 @@ async fn run_eval_loop(
                     passed: eval_result.passed,
                     reasoning: format_evaluation_reasoning(None, Some(&eval_result)),
                     screenshot_count: 0,
+                    bugs_found: 0,
                 },
                 eval_result: Some(eval_result),
                 agent_ran: false,
@@ -437,7 +443,7 @@ async fn run_eval_loop(
         }
         EvaluatorMode::Llm => {
             info!("Starting agent loop v2 (LLM-only evaluation)...");
-            let agent_loop_result = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose, bash_enabled, recording.as_ref(), monitor).await;
+            let agent_loop_result = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose, bash_enabled, recording.as_ref(), monitor, qa).await;
 
             if let Some(rec) = &recording {
                 rec.stop(session).await;
@@ -455,7 +461,7 @@ async fn run_eval_loop(
         }
         EvaluatorMode::Hybrid => {
             info!("Starting agent loop v2 (hybrid evaluation)...");
-            let agent_loop_result = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose, bash_enabled, recording.as_ref(), monitor).await;
+            let agent_loop_result = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose, bash_enabled, recording.as_ref(), monitor, qa).await;
 
             if let Some(rec) = &recording {
                 rec.stop(session).await;
@@ -488,6 +494,7 @@ async fn run_eval_loop(
                     passed: both_passed,
                     reasoning: format_evaluation_reasoning(Some(&agent_outcome), Some(&eval_result)),
                     screenshot_count: agent_outcome.screenshot_count,
+                    bugs_found: agent_outcome.bugs_found,
                 },
                 eval_result: Some(eval_result),
                 agent_ran: true,
@@ -576,6 +583,7 @@ async fn run_agent_loop(
     bash_enabled: bool,
     recording: Option<&recording::Recording>,
     monitor: Option<&monitor::MonitorHandle>,
+    qa: bool,
 ) -> Result<AgentOutcome, AppError> {
     let llm_client = provider::create_provider(
         &config.provider,
@@ -584,7 +592,8 @@ async fn run_agent_loop(
         &config.api_base_url,
     )?;
 
-    let loop_config = build_agent_loop_config(task_def, session, debug, verbose, bash_enabled).await;
+    let mut loop_config = build_agent_loop_config(task_def, session, debug, verbose, bash_enabled).await;
+    loop_config.qa = qa;
     let mut agent_loop = agent::loop_v2::AgentLoopV2::new(
         llm_client,
         session,
@@ -615,6 +624,7 @@ pub(crate) async fn run_attach(
     no_recording: bool,
     output_dir: std::path::PathBuf,
     monitor: Option<monitor::MonitorHandle>,
+    qa: bool,
 ) -> Result<AgentOutcome, AppError> {
     let start = Instant::now();
 
@@ -655,14 +665,14 @@ pub(crate) async fn run_attach(
             eprintln!("\nInterrupted (Ctrl+C)");
             Err(AppError::Infra("Interrupted by user".into()))
         }
-        r = run_attach_inner(&task_def, &config, &session, &artifacts_dir, debug, verbose, bash_enabled, no_recording, monitor.as_ref(), start) => r,
+        r = run_attach_inner(&task_def, &config, &session, &artifacts_dir, debug, verbose, bash_enabled, no_recording, monitor.as_ref(), start, qa) => r,
     };
 
     // Collect artifacts but do NOT clean up the container (we don't own it)
     info!("Collecting artifacts...");
     let _ = artifacts::collect_artifacts(&session, &artifacts_dir).await;
 
-    finalize_run(result, &test_id, &task_def, &artifacts_dir, &output_dir, start)
+    finalize_run(result, &test_id, &task_def, &artifacts_dir, &output_dir, start, qa)
 }
 
 /// Inner logic for attach mode: run setup steps, agent loop, and evaluation.
@@ -681,6 +691,7 @@ async fn run_attach_inner(
     no_recording: bool,
     monitor: Option<&monitor::MonitorHandle>,
     start_time: Instant,
+    qa: bool,
 ) -> Result<TaskRunResult, AppError> {
     let eval_mode = task_def
         .evaluator
@@ -711,7 +722,7 @@ async fn run_attach_inner(
     }
 
     // Recording, agent loop, and evaluation (shared with run_task_inner)
-    run_eval_loop(task_def, config, session, artifacts_dir, eval_mode, debug, verbose, bash_enabled, no_recording, monitor, start_time).await
+    run_eval_loop(task_def, config, session, artifacts_dir, eval_mode, debug, verbose, bash_enabled, no_recording, monitor, start_time, qa).await
 }
 
 pub(crate) async fn run_legacy(cli: Cli) -> Result<AgentOutcome, AppError> {
@@ -934,6 +945,7 @@ mod tests {
             passed,
             reasoning: reasoning.into(),
             screenshot_count: 5,
+            bugs_found: 0,
         }
     }
 

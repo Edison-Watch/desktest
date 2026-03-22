@@ -30,6 +30,7 @@ pub(crate) async fn run_interactive(
     output_dir: std::path::PathBuf,
     step: bool,
     validate_only: bool,
+    qa: bool,
 ) -> Result<AgentOutcome, AppError> {
     // Guard: vnc_attach tasks must use `desktest attach`, not `desktest interactive`
     if matches!(task_def.app, task::AppConfig::VncAttach { .. }) {
@@ -54,12 +55,12 @@ pub(crate) async fn run_interactive(
             eval.mode = task::EvaluatorMode::Programmatic;
         }
 
-        return run_task(task_def, config, debug, verbose, bash_enabled, no_recording, output_dir, None).await;
+        return run_task(task_def, config, debug, verbose, bash_enabled, no_recording, output_dir, None, qa).await;
     }
 
     if step {
         // --step: run agent one step at a time, pausing after each
-        return run_interactive_step(task_def, config, debug, verbose, bash_enabled, no_recording, output_dir).await;
+        return run_interactive_step(task_def, config, debug, verbose, bash_enabled, no_recording, output_dir, qa).await;
     }
 
     // Default interactive: start container, run setup, print VNC info, pause
@@ -191,6 +192,7 @@ async fn run_interactive_step(
     bash_enabled: bool,
     no_recording: bool,
     output_dir: std::path::PathBuf,
+    qa: bool,
 ) -> Result<AgentOutcome, AppError> {
     let start = Instant::now();
     config.apply_task_app(&task_def.app);
@@ -228,7 +230,7 @@ async fn run_interactive_step(
             eprintln!("\nInterrupted (Ctrl+C), cleaning up...");
             Err(AppError::Infra("Interrupted by user".into()))
         }
-        r = run_interactive_step_inner(&task_def, &config, &session, &artifacts_dir, timeout, debug, verbose, bash_enabled, no_recording) => r,
+        r = run_interactive_step_inner(&task_def, &config, &session, &artifacts_dir, timeout, debug, verbose, bash_enabled, no_recording, qa) => r,
     };
 
     // Collect artifacts and clean up
@@ -253,6 +255,7 @@ async fn run_interactive_step(
             &run_result.outcome,
             run_result.eval_result.as_ref(),
             duration_ms,
+            qa,
         ),
         Err(e) => results::from_error(&test_id, e, duration_ms),
     };
@@ -273,6 +276,7 @@ async fn run_interactive_step_inner(
     verbose: bool,
     bash_enabled: bool,
     no_recording: bool,
+    qa: bool,
 ) -> Result<TaskRunResult, AppError> {
     use task::EvaluatorMode;
 
@@ -350,7 +354,8 @@ async fn run_interactive_step_inner(
         &config.api_base_url,
     )?;
 
-    let loop_config = build_agent_loop_config(&task_def, session, debug, verbose, bash_enabled).await;
+    let mut loop_config = build_agent_loop_config(&task_def, session, debug, verbose, bash_enabled).await;
+    loop_config.qa = qa;
     let mut agent_loop = agent::loop_v2::AgentLoopV2::new(
         llm_client,
         session,
@@ -402,6 +407,7 @@ async fn run_interactive_step_inner(
             passed: final_passed,
             reasoning: format_evaluation_reasoning(Some(&agent_outcome), eval_result.as_ref()),
             screenshot_count: agent_outcome.screenshot_count,
+            bugs_found: agent_outcome.bugs_found,
         },
         eval_result,
         agent_ran: true,

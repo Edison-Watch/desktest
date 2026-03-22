@@ -49,12 +49,17 @@ pub struct AgentOutcome {
     pub passed: bool,
     pub reasoning: String,
     pub screenshot_count: usize,
+    pub bugs_found: usize,
 }
 
 impl fmt::Display for AgentOutcome {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verdict = if self.passed { "PASSED" } else { "FAILED" };
-        write!(f, "Test {}: {}", verdict, self.reasoning)
+        if self.bugs_found > 0 {
+            write!(f, "Test {}: {} ({} bug(s) reported)", verdict, self.reasoning, self.bugs_found)
+        } else {
+            write!(f, "Test {}: {}", verdict, self.reasoning)
+        }
     }
 }
 
@@ -92,6 +97,7 @@ mod tests {
             passed: true,
             reasoning: "all checks passed".into(),
             screenshot_count: 5,
+            bugs_found: 0,
         };
         assert_eq!(outcome.to_string(), "Test PASSED: all checks passed");
     }
@@ -102,7 +108,19 @@ mod tests {
             passed: false,
             reasoning: "button missing".into(),
             screenshot_count: 3,
+            bugs_found: 0,
         };
         assert_eq!(outcome.to_string(), "Test FAILED: button missing");
+    }
+
+    #[test]
+    fn test_agent_outcome_display_with_bugs() {
+        let outcome = AgentOutcome {
+            passed: true,
+            reasoning: "done".into(),
+            screenshot_count: 5,
+            bugs_found: 2,
+        };
+        assert_eq!(outcome.to_string(), "Test PASSED: done (2 bug(s) reported)");
     }
 }

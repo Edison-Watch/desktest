@@ -245,6 +245,7 @@ pub async fn run_suite(
     no_recording: bool,
     resolution: Option<&str>,
     monitor: Option<crate::monitor::MonitorHandle>,
+    qa: bool,
 ) -> Result<SuiteResult, AppError> {
     let entries = discover_tasks(dir, filter)?;
 
@@ -303,6 +304,7 @@ pub async fn run_suite(
             no_recording,
             test_output_dir.clone(),
             monitor.clone(),
+            qa,
         )
         .await;
 
@@ -313,7 +315,7 @@ pub async fn run_suite(
                 let eval_result = None; // Results already written by run_task
                 let status = if outcome.passed { "PASS" } else { "FAIL" };
                 println!("  Result: {status} ({:.1}s)\n", duration_ms as f64 / 1000.0);
-                results::from_outcome(&entry.task_def.id, &outcome, eval_result, duration_ms)
+                results::from_outcome(&entry.task_def.id, &outcome, eval_result, duration_ms, qa)
             }
             Err(ref e) => {
                 println!("  Result: ERROR - {e} ({:.1}s)\n", duration_ms as f64 / 1000.0);
@@ -368,6 +370,7 @@ mod tests {
             agent_verdict: None,
             error_category,
             error_detail,
+            bugs_found: None,
         }
     }
 

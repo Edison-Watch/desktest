@@ -17,6 +17,7 @@ Desktest is a CLI tool for automated end-to-end testing of Linux desktop applica
 - **Live monitoring dashboard**: real-time web UI to watch agent actions as they happen
 - **Interactive mode**: step through agent actions one at a time for debugging
 - **[Attach mode](docs/attach-mode.md)**: connect to an already-running container for integration with external orchestration
+- **QA mode** (`--qa`): agent reports application bugs it encounters as structured markdown reports
 
 ## Developer Workflows
 
@@ -148,6 +149,7 @@ Options:
   --record               Enable video recording
   --monitor              Enable live monitoring web dashboard
   --monitor-port <PORT>  Port for the monitoring dashboard (default: 7860)
+  --qa                   Enable QA mode: agent reports app bugs during testing
   --with-bash            Allow the agent to run bash commands inside the container (disabled by default)
 ```
 
@@ -219,6 +221,26 @@ Open `http://localhost:7860` in your browser to see:
 
 The dashboard uses the same UI as `desktest review` — a sidebar with step navigation, main panel with screenshot/thought/action details. The difference is that steps stream in via Server-Sent Events (SSE) instead of being loaded from a static file.
 
+## QA Mode
+
+Add `--qa` to any `run`, `suite`, or `attach` command to enable bug reporting. The agent will complete its task as normal, but also watch for application bugs and report them as markdown files:
+
+```bash
+# Run a test with QA bug reporting
+desktest run task.json --qa
+
+# QA mode in a test suite
+desktest suite tests/ --qa
+```
+
+When `--qa` is enabled:
+- The agent gains a `BUG` command to report application bugs it discovers
+- Bash access is automatically enabled for diagnostic investigation (log files, process state, etc.)
+- Bug reports are written to `desktest_artifacts/bugs/BUG-001.md`, `BUG-002.md`, etc.
+- Each report includes: summary, description, screenshot reference, accessibility tree state
+- The agent continues its task after reporting — multiple bugs can be found per run
+- Bug count is included in `results.json` and the test output
+
 ## Artifacts
 
 Each test run produces:
@@ -233,6 +255,8 @@ desktest_artifacts/
   agent_conversation.json     # Full LLM conversation
   step_001.png                # Screenshot per step
   step_001_a11y.txt           # Accessibility tree per step
+  bugs/                       # Bug reports (with --qa)
+    BUG-001.md                # Individual bug report
 ```
 
 ## Exit Codes

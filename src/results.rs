@@ -43,6 +43,8 @@ pub struct TestResult {
     pub error_category: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bugs_found: Option<usize>,
 }
 
 /// Build a TestResult from a successful test run (Ok(AgentOutcome)).
@@ -51,6 +53,7 @@ pub fn from_outcome(
     outcome: &AgentOutcome,
     eval_result: Option<&EvaluationResult>,
     duration_ms: u64,
+    qa: bool,
 ) -> TestResult {
     let status = if outcome.passed {
         TestStatus::Pass
@@ -77,6 +80,12 @@ pub fn from_outcome(
         (None, None)
     };
 
+    let bugs_found = if qa {
+        Some(outcome.bugs_found)
+    } else {
+        None
+    };
+
     TestResult {
         schema_version: RESULTS_SCHEMA_VERSION.to_string(),
         test_id: test_id.to_string(),
@@ -86,6 +95,7 @@ pub fn from_outcome(
         agent_verdict,
         error_category,
         error_detail,
+        bugs_found,
     }
 }
 
@@ -125,6 +135,7 @@ pub fn from_evaluation(
         agent_verdict: None,
         error_category,
         error_detail,
+        bugs_found: None,
     }
 }
 
@@ -145,6 +156,7 @@ pub fn from_error(test_id: &str, error: &AppError, duration_ms: u64) -> TestResu
         agent_verdict: None,
         error_category: Some(error_category.to_string()),
         error_detail: Some(error.to_string()),
+        bugs_found: None,
     }
 }
 
@@ -182,6 +194,7 @@ mod tests {
             passed,
             reasoning: reasoning.into(),
             screenshot_count: 5,
+            bugs_found: 0,
         }
     }
 
@@ -208,7 +221,7 @@ mod tests {
     #[test]
     fn test_from_outcome_passed() {
         let outcome = make_outcome(true, "All good");
-        let result = from_outcome("test-1", &outcome, None, 1234);
+        let result = from_outcome("test-1", &outcome, None, 1234, false);
 
         assert_eq!(result.schema_version, "1.0");
         assert_eq!(result.test_id, "test-1");
@@ -227,7 +240,7 @@ mod tests {
     #[test]
     fn test_from_outcome_failed() {
         let outcome = make_outcome(false, "Button not found");
-        let result = from_outcome("test-2", &outcome, None, 5000);
+        let result = from_outcome("test-2", &outcome, None, 5000, false);
 
         assert_eq!(result.status, TestStatus::Fail);
         assert_eq!(result.error_category.as_deref(), Some("test_failure"));
@@ -242,7 +255,7 @@ mod tests {
             make_metric(true, "exit_code", "Exit 0"),
         ];
         let eval = make_eval_result(true, metrics);
-        let result = from_outcome("test-3", &outcome, Some(&eval), 2000);
+        let result = from_outcome("test-3", &outcome, Some(&eval), 2000, false);
 
         assert_eq!(result.status, TestStatus::Pass);
         assert_eq!(result.metric_results.len(), 2);
@@ -256,10 +269,11 @@ mod tests {
             passed: false,
             reasoning: "Agent passed: Done. Programmatic evaluation failed (1/1 metrics failed: file_exists: File not found)".into(),
             screenshot_count: 3,
+            bugs_found: 0,
         };
         let metrics = vec![make_metric(false, "file_exists", "File not found")];
         let eval = make_eval_result(false, metrics);
-        let result = from_outcome("test-4", &outcome, Some(&eval), 3000);
+        let result = from_outcome("test-4", &outcome, Some(&eval), 3000, false);
 
         assert_eq!(result.status, TestStatus::Fail);
         assert_eq!(result.metric_results.len(), 1);
@@ -331,7 +345,7 @@ mod tests {
     #[test]
     fn test_result_serializes_to_json() {
         let outcome = make_outcome(true, "Done");
-        let result = from_outcome("test-10", &outcome, None, 1500);
+        let result = from_outcome("test-10", &outcome, None, 1500, false);
         let json = serde_json::to_string_pretty(&result).unwrap();
 
         assert!(json.contains("\"schema_version\": \"1.0\""));
@@ -348,7 +362,7 @@ mod tests {
         let outcome = make_outcome(false, "Timed out");
         let metrics = vec![make_metric(false, "file_exists", "Missing")];
         let eval = make_eval_result(false, metrics);
-        let result = from_outcome("test-11", &outcome, Some(&eval), 5000);
+        let result = from_outcome("test-11", &outcome, Some(&eval), 5000, false);
 
         let json = serde_json::to_string(&result).unwrap();
         let deserialized: TestResult = serde_json::from_str(&json).unwrap();
@@ -379,7 +393,7 @@ mod tests {
     fn test_write_results_creates_file() {
         let tmp = tempfile::tempdir().unwrap();
         let outcome = make_outcome(true, "OK");
-        let result = from_outcome("test-write", &outcome, None, 100);
+        let result = from_outcome("test-write", &outcome, None, 100, false);
 
         write_results(&result, tmp.path()).unwrap();
 
@@ -397,7 +411,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let nested = tmp.path().join("nested").join("dir");
         let outcome = make_outcome(true, "OK");
-        let result = from_outcome("test-nested", &outcome, None, 200);
+        let result = from_outcome("test-nested", &outcome, None, 200, false);
 
         write_results(&result, &nested).unwrap();
 
