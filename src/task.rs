@@ -249,6 +249,14 @@ pub enum MatchMode {
 }
 
 impl TaskDefinition {
+    /// Build the full instruction string, appending the completion condition if present.
+    pub fn full_instruction(&self) -> String {
+        match &self.completion_condition {
+            Some(cond) => format!("{}\n\nCompletion Condition: {}", self.instruction, cond),
+            None => self.instruction.clone(),
+        }
+    }
+
     /// Load and validate a task definition from a JSON file.
     pub fn load(path: &Path) -> Result<Self, AppError> {
         let contents = std::fs::read_to_string(path)

@@ -372,14 +372,6 @@ async fn run_task_inner(
     run_eval_loop(task_def, config, session, artifacts_dir, eval_mode, debug, verbose, bash_enabled, no_recording, monitor, start_time, qa).await
 }
 
-/// Build the full instruction string, appending the completion condition if present.
-fn build_full_instruction(task_def: &task::TaskDefinition) -> String {
-    match &task_def.completion_condition {
-        Some(cond) => format!("{}\n\nCompletion Condition: {}", task_def.instruction, cond),
-        None => task_def.instruction.clone(),
-    }
-}
-
 /// Shared logic for recording, agent loop, and evaluation.
 ///
 /// Used by both `run_task_inner` and `run_attach_inner` to avoid duplication.
@@ -603,7 +595,7 @@ async fn run_agent_loop(
 
     let mut loop_config = build_agent_loop_config(task_def, session, debug, verbose, bash_enabled).await;
     loop_config.qa = qa;
-    let full_instruction = build_full_instruction(task_def);
+    let full_instruction = task_def.full_instruction();
     let mut agent_loop = agent::loop_v2::AgentLoopV2::new(
         llm_client,
         session,
