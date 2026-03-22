@@ -1,6 +1,6 @@
 //! Backward-compatibility re-exports.
 //!
-//! The LLM provider implementation has moved to `crate::provider::openai`.
+//! The LLM provider implementation lives in `crate::provider::http_base`.
 //! Types and helpers have moved to `crate::provider`.
 //! This module re-exports them so existing code continues to work.
 
