@@ -196,8 +196,31 @@ EXAMPLES:
         screenshots_dir: Option<std::path::PathBuf>,
     },
 
-    /// Generate a web-based trajectory review viewer
+    /// View trajectory logs in the terminal (machine-readable, suitable for piping and agent consumption)
     #[command(after_help = "\
+Prints trajectory steps to stdout as structured text. Designed for CLI \
+and agent workflows — pipe to grep, jq, or other tools.\n\
+For an interactive visual viewer, use `desktest review` instead.\n\n\
+EXAMPLES:
+  desktest logs desktest_artifacts/
+  desktest logs desktest_artifacts/ --brief
+  desktest logs desktest_artifacts/ --step 3")]
+    Logs {
+        /// Path to artifacts directory containing trajectory.jsonl
+        artifacts_dir: std::path::PathBuf,
+
+        /// Show compact summary table only
+        #[arg(long, default_value_t = false)]
+        brief: bool,
+
+        /// Show only a specific step number
+        #[arg(long)]
+        step: Option<usize>,
+    },
+
+    /// Generate an interactive HTML trajectory viewer (best for human review in a browser)
+    #[command(after_help = "\
+For a CLI/agent-friendly text view, use `desktest logs` instead.\n\n\
 EXAMPLES:
   desktest review desktest_artifacts/
   desktest review desktest_artifacts/ --output desktest_review.html

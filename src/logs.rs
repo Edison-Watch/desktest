@@ -1,0 +1,158 @@
+//! Print trajectory logs to the terminal in a structured text format.
+//!
+//! Usage: `desktest logs <artifacts_dir> [--brief] [--step N]`
+
+use std::path::Path;
+
+use crate::codify;
+use crate::error::AppError;
+
+/// Print trajectory logs to stdout.
+pub fn print_logs(artifacts_dir: &Path, brief: bool, step: Option<usize>) -> Result<(), AppError> {
+    let trajectory_path = artifacts_dir.join("trajectory.jsonl");
+    let entries = codify::load_trajectory(&trajectory_path)?;
+
+    if entries.is_empty() {
+        println!("No trajectory entries found.");
+        return Ok(());
+    }
+
+    // Try to load task metadata from task.json in artifacts dir
+    let task_id = load_task_id(artifacts_dir);
+
+    // Compute summary
+    let total_steps = entries.last().map(|e| e.step).unwrap_or(0);
+    let final_result = entries.last().map(|e| e.result.as_str()).unwrap_or("unknown");
+    let duration = compute_duration(&entries);
+
+    // Print header
+    println!("== Trajectory Review ==");
+    if let Some(id) = &task_id {
+        println!("Task:       {id}");
+    }
+    println!("Steps:      {total_steps}");
+    println!("Result:     {}", format_result(final_result, total_steps));
+    if let Some(dur) = &duration {
+        println!("Duration:   {dur}");
+    }
+    println!();
+
+    if brief {
+        print_brief(&entries);
+    } else if let Some(n) = step {
+        let matching: Vec<_> = entries.iter().filter(|e| e.step == n).collect();
+        if matching.is_empty() {
+            println!("No entry found for step {n}.");
+        } else {
+            for entry in matching {
+                print_step_detail(entry);
+            }
+        }
+    } else {
+        for entry in &entries {
+            print_step_detail(entry);
+        }
+    }
+
+    Ok(())
+}
+
+fn print_brief(entries: &[codify::TrajectoryRecord]) {
+    println!("{:<6} {:<10} {:<24} {}", "Step", "Result", "Timestamp", "Thought");
+    println!("{}", "-".repeat(80));
+    for entry in entries {
+        let thought = entry
+            .thought
+            .as_deref()
+            .unwrap_or("")
+            .replace('\n', " ");
+        let thought_truncated: String = thought.chars().take(40).collect();
+        println!(
+            "{:<6} {:<10} {:<24} {}",
+            entry.step, entry.result, entry.timestamp, thought_truncated
+        );
+    }
+}
+
+fn print_step_detail(entry: &codify::TrajectoryRecord) {
+    println!("--- Step {} [{}] {} ---", entry.step, entry.result, entry.timestamp);
+    if let Some(thought) = &entry.thought {
+        println!("Thought: {thought}");
+    }
+    if !entry.action_code.trim().is_empty() {
+        println!("Action:");
+        for line in entry.action_code.lines() {
+            println!("  {line}");
+        }
+    }
+    println!("Result: {}", entry.result);
+    println!();
+}
+
+fn format_result(result: &str, step: usize) -> String {
+    match result {
+        "done" => format!("PASS (done at step {step})"),
+        "success" => format!("OK (last step {step})"),
+        "error" => format!("ERROR (at step {step})"),
+        other => format!("{} (at step {})", other.to_uppercase(), step),
+    }
+}
+
+fn compute_duration(entries: &[codify::TrajectoryRecord]) -> Option<String> {
+    if entries.len() < 2 {
+        return None;
+    }
+    let first = parse_timestamp_secs(&entries[0].timestamp)?;
+    let last = parse_timestamp_secs(&entries[entries.len() - 1].timestamp)?;
+    let total_secs = last.checked_sub(first)?;
+    let mins = total_secs / 60;
+    let secs = total_secs % 60;
+    if mins > 0 {
+        Some(format!("{mins}m {secs:02}s"))
+    } else {
+        Some(format!("{secs}s"))
+    }
+}
+
+/// Parse an ISO 8601 / RFC 3339 timestamp into epoch seconds (best effort).
+fn parse_timestamp_secs(ts: &str) -> Option<u64> {
+    // Expected format: 2026-02-26T12:00:01Z or 2026-02-26T12:00:01+00:00
+    let ts = ts.trim();
+    let date_time = ts.strip_suffix('Z').or_else(|| {
+        // Strip timezone offset like +00:00 or -05:00
+        if ts.len() > 6 {
+            let tail = &ts[ts.len() - 6..];
+            if (tail.starts_with('+') || tail.starts_with('-')) && tail.as_bytes()[3] == b':' {
+                Some(&ts[..ts.len() - 6])
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    })?;
+
+    let (date, time) = date_time.split_once('T')?;
+    let mut date_parts = date.split('-');
+    let year: u64 = date_parts.next()?.parse().ok()?;
+    let month: u64 = date_parts.next()?.parse().ok()?;
+    let day: u64 = date_parts.next()?.parse().ok()?;
+
+    let mut time_parts = time.split(':');
+    let hour: u64 = time_parts.next()?.parse().ok()?;
+    let min: u64 = time_parts.next()?.parse().ok()?;
+    // Seconds may have fractional part
+    let sec_str = time_parts.next()?;
+    let sec: u64 = sec_str.split('.').next()?.parse().ok()?;
+
+    // Approximate epoch seconds (good enough for duration calculation between nearby timestamps)
+    let days = year * 365 + year / 4 - year / 100 + year / 400 + month * 30 + day;
+    Some(days * 86400 + hour * 3600 + min * 60 + sec)
+}
+
+fn load_task_id(artifacts_dir: &Path) -> Option<String> {
+    let task_json_path = artifacts_dir.join("task.json");
+    let content = std::fs::read_to_string(&task_json_path).ok()?;
+    let val: serde_json::Value = serde_json::from_str(&content).ok()?;
+    val.get("id").and_then(|v| v.as_str()).map(|s| s.to_string())
+}
