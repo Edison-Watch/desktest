@@ -18,8 +18,11 @@ desktest_review.html
 
 # Build artifacts and binaries
 artifacts/
+# Local cross-compile binaries (e.g. desktest-linux-arm64)
 desktest-linux-*
 desktest-darwin-*
+# CI release archives (e.g. desktest-v0.2.1-x86_64-unknown-linux-gnu.tar.gz)
+desktest-v*.tar.gz
 
 # Install script
 install
