@@ -14,7 +14,7 @@ instructions.md
 # desktest CLI artifacts
 desktest_replay.py
 desktest_review.html
-eyetest_review.html
+*_review.html
 
 # Build artifacts and binaries
 artifacts/
