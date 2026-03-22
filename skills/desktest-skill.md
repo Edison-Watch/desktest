@@ -171,6 +171,7 @@ test-results/
   "schema_version": "1.0",
   "id": "unique-test-id",
   "instruction": "What the agent should do",
+  "completion_condition": "Optional — when the agent should consider the task done",
   "app": {
     "type": "appimage|folder|docker_image|vnc_attach",
     "path": "./app.AppImage",
@@ -194,6 +195,8 @@ test-results/
   "max_steps": 15
 }
 ```
+
+**`completion_condition`** (optional): Lets you define the success criteria separately from the task instruction. When present, it's appended to the instruction sent to the agent and shown as a collapsible section in the review/live dashboards. Useful for long task descriptions where mixing the goal and success criteria makes the prompt hard to read.
 
 ## --with-bash Philosophy
 
