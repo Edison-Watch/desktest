@@ -131,6 +131,7 @@ Options:
   --record               Enable video recording
   --monitor              Enable live monitoring web dashboard
   --monitor-port <PORT>  Port for the monitoring dashboard (default: 7860)
+  --with-bash            Allow the agent to run bash commands inside the container
 ```
 
 ## Task Definition
