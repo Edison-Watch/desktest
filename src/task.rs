@@ -19,7 +19,7 @@ pub struct TaskDefinition {
     pub instruction: String,
 
     /// Optional completion condition — when the agent should consider the task done.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completion_condition: Option<String>,
 
     /// Application to test.
