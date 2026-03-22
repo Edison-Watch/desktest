@@ -5,20 +5,27 @@ use crate::results;
 #[derive(Parser, Debug)]
 #[command(
     name = "desktest",
-    about = "LLM-powered desktop app tester",
+    about = "Automated end-to-end testing for Linux desktop apps using LLM-powered agents",
     version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("DESKTEST_GIT_SHA"), ")"),
     after_help = "\
-EXAMPLES:
-  Legacy mode (backward compatible):
-    desktest config.json instructions.md
-    desktest --interactive config.json instructions.md
+WORKFLOWS:
+  Test authoring (explore → codify → CI):
+    desktest run task.json --monitor          # 1. Watch the agent explore your app
+    desktest review desktest_artifacts/       # 2. Inspect the trajectory in a browser
+    desktest codify desktest_artifacts/trajectory.jsonl  # 3. Convert to replay script
+    desktest run task.json                    # 4. Run codified test (no LLM needed)
 
-  Subcommand mode:
-    desktest run task.json
-    desktest run task.json --config config.json --output ./results
-    desktest suite ./tests --filter gedit
-    desktest interactive task.json
-    desktest validate task.json"
+  Live monitoring + agent-assisted debugging:
+    desktest run task.json --monitor          # 1. Watch live, spot the failure
+    desktest logs desktest_artifacts/         # 2. Hand off to your coding agent
+                                              #    e.g. \"Claude, look at desktest logs and diagnose\"
+
+EXAMPLES:
+  desktest run task.json --config config.json --output ./results
+  desktest run task.json --monitor --with-bash
+  desktest suite ./tests --filter gedit
+  desktest interactive task.json
+  desktest validate task.json"
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -54,7 +61,7 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub resolution: Option<String>,
 
-    /// Enable live monitoring web dashboard
+    /// Enable live monitoring web dashboard (open http://localhost:7860 to watch)
     #[arg(long, default_value_t = false, global = true)]
     pub monitor: bool,
 
@@ -62,7 +69,7 @@ pub struct Cli {
     #[arg(long, default_value_t = 7860, global = true)]
     pub monitor_port: u16,
 
-    /// Allow the agent to run bash commands inside the container for debugging
+    /// Allow the agent to run bash commands inside the container for debugging (disabled by default — the agent can "cheat" by using bash instead of the GUI)
     #[arg(long = "with-bash", default_value_t = false, global = true)]
     pub with_bash: bool,
 
@@ -86,11 +93,12 @@ EXAMPLES:
     /// Run a single test from a task JSON file
     #[command(after_help = "\
 EXAMPLES:
-  desktest run task.json
-  desktest run task.json --config config.json
-  desktest run task.json --output ./my-results --verbose
-  desktest run task.json --record --debug
-  desktest run task.json --resolution 1280x720")]
+  desktest run task.json                          # Basic run
+  desktest run task.json --monitor                # Watch live at http://localhost:7860
+  desktest run task.json --monitor --with-bash    # Live + let agent use bash for debugging
+  desktest run task.json --config config.json     # Custom config
+  desktest run task.json --record --verbose       # Record video + full LLM logs
+  desktest run task.json --resolution 1280x720    # Custom resolution")]
     Run {
         /// Path to the task JSON file
         task: std::path::PathBuf,
