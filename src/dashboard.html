@@ -57,7 +57,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .task-item:hover { background: #1c2128; }
 .task-item.active { background: #1f6feb22; border-left: 3px solid #1f6feb; }
 .task-item svg { width: 16px; height: 16px; fill: currentColor; }
-.task-instruction { font-size: 15px; line-height: 1.6; color: #c9d1d9; padding: 16px; background: #1c2128; border-radius: 6px; margin-bottom: 16px; }
+.task-instruction { font-size: 14px; line-height: 1.6; color: #c9d1d9; padding: 16px; background: #1c2128; border-radius: 6px; }
 .task-meta { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 13px; }
 .task-meta dt { color: #8b949e; font-weight: 600; }
 .task-meta dd { color: #c9d1d9; }
@@ -125,8 +125,13 @@ function showTask() {
   var t = TASK_JSON;
   var html = '<div class="detail-header"><h2>Task: ' + escapeHtml(t.id || 'Unknown') + '</h2></div>';
 
-  // Instruction
-  html += '<div class="section"><h3>Instruction</h3><div class="task-instruction">' + escapeHtml(t.instruction || '') + '</div></div>';
+  // Instruction (collapsible)
+  html += '<div class="section"><h3 class="collapsible open" onclick="toggleCollapse(this)"><span class="arrow">&#9654;</span> Instruction</h3><div class="collapse-content"><div class="task-instruction">' + escapeHtml(t.instruction || '') + '</div></div></div>';
+
+  // Completion Condition (collapsible, shown only if present)
+  if (t.completion_condition) {
+    html += '<div class="section"><h3 class="collapsible open" onclick="toggleCollapse(this)"><span class="arrow">&#9654;</span> Completion Condition</h3><div class="collapse-content"><div class="task-instruction">' + escapeHtml(t.completion_condition) + '</div></div></div>';
+  }
 
   // Metadata summary
   html += '<div class="section"><h3>Details</h3><dl class="task-meta">';
@@ -287,18 +292,25 @@ if (MODE === 'live') {
   // Hide codify bar in live mode (no trajectory path yet)
   codifyBar.style.display = 'none';
 
+  function buildLiveHeaderHtml(data) {
+    var html = '<div class="live-header">';
+    html += '<div style="display:flex;align-items:center;gap:8px"><strong>' + escapeHtml(data.test_id) + '</strong>';
+    html += '<span style="color:#484f58;font-size:12px">max ' + data.max_steps + ' steps</span></div>';
+    html += '<div class="test-info"><h3 class="collapsible open" onclick="toggleCollapse(this)" style="font-size:12px;color:#8b949e;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:0"><span class="arrow">&#9654;</span> Instruction</h3><div class="collapse-content" style="margin-top:8px">' + escapeHtml(data.instruction) + '</div></div>';
+    if (data.completion_condition) {
+      html += '<div class="test-info" style="margin-top:8px"><h3 class="collapsible open" onclick="toggleCollapse(this)" style="font-size:12px;color:#8b949e;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:0"><span class="arrow">&#9654;</span> Completion Condition</h3><div class="collapse-content" style="margin-top:8px">' + escapeHtml(data.completion_condition) + '</div></div>';
+    }
+    if (data.vnc_url) {
+      html += '<a class="vnc-link" href="' + escapeHtml(data.vnc_url) + '" target="_blank">VNC: ' + escapeHtml(data.vnc_url) + '</a>';
+    }
+    html += '</div>';
+    return html;
+  }
+
   // Fetch current state for late-connecting clients
   fetch('/state').then(function(r) { return r.json(); }).then(function(data) {
     if (data && data.type === 'test_start') {
-      var html = '<div class="live-header">';
-      html += '<div style="display:flex;align-items:center;gap:8px"><strong>' + escapeHtml(data.test_id) + '</strong>';
-      html += '<span style="color:#484f58;font-size:12px">max ' + data.max_steps + ' steps</span></div>';
-      html += '<div class="test-info">' + escapeHtml(data.instruction) + '</div>';
-      if (data.vnc_url) {
-        html += '<a class="vnc-link" href="' + escapeHtml(data.vnc_url) + '" target="_blank">VNC: ' + escapeHtml(data.vnc_url) + '</a>';
-      }
-      html += '</div>';
-      liveHeader.innerHTML = html;
+      liveHeader.innerHTML = buildLiveHeaderHtml(data);
     }
   }).catch(function() {});
 
@@ -313,15 +325,7 @@ if (MODE === 'live') {
     mainPanel.innerHTML = '<div class="empty">Waiting for first step...</div>';
     var oldStatus = document.getElementById('final-status-bar');
     if (oldStatus) oldStatus.remove();
-    var html = '<div class="live-header">';
-    html += '<div style="display:flex;align-items:center;gap:8px"><strong>' + escapeHtml(data.test_id) + '</strong>';
-    html += '<span style="color:#484f58;font-size:12px">max ' + data.max_steps + ' steps</span></div>';
-    html += '<div class="test-info">' + escapeHtml(data.instruction) + '</div>';
-    if (data.vnc_url) {
-      html += '<a class="vnc-link" href="' + escapeHtml(data.vnc_url) + '" target="_blank">VNC: ' + escapeHtml(data.vnc_url) + '</a>';
-    }
-    html += '</div>';
-    liveHeader.innerHTML = html;
+    liveHeader.innerHTML = buildLiveHeaderHtml(data);
   });
 
   evtSource.addEventListener('step_complete', function(e) {

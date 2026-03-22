@@ -18,6 +18,10 @@ pub struct TaskDefinition {
     /// Natural language instruction for the agent.
     pub instruction: String,
 
+    /// Optional completion condition — when the agent should consider the task done.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completion_condition: Option<String>,
+
     /// Application to test.
     pub app: AppConfig,
 
@@ -245,6 +249,14 @@ pub enum MatchMode {
 }
 
 impl TaskDefinition {
+    /// Build the full instruction string, appending the completion condition if present.
+    pub fn full_instruction(&self) -> String {
+        match &self.completion_condition {
+            Some(cond) => format!("{}\n\nCompletion Condition: {}", self.instruction, cond),
+            None => self.instruction.clone(),
+        }
+    }
+
     /// Load and validate a task definition from a JSON file.
     pub fn load(path: &Path) -> Result<Self, AppError> {
         let contents = std::fs::read_to_string(path)

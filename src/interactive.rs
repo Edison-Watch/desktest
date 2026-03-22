@@ -356,11 +356,12 @@ async fn run_interactive_step_inner(
 
     let mut loop_config = build_agent_loop_config(&task_def, session, debug, verbose, bash_enabled).await;
     loop_config.qa = qa;
+    let full_instruction = task_def.full_instruction();
     let mut agent_loop = agent::loop_v2::AgentLoopV2::new(
         llm_client,
         session,
         artifacts_dir.to_path_buf(),
-        &task_def.instruction,
+        &full_instruction,
         config.display_width,
         config.display_height,
         loop_config,

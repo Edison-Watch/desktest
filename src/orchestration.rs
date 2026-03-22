@@ -362,6 +362,7 @@ async fn run_task_inner(
         m.send(monitor::MonitorEvent::TestStart {
             test_id: task_def.id.clone(),
             instruction: task_def.instruction.clone(),
+            completion_condition: task_def.completion_condition.clone(),
             vnc_url,
             max_steps: task_def.max_steps as usize,
         });
@@ -594,11 +595,12 @@ async fn run_agent_loop(
 
     let mut loop_config = build_agent_loop_config(task_def, session, debug, verbose, bash_enabled).await;
     loop_config.qa = qa;
+    let full_instruction = task_def.full_instruction();
     let mut agent_loop = agent::loop_v2::AgentLoopV2::new(
         llm_client,
         session,
         artifacts_dir.to_path_buf(),
-        &task_def.instruction,
+        &full_instruction,
         config.display_width,
         config.display_height,
         loop_config,
@@ -716,6 +718,7 @@ async fn run_attach_inner(
         m.send(monitor::MonitorEvent::TestStart {
             test_id: task_def.id.clone(),
             instruction: task_def.instruction.clone(),
+            completion_condition: task_def.completion_condition.clone(),
             vnc_url: String::new(),
             max_steps: task_def.max_steps as usize,
         });

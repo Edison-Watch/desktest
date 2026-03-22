@@ -13,6 +13,8 @@ pub enum MonitorEvent {
     TestStart {
         test_id: String,
         instruction: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        completion_condition: Option<String>,
         vnc_url: String,
         max_steps: usize,
     },
