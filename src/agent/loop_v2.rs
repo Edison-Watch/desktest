@@ -228,9 +228,16 @@ impl<'a> AgentLoopV2<'a> {
             // Parse response for special commands and code blocks
             let parsed = pyautogui::parse_response(&response_text);
             let code_blocks = parsed.code_blocks.clone();
+            let bash_blocks = parsed.bash_blocks.clone();
+            // Combine all code blocks for display in monitor/trajectory
+            let all_blocks: Vec<String> = bash_blocks
+                .iter()
+                .map(|b| format!("# [bash]\n{b}"))
+                .chain(code_blocks.iter().cloned())
+                .collect();
 
             // Update video caption with agent's thought before executing
-            self.update_caption(step_index, &response_text, &code_blocks).await;
+            self.update_caption(step_index, &response_text, &all_blocks).await;
 
             let turn_result = pyautogui::process_turn(
                 self.session,
@@ -248,12 +255,12 @@ impl<'a> AgentLoopV2<'a> {
                         self.log_trajectory_entry(
                             step_index,
                             &response_text,
-                            &code_blocks,
+                            &all_blocks,
                             &current_observation,
                             "done",
                             Some(&response_text),
                         );
-                        self.publish_step_event(step_index, &response_text, &code_blocks, &current_observation, "done");
+                        self.publish_step_event(step_index, &response_text, &all_blocks, &current_observation, "done");
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
@@ -274,12 +281,12 @@ impl<'a> AgentLoopV2<'a> {
                         self.log_trajectory_entry(
                             step_index,
                             &response_text,
-                            &code_blocks,
+                            &all_blocks,
                             &current_observation,
                             "fail",
                             Some(&response_text),
                         );
-                        self.publish_step_event(step_index, &response_text, &code_blocks, &current_observation, "fail");
+                        self.publish_step_event(step_index, &response_text, &all_blocks, &current_observation, "fail");
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
@@ -300,12 +307,12 @@ impl<'a> AgentLoopV2<'a> {
                         self.log_trajectory_entry(
                             step_index,
                             &response_text,
-                            &code_blocks,
+                            &all_blocks,
                             &current_observation,
                             "wait",
                             Some(&response_text),
                         );
-                        self.publish_step_event(step_index, &response_text, &code_blocks, &current_observation, "wait");
+                        self.publish_step_event(step_index, &response_text, &all_blocks, &current_observation, "wait");
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
@@ -337,12 +344,12 @@ impl<'a> AgentLoopV2<'a> {
             self.log_trajectory_entry(
                 step_index,
                 &response_text,
-                &code_blocks,
+                &all_blocks,
                 &current_observation,
                 &result_str,
                 Some(&response_text),
             );
-            self.publish_step_event(step_index, &response_text, &code_blocks, &current_observation, &result_str);
+            self.publish_step_event(step_index, &response_text, &all_blocks, &current_observation, &result_str);
 
             // Record the turn in trajectory
             self.context.push_turn(TrajectoryTurn {
@@ -449,9 +456,15 @@ impl<'a> AgentLoopV2<'a> {
 
             let parsed = pyautogui::parse_response(&response_text);
             let code_blocks = parsed.code_blocks.clone();
+            let bash_blocks = parsed.bash_blocks.clone();
+            let all_blocks: Vec<String> = bash_blocks
+                .iter()
+                .map(|b| format!("# [bash]\n{b}"))
+                .chain(code_blocks.iter().cloned())
+                .collect();
 
             // Update video caption with agent's thought before executing
-            self.update_caption(step_index, &response_text, &code_blocks).await;
+            self.update_caption(step_index, &response_text, &all_blocks).await;
 
             let turn_result = pyautogui::process_turn(
                 self.session,
@@ -466,7 +479,7 @@ impl<'a> AgentLoopV2<'a> {
                 match command {
                     SpecialCommand::Done => {
                         println!("  => Agent signalled DONE");
-                        self.log_trajectory_entry(step_index, &response_text, &code_blocks, &current_observation, "done", Some(&response_text));
+                        self.log_trajectory_entry(step_index, &response_text, &all_blocks, &current_observation, "done", Some(&response_text));
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
@@ -482,7 +495,7 @@ impl<'a> AgentLoopV2<'a> {
                     }
                     SpecialCommand::Fail => {
                         println!("  => Agent signalled FAIL");
-                        self.log_trajectory_entry(step_index, &response_text, &code_blocks, &current_observation, "fail", Some(&response_text));
+                        self.log_trajectory_entry(step_index, &response_text, &all_blocks, &current_observation, "fail", Some(&response_text));
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
@@ -498,7 +511,7 @@ impl<'a> AgentLoopV2<'a> {
                     }
                     SpecialCommand::Wait => {
                         println!("  => Agent signalled WAIT, re-observing...");
-                        self.log_trajectory_entry(step_index, &response_text, &code_blocks, &current_observation, "wait", Some(&response_text));
+                        self.log_trajectory_entry(step_index, &response_text, &all_blocks, &current_observation, "wait", Some(&response_text));
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
@@ -522,7 +535,7 @@ impl<'a> AgentLoopV2<'a> {
                 format!("error:{err}")
             };
 
-            self.log_trajectory_entry(step_index, &response_text, &code_blocks, &current_observation, &result_str, Some(&response_text));
+            self.log_trajectory_entry(step_index, &response_text, &all_blocks, &current_observation, &result_str, Some(&response_text));
             self.context.push_turn(TrajectoryTurn {
                 observation: current_observation,
                 response_text: response_text.clone(),

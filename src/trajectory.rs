@@ -18,7 +18,8 @@ pub struct TrajectoryEntry {
     pub step: usize,
     /// ISO 8601 timestamp of when this step was recorded.
     pub timestamp: String,
-    /// Extracted PyAutoGUI code blocks executed in this step (joined with newlines).
+    /// Extracted code blocks executed in this step (joined with newlines).
+    /// Includes both PyAutoGUI (Python) and bash blocks; bash blocks are prefixed with `# [bash]`.
     pub action_code: String,
     /// Agent's reasoning/reflection text before the action (if any).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -146,14 +147,16 @@ impl TrajectoryLogger {
 pub fn extract_thought(response_text: &str, code_blocks: &[String]) -> Option<String> {
     let mut text = response_text.to_string();
 
-    // Remove code blocks from the text
+    // Remove code blocks from the text (python blocks)
     for block in code_blocks {
+        // Skip blocks that were prefixed with "# [bash]\n" by all_blocks merging
+        let raw_block = block.strip_prefix("# [bash]\n").unwrap_or(block);
         // Remove the fenced code block including markers
         let patterns = [
-            format!("```python\n{}\n```", block),
-            format!("```py\n{}\n```", block),
-            format!("```python\n{block}\n```"),
-            format!("```py\n{block}\n```"),
+            format!("```python\n{raw_block}\n```"),
+            format!("```py\n{raw_block}\n```"),
+            format!("```bash\n{raw_block}\n```"),
+            format!("```sh\n{raw_block}\n```"),
         ];
         for pattern in &patterns {
             text = text.replace(pattern, "");
@@ -264,6 +267,43 @@ mod tests {
     fn test_extract_thought_only_special_command() {
         let thought = extract_thought("DONE", &[]);
         assert!(thought.is_none());
+    }
+
+    #[test]
+    fn test_extract_thought_strips_bash_blocks() {
+        let response = "Let me check the process.\n\n```bash\nps aux | grep myapp\n```\n\nNow clicking.";
+        // all_blocks has bash blocks prefixed with "# [bash]\n"
+        let all_blocks = vec!["# [bash]\nps aux | grep myapp".to_string()];
+        let thought = extract_thought(response, &all_blocks);
+        assert!(thought.is_some());
+        let t = thought.unwrap();
+        assert!(t.contains("Let me check"));
+        assert!(t.contains("Now clicking"));
+        assert!(!t.contains("ps aux"));
+    }
+
+    #[test]
+    fn test_extract_thought_strips_sh_blocks() {
+        let response = "```sh\nls -la /tmp\n```";
+        let all_blocks = vec!["# [bash]\nls -la /tmp".to_string()];
+        let thought = extract_thought(response, &all_blocks);
+        assert!(thought.is_none());
+    }
+
+    #[test]
+    fn test_extract_thought_mixed_bash_and_python() {
+        let response = "Checking state first.\n\n```bash\ncat /tmp/log\n```\n\nNow acting.\n\n```python\npyautogui.click(100, 200)\n```";
+        let all_blocks = vec![
+            "# [bash]\ncat /tmp/log".to_string(),
+            "pyautogui.click(100, 200)".to_string(),
+        ];
+        let thought = extract_thought(response, &all_blocks);
+        assert!(thought.is_some());
+        let t = thought.unwrap();
+        assert!(t.contains("Checking state"));
+        assert!(t.contains("Now acting"));
+        assert!(!t.contains("cat /tmp/log"));
+        assert!(!t.contains("pyautogui.click"));
     }
 
     #[test]
