@@ -98,12 +98,20 @@ Developer writes task.json
 ## Installation
 
 ```bash
+# One-line install (downloads pre-built binary)
+curl -fsSL https://raw.githubusercontent.com/Edison-Watch/desktest/master/install.sh | sh
+
+# Or build from source
 git clone https://github.com/Edison-Watch/desktest.git
 cd desktest
-
-# Install the desktest CLI to ~/.cargo/bin/
 make install_cli
 ```
+
+## Agent Quickstart
+
+Copy-paste the following prompt into Claude Code (or any coding agent) to install desktest and set up the agent skill:
+
+> Install the desktest CLI by running `curl -fsSL https://raw.githubusercontent.com/Edison-Watch/desktest/master/install.sh | sh`. Then copy `skills/claude-code-skill.md` from the desktest repo (https://raw.githubusercontent.com/Edison-Watch/desktest/master/skills/claude-code-skill.md) to `~/.claude/skills/desktest/SKILL.md` so you have context on how to use it.
 
 ## Quick Start
 
