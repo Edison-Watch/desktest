@@ -362,6 +362,7 @@ async fn run_task_inner(
         m.send(monitor::MonitorEvent::TestStart {
             test_id: task_def.id.clone(),
             instruction: task_def.instruction.clone(),
+            completion_condition: task_def.completion_condition.clone(),
             vnc_url,
             max_steps: task_def.max_steps as usize,
         });
@@ -725,6 +726,7 @@ async fn run_attach_inner(
         m.send(monitor::MonitorEvent::TestStart {
             test_id: task_def.id.clone(),
             instruction: task_def.instruction.clone(),
+            completion_condition: task_def.completion_condition.clone(),
             vnc_url: String::new(),
             max_steps: task_def.max_steps as usize,
         });
