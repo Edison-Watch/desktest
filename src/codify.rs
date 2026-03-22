@@ -219,6 +219,11 @@ pub fn parse_steps(steps_str: &str) -> Result<Vec<usize>, AppError> {
     for part in steps_str.split(',') {
         let part = part.trim();
         if let Some((start_str, end_str)) = part.split_once('-') {
+            if start_str.trim().is_empty() || end_str.trim().is_empty() {
+                return Err(AppError::Config(format!(
+                    "Invalid step range '{part}': expected format N-M"
+                )));
+            }
             let start: usize = start_str.trim().parse().map_err(|e| {
                 AppError::Config(format!("Invalid step number '{start_str}': {e}"))
             })?;
@@ -347,6 +352,18 @@ mod tests {
     #[test]
     fn test_parse_steps_invalid() {
         assert!(parse_steps("1,abc,3").is_err());
+    }
+
+    #[test]
+    fn test_parse_steps_leading_dash() {
+        let err = parse_steps("-5").unwrap_err();
+        assert!(err.to_string().contains("expected format N-M"));
+    }
+
+    #[test]
+    fn test_parse_steps_trailing_dash() {
+        let err = parse_steps("5-").unwrap_err();
+        assert!(err.to_string().contains("expected format N-M"));
     }
 
     #[test]

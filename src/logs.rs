@@ -45,7 +45,8 @@ pub fn print_logs(artifacts_dir: &Path, brief: bool, step_filter: Option<Vec<usi
     if brief {
         print_brief(&entries);
     } else if let Some(ref filter) = step_filter {
-        let matching: Vec<_> = entries.iter().filter(|e| filter.contains(&e.step)).collect();
+        let filter_set: std::collections::HashSet<usize> = filter.iter().copied().collect();
+        let matching: Vec<_> = entries.iter().filter(|e| filter_set.contains(&e.step)).collect();
         if matching.is_empty() {
             println!("No entries found for the requested steps.");
         } else {
