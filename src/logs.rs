@@ -9,12 +9,12 @@ use crate::error::AppError;
 
 /// Print trajectory logs to stdout.
 pub fn print_logs(artifacts_dir: &Path, brief: bool, step: Option<usize>) -> Result<(), AppError> {
-    let trajectory_path = artifacts_dir.join("trajectory.jsonl");
-    let entries = codify::load_trajectory(&trajectory_path)?;
-
     if brief && step.is_some() {
         return Err(AppError::Config("--brief and --step cannot be used together".into()));
     }
+
+    let trajectory_path = artifacts_dir.join("trajectory.jsonl");
+    let entries = codify::load_trajectory(&trajectory_path)?;
 
     if entries.is_empty() {
         println!("No trajectory entries found.");
@@ -63,7 +63,7 @@ pub fn print_logs(artifacts_dir: &Path, brief: bool, step: Option<usize>) -> Res
 }
 
 fn print_brief(entries: &[codify::TrajectoryRecord]) {
-    println!("{:<6} {:<10} {:<24} {}", "Step", "Result", "Timestamp", "Thought");
+    println!("{:<6} {:<10} {:<26} {}", "Step", "Result", "Timestamp", "Thought");
     println!("{}", "-".repeat(80));
     for entry in entries {
         let thought = entry
@@ -73,7 +73,7 @@ fn print_brief(entries: &[codify::TrajectoryRecord]) {
             .replace('\n', " ");
         let thought_truncated: String = thought.chars().take(40).collect();
         println!(
-            "{:<6} {:<10} {:<24} {}",
+            "{:<6} {:<10} {:<26} {}",
             entry.step, entry.result, entry.timestamp, thought_truncated
         );
     }
@@ -153,7 +153,9 @@ fn parse_timestamp_secs(ts: &str) -> Option<u64> {
     // Accumulated days at the start of each month (non-leap year approximation)
     const MONTH_DAYS: [u64; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
     let month_idx = (month.saturating_sub(1) as usize).min(11);
-    let days = year * 365 + year / 4 - year / 100 + year / 400 + MONTH_DAYS[month_idx] + day;
+    let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+    let leap_offset: u64 = if is_leap && month > 2 { 1 } else { 0 };
+    let days = year * 365 + year / 4 - year / 100 + year / 400 + MONTH_DAYS[month_idx] + day + leap_offset;
     Some(days * 86400 + hour * 3600 + min * 60 + sec)
 }
 
