@@ -178,7 +178,7 @@ test-results/
   },
   "config": [
     { "type": "execute", "command": "npm install" },
-    { "type": "copy", "src": "./file", "dst": "/home/tester/file" },
+    { "type": "copy", "src": "./file", "dest": "/home/tester/file" },
     { "type": "sleep", "seconds": 2 }
   ],
   "evaluator": {
