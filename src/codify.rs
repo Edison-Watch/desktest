@@ -83,11 +83,13 @@ pub fn generate_replay_script(
     script.push_str("\n");
 
     // Filter entries
+    let filter_set: Option<std::collections::HashSet<usize>> =
+        steps.map(|s| s.iter().copied().collect());
     let filtered: Vec<&TrajectoryRecord> = entries
         .iter()
         .filter(|e| {
-            if let Some(step_filter) = steps {
-                step_filter.contains(&e.step)
+            if let Some(ref set) = filter_set {
+                set.contains(&e.step)
             } else {
                 // By default, include only successful action steps
                 e.result == "success" || e.result == "done"
@@ -96,8 +98,8 @@ pub fn generate_replay_script(
         .filter(|e| {
             let keep = !e.action_code.trim().is_empty();
             if !keep {
-                if let Some(step_filter) = steps {
-                    if step_filter.contains(&e.step) {
+                if let Some(ref set) = filter_set {
+                    if set.contains(&e.step) {
                         eprintln!("Warning: step {} has empty action_code and will be skipped", e.step);
                     }
                 }
