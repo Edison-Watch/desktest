@@ -12,7 +12,7 @@ Items identified during the structural refactoring that are worth addressing but
 
 ## 3. System prompt splitting
 
-`src/agent/context.rs` contains a 116-line `format!()` macro building the system prompt. Split into section builder functions (e.g., `build_interaction_guidelines()`, `build_output_format()`) for readability and testability.
+`src/agent/context.rs` contains a ~93-line `format!()` macro building the system prompt. Split into section builder functions (e.g., `build_interaction_guidelines()`, `build_output_format()`) for readability and testability.
 
 ## 4. `recording.rs` `format_caption()` decomposition
 
@@ -20,7 +20,7 @@ Mixed concerns (text truncation, layout calculation, magic numbers for font size
 
 ## 5. `task.rs` `validate()` decomposition
 
-188-line monolith validating setup steps, evaluator config, metrics, and app config. Split into `validate_setup_steps()`, `validate_evaluator()`, `validate_metrics()`, `validate_app_config()`.
+~170-line monolith validating setup steps, evaluator config, metrics, and app config. Split into `validate_setup_steps()`, `validate_evaluator()`, `validate_metrics()`, `validate_app_config()`.
 
 ## 6. Shared constants dedup
 

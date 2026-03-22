@@ -121,6 +121,7 @@ Commands:
   validate      Check task JSON against schema without running
   codify        Convert trajectory to deterministic Python replay script
   review        Generate web-based trajectory review viewer
+  logs          View trajectory logs in the terminal
 
 Options:
   --config <FILE>        Config JSON file (optional; API key can come from env vars)
