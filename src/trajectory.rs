@@ -152,12 +152,8 @@ pub fn extract_thought(response_text: &str, code_blocks: &[String]) -> Option<St
         let raw_block = block.strip_prefix("# [bash]\n").unwrap_or(block);
         // Remove the fenced code block including markers
         let patterns = [
-            format!("```python\n{}\n```", raw_block),
-            format!("```py\n{}\n```", raw_block),
             format!("```python\n{raw_block}\n```"),
             format!("```py\n{raw_block}\n```"),
-            format!("```bash\n{}\n```", raw_block),
-            format!("```sh\n{}\n```", raw_block),
             format!("```bash\n{raw_block}\n```"),
             format!("```sh\n{raw_block}\n```"),
         ];

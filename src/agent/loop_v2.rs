@@ -237,7 +237,7 @@ impl<'a> AgentLoopV2<'a> {
                 .collect();
 
             // Update video caption with agent's thought before executing
-            self.update_caption(step_index, &response_text, &code_blocks).await;
+            self.update_caption(step_index, &response_text, &all_blocks).await;
 
             let turn_result = pyautogui::process_turn(
                 self.session,
@@ -464,7 +464,7 @@ impl<'a> AgentLoopV2<'a> {
                 .collect();
 
             // Update video caption with agent's thought before executing
-            self.update_caption(step_index, &response_text, &code_blocks).await;
+            self.update_caption(step_index, &response_text, &all_blocks).await;
 
             let turn_result = pyautogui::process_turn(
                 self.session,
