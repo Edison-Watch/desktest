@@ -272,7 +272,7 @@ impl<'a> AgentLoopV2<'a> {
             .await?;
 
             // Handle bug reports (non-terminal, always process before commands)
-            self.handle_bug_reports(step_index, &turn_result.bug_reports, &current_observation);
+            self.handle_bug_reports(step_index, &turn_result.bug_reports, &current_observation, turn_result.bash_output.as_deref());
 
             // Check for special commands
             if let Some(ref command) = turn_result.command {
@@ -547,7 +547,7 @@ impl<'a> AgentLoopV2<'a> {
             .await?;
 
             // Handle bug reports (non-terminal, always process before commands)
-            self.handle_bug_reports(step_index, &turn_result.bug_reports, &current_observation);
+            self.handle_bug_reports(step_index, &turn_result.bug_reports, &current_observation, turn_result.bash_output.as_deref());
 
             // Check for special commands
             if let Some(ref command) = turn_result.command {
@@ -649,6 +649,7 @@ impl<'a> AgentLoopV2<'a> {
         step_index: usize,
         bug_reports: &[String],
         observation: &Observation,
+        bash_output: Option<&str>,
     ) {
         if bug_reports.is_empty() {
             return;
@@ -664,6 +665,7 @@ impl<'a> AgentLoopV2<'a> {
                     description,
                     screenshot_path.as_deref(),
                     observation.a11y_tree_text.as_deref(),
+                    bash_output,
                 ) {
                     Ok(bug_id) => {
                         info!("Bug reported: {bug_id} at step {step_index}");

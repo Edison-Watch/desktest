@@ -34,6 +34,7 @@ impl BugReporter {
         description: &str,
         screenshot_path: Option<&str>,
         a11y_tree_text: Option<&str>,
+        bash_output: Option<&str>,
     ) -> std::io::Result<String> {
         let next = self.counter + 1;
         let bug_id = format!("BUG-{:03}", next);
@@ -53,6 +54,17 @@ impl BugReporter {
                 "## Screenshot\n\n\
                  ![screenshot]({screenshot})\n\n"
             ));
+        }
+
+        if let Some(output) = bash_output {
+            if !output.trim().is_empty() {
+                let truncated: String = output.chars().take(5000).collect();
+                let suffix = if output.chars().count() > 5000 { "\n... (truncated)" } else { "" };
+                md.push_str(&format!(
+                    "## Diagnostic Evidence\n\n\
+                     ```\n{truncated}{suffix}\n```\n\n"
+                ));
+            }
         }
 
         if let Some(a11y) = a11y_tree_text {
@@ -99,8 +111,8 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let mut reporter = BugReporter::new(tmp.path()).unwrap();
 
-        let id1 = reporter.report_bug(1, "First bug", None, None).unwrap();
-        let id2 = reporter.report_bug(2, "Second bug", None, None).unwrap();
+        let id1 = reporter.report_bug(1, "First bug", None, None, None).unwrap();
+        let id2 = reporter.report_bug(2, "Second bug", None, None, None).unwrap();
 
         assert_eq!(id1, "BUG-001");
         assert_eq!(id2, "BUG-002");
@@ -118,6 +130,7 @@ mod tests {
                 "Save dialog loses extension\nExpected .txt but got nothing",
                 Some("../step_005.png"),
                 Some("button\tOK\t\tGtkButton"),
+                Some("$ bash block 1:\nTraceback: FileNotFoundError at save.py:42"),
             )
             .unwrap();
 
@@ -127,6 +140,8 @@ mod tests {
         assert!(content.contains("**Summary:** Save dialog loses extension"));
         assert!(content.contains("Expected .txt but got nothing"));
         assert!(content.contains("![screenshot](../step_005.png)"));
+        assert!(content.contains("Diagnostic Evidence"));
+        assert!(content.contains("FileNotFoundError"));
         assert!(content.contains("GtkButton"));
     }
 
@@ -135,12 +150,13 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let mut reporter = BugReporter::new(tmp.path()).unwrap();
 
-        reporter.report_bug(1, "Simple bug", None, None).unwrap();
+        reporter.report_bug(1, "Simple bug", None, None, None).unwrap();
 
         let content = fs::read_to_string(tmp.path().join("bugs/BUG-001.md")).unwrap();
         assert!(content.contains("# BUG-001"));
         assert!(content.contains("Simple bug"));
         assert!(!content.contains("Screenshot"));
+        assert!(!content.contains("Diagnostic Evidence"));
         assert!(!content.contains("Accessibility Tree"));
     }
 }
