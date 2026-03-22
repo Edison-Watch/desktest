@@ -182,9 +182,29 @@ fn extract_bash_blocks(text: &str) -> Vec<String> {
 fn extract_bug_reports(text: &str) -> Vec<String> {
     let mut reports = Vec::new();
     let mut current_report: Option<Vec<String>> = None;
+    let mut in_code_block = false;
 
     for line in text.lines() {
         let trimmed = line.trim();
+
+        // Track code fence boundaries so BUG inside code blocks is ignored
+        if trimmed.starts_with("```") {
+            in_code_block = !in_code_block;
+            // A closing fence also terminates any in-progress report
+            if !in_code_block {
+                if let Some(lines) = current_report.take() {
+                    let desc = lines.join("\n").trim().to_string();
+                    if !desc.is_empty() {
+                        reports.push(desc);
+                    }
+                }
+            }
+            continue;
+        }
+
+        if in_code_block {
+            continue;
+        }
 
         if trimmed == "BUG" {
             // Flush any in-progress report
@@ -200,9 +220,8 @@ fn extract_bug_reports(text: &str) -> Vec<String> {
         }
 
         if let Some(ref mut lines) = current_report {
-            // End the report on blank line, code fence, or special command
+            // End the report on blank line or special command
             if trimmed.is_empty()
-                || trimmed.starts_with("```")
                 || matches!(trimmed, "DONE" | "FAIL" | "WAIT")
             {
                 let desc = lines.join("\n").trim().to_string();
@@ -821,5 +840,13 @@ This should type the text into the editor."#;
         let text = "BUGGING out is not a report.\nDEBUG mode is on.";
         let reports = extract_bug_reports(text);
         assert!(reports.is_empty());
+    }
+
+    #[test]
+    fn test_bug_inside_code_block_ignored() {
+        let text = "```python\nBUG\nprint('not a bug report')\n```\n\nBUG\nActual bug outside code block.";
+        let reports = extract_bug_reports(text);
+        assert_eq!(reports.len(), 1);
+        assert!(reports[0].contains("Actual bug"));
     }
 }
