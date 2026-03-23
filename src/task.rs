@@ -1305,7 +1305,7 @@ mod tests {
 
     #[test]
     fn test_secrets_resolve_from_env() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
         let json = r#"{
             "schema_version": "1.0",
             "id": "test",
@@ -1325,7 +1325,7 @@ mod tests {
 
     #[test]
     fn test_secrets_default_value() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
         let json = r#"{
             "schema_version": "1.0",
             "id": "test",
@@ -1344,7 +1344,7 @@ mod tests {
 
     #[test]
     fn test_secrets_missing_env_no_default() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
         let json = r#"{
             "schema_version": "1.0",
             "id": "test",
@@ -1364,7 +1364,7 @@ mod tests {
 
     #[test]
     fn test_secrets_apply_substitution() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
         let json = r#"{
             "schema_version": "1.0",
             "id": "test",
@@ -1401,7 +1401,7 @@ mod tests {
 
     #[test]
     fn test_secrets_apply_substitution_in_copy_and_open_steps() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
         let json = r#"{
             "schema_version": "1.0",
             "id": "test",
@@ -1457,7 +1457,7 @@ mod tests {
 
     #[test]
     fn test_secrets_apply_substitution_in_evaluator_metrics() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
         let json = r#"{
             "schema_version": "1.0",
             "id": "test",

@@ -215,17 +215,21 @@ fn finalize_run(
 
     // Save task definition to artifacts for review HTML
     let task_json_path = artifacts_dir.join("task.json");
-    match serde_json::to_string_pretty(task_def) {
-        Ok(json) => {
-            let json = match redactor {
-                Some(redactor) => redactor.redact(&json),
-                None => json,
-            };
-            if let Err(e) = std::fs::write(&task_json_path, &json) {
-                tracing::warn!("Failed to write task.json to artifacts: {e}");
+    match serde_json::to_value(task_def) {
+        Ok(mut value) => {
+            if let Some(redactor) = redactor {
+                crate::redact::redact_json_value(&mut value, redactor);
+            }
+            match serde_json::to_string_pretty(&value) {
+                Ok(json) => {
+                    if let Err(e) = std::fs::write(&task_json_path, &json) {
+                        tracing::warn!("Failed to write task.json to artifacts: {e}");
+                    }
+                }
+                Err(e) => tracing::warn!("Failed to serialize task definition: {e}"),
             }
         }
-        Err(e) => tracing::warn!("Failed to serialize task definition: {e}"),
+        Err(e) => tracing::warn!("Failed to convert task definition to JSON value: {e}"),
     }
 
     // Write results.json

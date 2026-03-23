@@ -59,6 +59,26 @@ impl Redactor {
     }
 }
 
+/// Recursively redact string values inside a JSON value.
+pub fn redact_json_value(value: &mut serde_json::Value, redactor: &Redactor) {
+    match value {
+        serde_json::Value::String(text) => {
+            *text = redactor.redact(text);
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                redact_json_value(item, redactor);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for value in map.values_mut() {
+                redact_json_value(value, redactor);
+            }
+        }
+        serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::Number(_) => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,5 +134,19 @@ mod tests {
     fn test_redacted_marker_is_not_reprocessed() {
         let r = Redactor::new(vec!["supersecret".to_string(), "ACTED".to_string()]);
         assert_eq!(r.redact("value=supersecret"), "value=[REDACTED]");
+    }
+
+    #[test]
+    fn test_redact_json_value_redacts_escaped_strings() {
+        let redactor = Redactor::new(vec!["p\"ass\\word".to_string()]);
+        let mut value = serde_json::json!({
+            "instruction": "secret=p\"ass\\word",
+            "nested": ["keep", "p\"ass\\word"]
+        });
+
+        redact_json_value(&mut value, &redactor);
+
+        assert_eq!(value["instruction"], "secret=[REDACTED]");
+        assert_eq!(value["nested"][1], "[REDACTED]");
     }
 }

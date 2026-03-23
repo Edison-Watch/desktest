@@ -885,11 +885,11 @@ fn serialize_conversation_log(
         })
         .collect();
 
-    let json = serde_json::to_string_pretty(&sanitized)?;
-    Ok(match redactor {
-        Some(redactor) => redactor.redact(&json),
-        None => json,
-    })
+    let mut sanitized = serde_json::Value::Array(sanitized);
+    if let Some(redactor) = redactor {
+        crate::redact::redact_json_value(&mut sanitized, redactor);
+    }
+    serde_json::to_string_pretty(&sanitized)
 }
 
 #[cfg(test)]
