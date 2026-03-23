@@ -35,6 +35,12 @@ impl DockerSession {
     /// When `custom_image` is `Some`, use that pre-built image instead of the
     /// built-in `desktest-desktop` base image. The custom image is NOT built —
     /// it must already exist locally or be pullable by Docker.
+    ///
+    /// **FUSE / SYS_ADMIN:** Only `AppType::Appimage` containers receive
+    /// `CAP_SYS_ADMIN` and `/dev/fuse`. Custom Docker images that internally
+    /// run AppImages or other FUSE-dependent binaries will fail at runtime
+    /// without these privileges. A future `needs_fuse` config field will
+    /// provide an explicit opt-in for this case.
     pub async fn create(config: &Config, custom_image: Option<&str>) -> Result<Self, AppError> {
         let client = Docker::connect_with_local_defaults()
             .map_err(|e| AppError::Infra(format!("Cannot connect to Docker: {e}")))?;
