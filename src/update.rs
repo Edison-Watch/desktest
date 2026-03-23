@@ -71,9 +71,11 @@ fn is_newer(latest_tag: &str, current: &str) -> bool {
 /// Parse SHA256SUMS.txt content and find the expected hash for the given asset name.
 fn find_expected_sha256(sums_text: &str, asset_name: &str) -> Option<String> {
     for line in sums_text.lines() {
-        // Format: "<hash>  <filename>" or "<hash> <filename>"
+        // Format: "<hash>  <filename>" or "<hash> *<filename>" (binary mode)
         let mut parts = line.split_whitespace();
         if let (Some(hash), Some(name)) = (parts.next(), parts.next()) {
+            // Strip leading '*' from binary-mode sha256sum output
+            let name = name.strip_prefix('*').unwrap_or(name);
             if name == asset_name {
                 return Some(hash.to_lowercase());
             }
@@ -329,5 +331,12 @@ mod tests {
             Some("def456".to_string())
         );
         assert_eq!(find_expected_sha256(sums, "nonexistent.tar.gz"), None);
+
+        // Binary-mode sha256sum output uses '*' prefix on filenames
+        let binary_sums = "abc123 *desktest-v0.9.1-aarch64-apple-darwin.tar.gz\n";
+        assert_eq!(
+            find_expected_sha256(binary_sums, "desktest-v0.9.1-aarch64-apple-darwin.tar.gz"),
+            Some("abc123".to_string())
+        );
     }
 }
