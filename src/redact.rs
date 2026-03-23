@@ -7,9 +7,17 @@ const MIN_SECRET_LENGTH: usize = 3;
 const REDACTED: &str = "[REDACTED]";
 
 /// Holds secret values and replaces them with `[REDACTED]` in any text.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Redactor {
     secrets: Vec<String>,
+}
+
+impl std::fmt::Debug for Redactor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Redactor")
+            .field("secret_count", &self.secrets.len())
+            .finish()
+    }
 }
 
 impl Redactor {
@@ -148,5 +156,14 @@ mod tests {
 
         assert_eq!(value["instruction"], "secret=[REDACTED]");
         assert_eq!(value["nested"][1], "[REDACTED]");
+    }
+
+    #[test]
+    fn test_debug_output_does_not_expose_secrets() {
+        let redactor = Redactor::new(vec!["hunter2".to_string()]);
+        let debug = format!("{redactor:?}");
+
+        assert!(debug.contains("secret_count"));
+        assert!(!debug.contains("hunter2"));
     }
 }

@@ -417,6 +417,10 @@ impl TaskDefinition {
     ///
     /// Returns an error if a `{{key}}` placeholder references an undefined secret name.
     pub fn apply_secrets(&mut self, resolved: &HashMap<String, String>) -> Result<(), AppError> {
+        if self.secrets.is_empty() {
+            return Ok(());
+        }
+
         self.instruction = substitute_secrets(&self.instruction, resolved, &self.secrets)?;
         if let Some(ref cond) = self.completion_condition {
             self.completion_condition = Some(substitute_secrets(cond, resolved, &self.secrets)?);
@@ -1446,7 +1450,9 @@ mod tests {
             "id": "test",
             "instruction": "Log in with {{undefined_key}}",
             "app": {"type": "appimage", "path": "/apps/test.AppImage"},
-            "secrets": {}
+            "secrets": {
+                "defined_key": {"env": "DESKTEST_DEFINED_KEY", "default": "value"}
+            }
         }"#;
 
         let mut task = TaskDefinition::parse_and_validate(json).unwrap();
@@ -1508,9 +1514,32 @@ mod tests {
 
     #[test]
     fn test_secrets_empty_map_backward_compat() {
-        let task = TaskDefinition::parse_and_validate(minimal_valid_task()).unwrap();
+        let mut task = TaskDefinition::parse_and_validate(minimal_valid_task()).unwrap();
         assert!(task.secrets.is_empty());
         let resolved = task.resolve_secrets().unwrap();
         assert!(resolved.is_empty());
+        task.apply_secrets(&resolved).unwrap();
+        assert_eq!(task.instruction, "Open gedit and type hello");
+    }
+
+    #[test]
+    fn test_literal_braces_without_secrets_remain_unchanged() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "Render {{name}} literally",
+            "completion_condition": "Expect {{status}} text",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"}
+        }"#;
+
+        let mut task = TaskDefinition::parse_and_validate(json).unwrap();
+        let resolved = task.resolve_secrets().unwrap();
+        task.apply_secrets(&resolved).unwrap();
+
+        assert_eq!(task.instruction, "Render {{name}} literally");
+        assert_eq!(
+            task.completion_condition.as_deref(),
+            Some("Expect {{status}} text")
+        );
     }
 }
