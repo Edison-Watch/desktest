@@ -368,6 +368,13 @@ if (MODE === 'live') {
     var index = STEPS.length;
     STEPS.push(step);
     addStepToSidebar(step, index);
+    // In multi-phase mode, release base64 screenshot data from older steps
+    // to prevent browser memory exhaustion during long runs.
+    // Keep the last 50 screenshots; older steps retain metadata but not image data.
+    if (MULTI_PHASE && STEPS.length > 50) {
+      var evictIdx = STEPS.length - 51;
+      if (STEPS[evictIdx]) STEPS[evictIdx].screenshot = null;
+    }
     // Auto-select the latest step
     selectStep(index);
     // Auto-scroll sidebar to bottom
