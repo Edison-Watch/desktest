@@ -36,6 +36,8 @@ fn asset_suffix() -> Result<&'static str, AppError> {
 
 fn parse_version(tag: &str) -> Option<(u32, u32, u32)> {
     let v = tag.strip_prefix('v').unwrap_or(tag);
+    // Strip pre-release suffix (e.g. "0.9.3-dev" → "0.9.3")
+    let v = v.split('-').next().unwrap_or(v);
     let parts: Vec<&str> = v.split('.').collect();
     if parts.len() != 3 {
         return None;
@@ -69,48 +71,11 @@ fn find_expected_sha256(sums_text: &str, asset_name: &str) -> Option<String> {
 }
 
 /// Compute SHA-256 hex digest of the given bytes.
-fn sha256_hex(data: &[u8]) -> Result<String, AppError> {
-    let mut child = std::process::Command::new("shasum")
-        .args(["-a", "256"])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .spawn()
-        .or_else(|_| {
-            std::process::Command::new("sha256sum")
-                .stdin(std::process::Stdio::piped())
-                .stdout(std::process::Stdio::piped())
-                .spawn()
-        })
-        .map_err(|e| AppError::Infra(format!("neither shasum nor sha256sum found: {e}")))?;
-
-    {
-        use std::io::Write as IoWrite;
-        let stdin = child
-            .stdin
-            .as_mut()
-            .ok_or_else(|| AppError::Infra("failed to open stdin for hash tool".into()))?;
-        stdin
-            .write_all(data)
-            .map_err(|e| AppError::Infra(format!("failed to write to hash tool: {e}")))?;
-    }
-
-    let output = child
-        .wait_with_output()
-        .map_err(|e| AppError::Infra(format!("hash tool failed: {e}")))?;
-
-    if !output.status.success() {
-        return Err(AppError::Infra(format!(
-            "hash tool exited with status {}",
-            output.status
-        )));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    stdout
-        .split_whitespace()
-        .next()
-        .map(|s| s.to_lowercase())
-        .ok_or_else(|| AppError::Infra("hash tool produced no output".into()))
+fn sha256_hex(data: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    format!("{:x}", hasher.finalize())
 }
 
 pub async fn run_update(force: bool) -> Result<(), AppError> {
@@ -206,7 +171,7 @@ pub async fn run_update(force: bool) -> Result<(), AppError> {
     // Verify checksum if available
     if let Some(expected) = &expected_hash {
         print!("Verifying SHA-256 checksum...");
-        let actual = sha256_hex(&bytes)?;
+        let actual = sha256_hex(&bytes);
         if actual != *expected {
             println!(" FAILED");
             return Err(AppError::Infra(format!(
@@ -249,7 +214,10 @@ pub async fn run_update(force: bool) -> Result<(), AppError> {
     };
 
     // Write new binary to temp file
-    std::fs::write(&tmp_path, &binary_data)?;
+    std::fs::write(&tmp_path, &binary_data).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp_path);
+        AppError::Io(e)
+    })?;
 
     // Set executable permissions (clean up temp on failure)
     #[cfg(unix)]
@@ -289,6 +257,9 @@ mod tests {
         assert_eq!(parse_version("0.9.1"), Some((0, 9, 1)));
         assert_eq!(parse_version("v0.10.0"), Some((0, 10, 0)));
         assert_eq!(parse_version("bad"), None);
+        // Pre-release suffixes are stripped
+        assert_eq!(parse_version("0.9.3-dev"), Some((0, 9, 3)));
+        assert_eq!(parse_version("v1.0.0-beta.1"), Some((1, 0, 0)));
     }
 
     #[test]
@@ -298,6 +269,8 @@ mod tests {
         assert!(is_newer("v0.9.2", "0.9.1"));
         assert!(!is_newer("v0.9.1", "0.9.1"));
         assert!(!is_newer("v0.9.0", "0.9.1"));
+        // Pre-release current version should still detect newer stable release
+        assert!(is_newer("v0.9.4", "0.9.3-dev"));
     }
 
     #[test]
