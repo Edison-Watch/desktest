@@ -62,7 +62,11 @@ fn scan_phases(
         }
     };
 
-    for entry in entries.flatten() {
+    // Sort entries lexicographically for deterministic phase ordering
+    let mut dir_entries: Vec<_> = entries.flatten().collect();
+    dir_entries.sort_by_key(|e| e.file_name());
+
+    for entry in dir_entries {
         let path = entry.path();
         if !path.is_dir() {
             continue;
@@ -114,7 +118,7 @@ fn process_phase(
     // Read new lines from trajectory.jsonl
     let ReadResult {
         entries: new_entries,
-        physical_lines_total,
+        safe_lines_consumed,
     } = match read_new_lines(&trajectory_path, skip) {
         Ok(result) => result,
         Err(e) => {
@@ -141,45 +145,53 @@ fn process_phase(
         emit_trajectory_event(entry, phase_id, handle, &trajectory_path);
     }
 
-    // Track physical lines (including blank/malformed) to keep skip cursor in sync
-    state.physical_lines_read = physical_lines_total;
+    // Only advance past lines that were blank or successfully parsed;
+    // malformed lines (possibly partial writes) will be retried next poll
+    state.physical_lines_read = safe_lines_consumed;
 }
 
-/// Result from reading new lines, tracking both valid entries and total physical lines.
+/// Result from reading new lines, tracking both valid entries and safe cursor position.
 struct ReadResult {
     entries: Vec<serde_json::Value>,
-    /// Total number of physical lines in the file (used as the next skip cursor).
-    physical_lines_total: usize,
+    /// Number of physical lines we can safely skip past on the next poll.
+    /// Malformed lines at the end are NOT counted so they're retried next poll
+    /// (they may be partially-written lines that will be complete by then).
+    safe_lines_consumed: usize,
 }
 
 /// Read lines from a JSONL file starting after `skip` physical lines.
-/// Returns valid parsed entries and the total physical line count in the file.
+/// Returns valid parsed entries and a safe cursor for the next poll.
 fn read_new_lines(path: &Path, skip: usize) -> Result<ReadResult, std::io::Error> {
     let file = std::fs::File::open(path)?;
     let reader = BufReader::new(file);
     let mut entries = Vec::new();
-    let mut physical_lines_total = 0;
+    let mut safe_lines_consumed = skip;
 
     for (i, line) in reader.lines().enumerate() {
-        physical_lines_total = i + 1;
         if i < skip {
+            safe_lines_consumed = i + 1;
             continue;
         }
         let line = line?;
         if line.trim().is_empty() {
+            safe_lines_consumed = i + 1;
             continue;
         }
         match serde_json::from_str::<serde_json::Value>(&line) {
-            Ok(value) => entries.push(value),
+            Ok(value) => {
+                entries.push(value);
+                safe_lines_consumed = i + 1;
+            }
             Err(e) => {
-                debug!("Skipping malformed JSON line {i} in {}: {e}", path.display());
+                debug!("Possibly partial line {i} in {}, will retry: {e}", path.display());
+                // Do NOT advance safe_lines_consumed — retry on next poll
             }
         }
     }
 
     Ok(ReadResult {
         entries,
-        physical_lines_total,
+        safe_lines_consumed,
     })
 }
 
