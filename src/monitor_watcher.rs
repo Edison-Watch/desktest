@@ -7,10 +7,8 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::sync::Mutex;
 use tracing::{debug, info};
 
 use crate::monitor::{MonitorEvent, MonitorHandle};
@@ -18,34 +16,34 @@ use crate::trajectory::chrono_iso8601_now;
 
 /// State for a single phase being watched.
 struct PhaseState {
-    /// Number of lines already read from this phase's trajectory.jsonl.
-    lines_read: usize,
+    /// Number of physical lines already consumed from this phase's trajectory.jsonl.
+    /// Includes blank and malformed lines to keep the skip cursor in sync.
+    physical_lines_read: usize,
+    /// Whether we've emitted a synthetic TestStart for late-connecting clients.
+    test_start_emitted: bool,
 }
 
 /// Watches `watch_dir` for subdirectories containing `trajectory.jsonl` files.
 /// Emits monitor events as new trajectory entries appear.
 pub async fn run_watcher(watch_dir: PathBuf, handle: MonitorHandle) {
-    let phases: Arc<Mutex<HashMap<String, PhaseState>>> =
-        Arc::new(Mutex::new(HashMap::new()));
+    let mut phases: HashMap<String, PhaseState> = HashMap::new();
 
     info!("Watching {} for phase directories...", watch_dir.display());
 
     // Poll loop: check for new/updated trajectory files every 500ms.
     // Using polling instead of inotify/FSEvents for simplicity and cross-platform compat.
     loop {
-        if let Err(e) = scan_phases(&watch_dir, &phases, &handle).await {
-            debug!("Scan error: {e}");
-        }
+        scan_phases(&watch_dir, &mut phases, &handle);
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
 }
 
 /// Scan the watch directory for phase subdirectories and tail their trajectory files.
-async fn scan_phases(
+fn scan_phases(
     watch_dir: &Path,
-    phases: &Arc<Mutex<HashMap<String, PhaseState>>>,
+    phases: &mut HashMap<String, PhaseState>,
     handle: &MonitorHandle,
-) -> Result<(), std::io::Error> {
+) {
     // Also check if watch_dir itself contains a trajectory.jsonl (single-phase mode)
     let trajectory_in_root = watch_dir.join("trajectory.jsonl");
     if trajectory_in_root.is_file() {
@@ -53,14 +51,14 @@ async fn scan_phases(
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "root".to_string());
-        process_phase(&phase_id, watch_dir, phases, handle).await;
+        process_phase(&phase_id, watch_dir, phases, handle);
     }
 
     let entries = match std::fs::read_dir(watch_dir) {
         Ok(e) => e,
         Err(e) => {
             debug!("Cannot read watch dir: {e}");
-            return Ok(());
+            return;
         }
     };
 
@@ -79,23 +77,20 @@ async fn scan_phases(
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        process_phase(&phase_id, &path, phases, handle).await;
+        process_phase(&phase_id, &path, phases, handle);
     }
-
-    Ok(())
 }
 
 /// Process a single phase directory: emit PhaseStart if new, then tail new trajectory lines.
-async fn process_phase(
+fn process_phase(
     phase_id: &str,
     phase_dir: &Path,
-    phases: &Arc<Mutex<HashMap<String, PhaseState>>>,
+    phases: &mut HashMap<String, PhaseState>,
     handle: &MonitorHandle,
 ) {
     let trajectory_path = phase_dir.join("trajectory.jsonl");
 
-    let mut phases_guard = phases.lock().await;
-    let is_new = !phases_guard.contains_key(phase_id);
+    let is_new = !phases.contains_key(phase_id);
 
     if is_new {
         info!("Discovered new phase: {phase_id}");
@@ -104,41 +99,69 @@ async fn process_phase(
             phase_name: phase_id.to_string(),
             timestamp: chrono_iso8601_now(),
         });
-        phases_guard.insert(
+        phases.insert(
             phase_id.to_string(),
-            PhaseState { lines_read: 0 },
+            PhaseState {
+                physical_lines_read: 0,
+                test_start_emitted: false,
+            },
         );
     }
 
-    let state = phases_guard.get_mut(phase_id).unwrap();
-    let lines_read = state.lines_read;
+    let state = phases.get_mut(phase_id).unwrap();
+    let skip = state.physical_lines_read;
 
     // Read new lines from trajectory.jsonl
-    let new_entries = match read_new_lines(&trajectory_path, lines_read) {
-        Ok(entries) => entries,
+    let ReadResult {
+        entries: new_entries,
+        physical_lines_total,
+    } = match read_new_lines(&trajectory_path, skip) {
+        Ok(result) => result,
         Err(e) => {
             debug!("Error reading trajectory for phase {phase_id}: {e}");
             return;
         }
     };
 
-    for (line_json, _line_num) in &new_entries {
-        emit_trajectory_event(line_json, phase_id, handle, &trajectory_path);
+    // Emit a synthetic TestStart for the first valid entry so the dashboard header populates
+    if !state.test_start_emitted && !new_entries.is_empty() {
+        // Try to read task.json from the phase directory for metadata
+        let (instruction, max_steps) = read_task_metadata(phase_dir);
+        handle.send(MonitorEvent::TestStart {
+            test_id: phase_id.to_string(),
+            instruction,
+            completion_condition: None,
+            vnc_url: String::new(),
+            max_steps,
+        });
+        state.test_start_emitted = true;
     }
 
-    state.lines_read += new_entries.len();
+    for entry in &new_entries {
+        emit_trajectory_event(entry, phase_id, handle, &trajectory_path);
+    }
+
+    // Track physical lines (including blank/malformed) to keep skip cursor in sync
+    state.physical_lines_read = physical_lines_total;
 }
 
-/// Read lines from a JSONL file starting after `skip` lines.
-fn read_new_lines(
-    path: &Path,
-    skip: usize,
-) -> Result<Vec<(serde_json::Value, usize)>, std::io::Error> {
+/// Result from reading new lines, tracking both valid entries and total physical lines.
+struct ReadResult {
+    entries: Vec<serde_json::Value>,
+    /// Total number of physical lines in the file (used as the next skip cursor).
+    physical_lines_total: usize,
+}
+
+/// Read lines from a JSONL file starting after `skip` physical lines.
+/// Returns valid parsed entries and the total physical line count in the file.
+fn read_new_lines(path: &Path, skip: usize) -> Result<ReadResult, std::io::Error> {
     let file = std::fs::File::open(path)?;
     let reader = BufReader::new(file);
-    let mut results = Vec::new();
+    let mut entries = Vec::new();
+    let mut physical_lines_total = 0;
 
     for (i, line) in reader.lines().enumerate() {
+        physical_lines_total = i + 1;
         if i < skip {
             continue;
         }
@@ -147,14 +170,38 @@ fn read_new_lines(
             continue;
         }
         match serde_json::from_str::<serde_json::Value>(&line) {
-            Ok(value) => results.push((value, i)),
+            Ok(value) => entries.push(value),
             Err(e) => {
                 debug!("Skipping malformed JSON line {i} in {}: {e}", path.display());
             }
         }
     }
 
-    Ok(results)
+    Ok(ReadResult {
+        entries,
+        physical_lines_total,
+    })
+}
+
+/// Try to read task metadata from a task.json file in the phase directory.
+/// Returns (instruction, max_steps) with defaults if not found.
+fn read_task_metadata(phase_dir: &Path) -> (String, usize) {
+    let task_path = phase_dir.join("task.json");
+    if let Ok(content) = std::fs::read_to_string(&task_path) {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
+            let instruction = value
+                .get("instruction")
+                .and_then(|v| v.as_str())
+                .unwrap_or("(no instruction)")
+                .to_string();
+            let max_steps = value
+                .get("max_steps")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(15) as usize;
+            return (instruction, max_steps);
+        }
+    }
+    ("(no instruction)".to_string(), 15)
 }
 
 /// Convert a trajectory JSONL entry into a MonitorEvent and send it.

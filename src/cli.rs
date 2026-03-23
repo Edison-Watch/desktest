@@ -263,15 +263,11 @@ desktest attach/run phases. Each subdirectory with a trajectory.jsonl \
 is treated as a separate phase, displayed in a single timeline.\n\n\
 EXAMPLES:
   desktest monitor --watch ./artifacts/
-  desktest monitor --watch ./artifacts/ --port 7860")]
+  desktest monitor --watch ./artifacts/ --monitor-port 8080")]
     Monitor {
         /// Directory tree to watch for phase subdirectories
         #[arg(long)]
         watch: std::path::PathBuf,
-
-        /// Port for the monitor web dashboard
-        #[arg(long, default_value_t = 7860)]
-        port: u16,
     },
 
     /// Generate an interactive HTML trajectory viewer (best for human review in a browser)

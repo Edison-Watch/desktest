@@ -502,8 +502,9 @@ async fn main() {
                 }
             }
         }
-        Command::Monitor { watch, port } => {
+        Command::Monitor { watch } => {
             let watch_dir = watch.clone();
+            let port = cli.monitor_port;
             if !watch_dir.is_dir() {
                 eprintln!(
                     "Watch directory '{}' does not exist or is not a directory.",
@@ -513,7 +514,7 @@ async fn main() {
             }
 
             let handle = monitor::MonitorHandle::new(256);
-            match monitor_server::start_monitor_server(handle.clone(), *port).await {
+            match monitor_server::start_monitor_server(handle.clone(), port).await {
                 Some(_server) => {
                     println!("Monitor dashboard: http://localhost:{}", port);
                     println!(
