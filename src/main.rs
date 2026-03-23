@@ -128,6 +128,9 @@ async fn main() {
             }
         }
         Command::Suite { dir, filter } => {
+            if cli.artifacts_dir.is_some() {
+                eprintln!("Warning: --artifacts-dir is ignored for suite runs (each test manages its own artifacts directory).");
+            }
             let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
             let bash_enabled = cli.with_bash || cli.qa;
 

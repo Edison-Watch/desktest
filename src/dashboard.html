@@ -393,6 +393,11 @@ if (MODE === 'live') {
       awaiting.innerHTML = '<span class="live-dot" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#8b949e;animation:pulse 1.5s ease-in-out infinite;margin-right:6px;vertical-align:middle;"></span>Awaiting next phase...';
       stepList.appendChild(awaiting);
       stepList.parentElement.scrollTop = stepList.parentElement.scrollHeight;
+      // Auto-hide after 60s if no new phase arrives
+      setTimeout(function() {
+        var el = document.getElementById('awaiting-phase');
+        if (el) el.remove();
+      }, 60000);
     }
   });
 

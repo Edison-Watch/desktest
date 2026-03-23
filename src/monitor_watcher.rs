@@ -59,7 +59,7 @@ fn scan_phases(
     let mut dir_entries: Vec<_> = entries.flatten().collect();
     dir_entries.sort_by_key(|e| e.file_name());
 
-    // Collect qualifying subdirectories
+    // Discover and poll subdirectory phases
     let mut found_subdirs = false;
     for entry in &dir_entries {
         let path = entry.path();
@@ -80,16 +80,19 @@ fn scan_phases(
         process_phase(&phase_id, &path, phases, handle);
     }
 
-    // Fallback: if no subdirectories have trajectories, check if watch_dir itself does
-    // (single-phase mode, e.g. `desktest monitor --watch ./desktest_artifacts/`)
-    if !found_subdirs {
-        let trajectory_in_root = watch_dir.join("trajectory.jsonl");
-        if trajectory_in_root.is_file() {
-            let phase_id = watch_dir
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| "root".to_string());
-            process_phase(&phase_id, watch_dir, phases, handle);
+    // Check root trajectory: register as a phase if no subdirs exist yet,
+    // and always poll it if already registered (so it isn't abandoned when
+    // subdirectories appear later).
+    let trajectory_in_root = watch_dir.join("trajectory.jsonl");
+    if trajectory_in_root.is_file() {
+        let root_phase_id = watch_dir
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "root".to_string());
+
+        let already_registered = phases.contains_key(&root_phase_id);
+        if !found_subdirs || already_registered {
+            process_phase(&root_phase_id, watch_dir, phases, handle);
         }
     }
 }
