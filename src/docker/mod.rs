@@ -42,22 +42,30 @@ impl DockerSession {
 
         let image_name = if let Some(img) = custom_image {
             // For custom images, check if the image exists locally; if not, try to pull it.
-            if client.inspect_image(img).await.is_err() {
-                warn!("Pulling custom image '{img}' from remote registry — ensure you trust this image source");
-                info!("Custom image '{img}' not found locally, attempting to pull...");
-                use bollard::image::CreateImageOptions;
-                let options = CreateImageOptions {
-                    from_image: img,
-                    ..Default::default()
-                };
-                let mut stream = client.create_image(Some(options), None, None);
-                while let Some(result) = stream.next().await {
-                    let info = result.map_err(|e| AppError::Config(format!(
-                        "Cannot pull custom Docker image '{img}': {e}"
-                    )))?;
-                    if let Some(status) = &info.status {
-                        debug!("Pull: {status}");
+            // Distinguish "not found" from other Docker errors to avoid misleading warnings.
+            match client.inspect_image(img).await {
+                Ok(_) => {},
+                Err(bollard::errors::Error::DockerResponseServerError { status_code: 404, .. }) => {
+                    warn!("Custom image '{img}' not found locally — pulling from remote registry. Ensure you trust this image source.");
+                    use bollard::image::CreateImageOptions;
+                    let options = CreateImageOptions {
+                        from_image: img,
+                        ..Default::default()
+                    };
+                    let mut stream = client.create_image(Some(options), None, None);
+                    while let Some(result) = stream.next().await {
+                        let info = result.map_err(|e| AppError::Config(format!(
+                            "Cannot pull custom Docker image '{img}': {e}"
+                        )))?;
+                        if let Some(status) = &info.status {
+                            debug!("Pull: {status}");
+                        }
                     }
+                }
+                Err(e) => {
+                    return Err(AppError::Infra(format!(
+                        "Cannot inspect custom Docker image '{img}': {e}"
+                    )));
                 }
             }
             img.to_string()
