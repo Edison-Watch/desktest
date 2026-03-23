@@ -241,6 +241,17 @@ EXAMPLES:
         steps: Option<String>,
     },
 
+    /// Update desktest to the latest release from GitHub
+    #[command(after_help = "\
+EXAMPLES:
+  desktest update                # Update to latest if newer
+  desktest update --force        # Re-download even if already up to date")]
+    Update {
+        /// Force update even if already on the latest version
+        #[arg(long, default_value_t = false)]
+        force: bool,
+    },
+
     /// Generate an interactive HTML trajectory viewer (best for human review in a browser)
     #[command(after_help = "\
 For a CLI/agent-friendly text view, use `desktest logs` instead.\n\n\

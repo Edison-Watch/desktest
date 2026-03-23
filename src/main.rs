@@ -22,6 +22,7 @@ mod setup;
 mod suite;
 mod task;
 mod trajectory;
+mod update;
 
 pub(crate) use orchestration::{parse_resolution, run_task};
 
@@ -478,6 +479,15 @@ async fn main() {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {
                     eprintln!("Error: {e}");
+                    std::process::exit(e.exit_code());
+                }
+            }
+        }
+        Command::Update { force } => {
+            match update::run_update(*force).await {
+                Ok(()) => std::process::exit(0),
+                Err(e) => {
+                    eprintln!("Update failed: {e}");
                     std::process::exit(e.exit_code());
                 }
             }
