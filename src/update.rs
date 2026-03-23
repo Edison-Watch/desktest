@@ -69,7 +69,7 @@ fn find_expected_sha256(sums_text: &str, asset_name: &str) -> Option<String> {
 }
 
 /// Compute SHA-256 hex digest of the given bytes.
-fn sha256_hex(data: &[u8]) -> String {
+fn sha256_hex(data: &[u8]) -> Result<String, AppError> {
     let mut child = std::process::Command::new("shasum")
         .args(["-a", "256"])
         .stdin(std::process::Stdio::piped())
@@ -81,21 +81,36 @@ fn sha256_hex(data: &[u8]) -> String {
                 .stdout(std::process::Stdio::piped())
                 .spawn()
         })
-        .expect("neither shasum nor sha256sum found");
+        .map_err(|e| AppError::Infra(format!("neither shasum nor sha256sum found: {e}")))?;
 
     {
         use std::io::Write as IoWrite;
-        let stdin = child.stdin.as_mut().expect("open stdin");
-        stdin.write_all(data).expect("write to shasum stdin");
+        let stdin = child
+            .stdin
+            .as_mut()
+            .ok_or_else(|| AppError::Infra("failed to open stdin for hash tool".into()))?;
+        stdin
+            .write_all(data)
+            .map_err(|e| AppError::Infra(format!("failed to write to hash tool: {e}")))?;
     }
 
-    let output = child.wait_with_output().expect("wait for shasum");
+    let output = child
+        .wait_with_output()
+        .map_err(|e| AppError::Infra(format!("hash tool failed: {e}")))?;
+
+    if !output.status.success() {
+        return Err(AppError::Infra(format!(
+            "hash tool exited with status {}",
+            output.status
+        )));
+    }
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     stdout
         .split_whitespace()
         .next()
-        .unwrap_or("")
-        .to_lowercase()
+        .map(|s| s.to_lowercase())
+        .ok_or_else(|| AppError::Infra("hash tool produced no output".into()))
 }
 
 pub async fn run_update(force: bool) -> Result<(), AppError> {
@@ -191,7 +206,7 @@ pub async fn run_update(force: bool) -> Result<(), AppError> {
     // Verify checksum if available
     if let Some(expected) = &expected_hash {
         print!("Verifying SHA-256 checksum...");
-        let actual = sha256_hex(&bytes);
+        let actual = sha256_hex(&bytes)?;
         if actual != *expected {
             println!(" FAILED");
             return Err(AppError::Infra(format!(
