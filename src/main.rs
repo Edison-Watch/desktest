@@ -152,14 +152,21 @@ async fn main() {
                 }
             }
         }
-        Command::Attach { task, container } => {
-            let task_def = match task::TaskDefinition::load(task) {
+        Command::Attach { task, container, replay } => {
+            let mut task_def = match task::TaskDefinition::load(task) {
                 Ok(t) => t,
                 Err(e) => {
                     eprintln!("Task load error: {e}");
                     std::process::exit(e.exit_code());
                 }
             };
+
+            if *replay {
+                if let Err(e) = task_def.apply_replay_override() {
+                    eprintln!("Error: {e}");
+                    std::process::exit(e.exit_code());
+                }
+            }
 
             let run_config =
                 orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);

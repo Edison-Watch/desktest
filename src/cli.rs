@@ -178,7 +178,8 @@ EXAMPLES:
 EXAMPLES:
   desktest attach task.json --container my-container
   desktest attach task.json --container abc123 --config config.json
-  desktest attach task.json --container my-container --resolution 1280x720")]
+  desktest attach task.json --container my-container --resolution 1280x720
+  desktest attach task.json --container my-container --replay")]
     Attach {
         /// Path to the task JSON file
         task: std::path::PathBuf,
@@ -186,6 +187,10 @@ EXAMPLES:
         /// Docker container ID or name to attach to (must be running)
         #[arg(long)]
         container: String,
+
+        /// Use the replay_script from the task JSON for deterministic execution (no LLM, no API costs)
+        #[arg(long, default_value_t = false)]
+        replay: bool,
     },
 
     /// Replay a codified Python script inside a container (deprecated: use `desktest run --replay` instead)
