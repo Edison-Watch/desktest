@@ -100,7 +100,13 @@ pub async fn capture_observation(
             })
         }
         ObservationType::A11yTree => {
-            let a11y_text = extract_a11y_tree(session, config.max_a11y_tokens, config.a11y_timeout, config.max_a11y_nodes).await;
+            let a11y_text = extract_a11y_tree(
+                session,
+                config.max_a11y_tokens,
+                config.a11y_timeout,
+                config.max_a11y_nodes,
+            )
+            .await;
             match a11y_text {
                 Ok(text) => Ok(Observation {
                     screenshot_path: None,
@@ -110,9 +116,7 @@ pub async fn capture_observation(
                 Err(e) => {
                     warn!("A11y tree extraction failed in a11y-only mode: {e}");
                     // In a11y-only mode, a failure is still an error since there's no fallback
-                    Err(AppError::Infra(format!(
-                        "A11y tree extraction failed: {e}"
-                    )))
+                    Err(AppError::Infra(format!("A11y tree extraction failed: {e}")))
                 }
             }
         }
@@ -120,7 +124,12 @@ pub async fn capture_observation(
             // Capture screenshot and a11y tree in parallel
             let (screenshot_result, a11y_result) = tokio::join!(
                 capture_screenshot_with_retry(session, artifacts_dir, step_index),
-                extract_a11y_tree(session, config.max_a11y_tokens, config.a11y_timeout, config.max_a11y_nodes),
+                extract_a11y_tree(
+                    session,
+                    config.max_a11y_tokens,
+                    config.a11y_timeout,
+                    config.max_a11y_nodes
+                ),
             );
 
             let (path, data_url) = screenshot_result?;
@@ -216,13 +225,14 @@ async fn extract_a11y_tree(
         cmd.push(&max_nodes_str);
     }
     let timeout_secs = a11y_timeout.as_secs();
-    let output = tokio::time::timeout(
-        a11y_timeout,
-        session.exec(&cmd),
-    )
-    .await
-    .map_err(|_| AppError::Infra(format!("A11y tree extraction timed out after {timeout_secs}s")))?
-    .map_err(|e| AppError::Infra(format!("A11y tree extraction failed: {e}")))?;
+    let output = tokio::time::timeout(a11y_timeout, session.exec(&cmd))
+        .await
+        .map_err(|_| {
+            AppError::Infra(format!(
+                "A11y tree extraction timed out after {timeout_secs}s"
+            ))
+        })?
+        .map_err(|e| AppError::Infra(format!("A11y tree extraction failed: {e}")))?;
 
     let trimmed = output.trim();
     if trimmed.is_empty() {
@@ -440,7 +450,10 @@ mod tests {
         let path = save_a11y_tree(dir.path(), 5, "button\tOK\t\tGtkButton")
             .await
             .unwrap();
-        assert_eq!(path.file_name().unwrap().to_str().unwrap(), "step_005_a11y.txt");
+        assert_eq!(
+            path.file_name().unwrap().to_str().unwrap(),
+            "step_005_a11y.txt"
+        );
         let contents = std::fs::read_to_string(&path).unwrap();
         assert_eq!(contents, "button\tOK\t\tGtkButton");
     }
@@ -448,9 +461,7 @@ mod tests {
     #[tokio::test]
     async fn test_save_a11y_tree_creates_file() {
         let dir = tempfile::tempdir().unwrap();
-        let path = save_a11y_tree(dir.path(), 0, "test data")
-            .await
-            .unwrap();
+        let path = save_a11y_tree(dir.path(), 0, "test data").await.unwrap();
         assert!(path.exists());
     }
 
@@ -474,7 +485,13 @@ mod tests {
     fn test_trim_a11y_tree_large_text() {
         // Simulate a large a11y tree
         let lines: Vec<String> = (0..1000)
-            .map(|i| format!("button\tButton_{}\t\tGtkButton\tdescription\t100,{}\t50,20", i, i * 25))
+            .map(|i| {
+                format!(
+                    "button\tButton_{}\t\tGtkButton\tdescription\t100,{}\t50,20",
+                    i,
+                    i * 25
+                )
+            })
             .collect();
         let text = lines.join("\n");
 

@@ -98,16 +98,6 @@ pub fn user_image_message(data_url: &str) -> ChatMessage {
     }
 }
 
-/// Helper to create a tool result message.
-pub fn tool_result_message(tool_call_id: &str, content: &str) -> ChatMessage {
-    ChatMessage {
-        role: "tool".into(),
-        content: Some(serde_json::Value::String(content.into())),
-        tool_calls: None,
-        tool_call_id: Some(tool_call_id.into()),
-    }
-}
-
 // ---------- Provider factory ----------
 
 /// Create an LlmProvider from configuration fields.
@@ -227,10 +217,7 @@ mod tests {
     fn test_user_message() {
         let msg = user_message("Hi");
         assert_eq!(msg.role, "user");
-        assert_eq!(
-            msg.content.unwrap(),
-            serde_json::Value::String("Hi".into())
-        );
+        assert_eq!(msg.content.unwrap(), serde_json::Value::String("Hi".into()));
     }
 
     #[test]
@@ -241,21 +228,7 @@ mod tests {
         let arr = content.as_array().unwrap();
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["type"], "image_url");
-        assert_eq!(
-            arr[0]["image_url"]["url"],
-            "data:image/png;base64,abc"
-        );
-    }
-
-    #[test]
-    fn test_tool_result_message() {
-        let msg = tool_result_message("call_123", "done");
-        assert_eq!(msg.role, "tool");
-        assert_eq!(msg.tool_call_id.unwrap(), "call_123");
-        assert_eq!(
-            msg.content.unwrap(),
-            serde_json::Value::String("done".into())
-        );
+        assert_eq!(arr[0]["image_url"]["url"], "data:image/png;base64,abc");
     }
 
     #[test]
@@ -289,12 +262,7 @@ mod tests {
 
     #[test]
     fn test_create_provider_custom() {
-        let provider = create_provider(
-            "custom",
-            "sk-test",
-            "local-model",
-            "http://localhost:8080",
-        );
+        let provider = create_provider("custom", "sk-test", "local-model", "http://localhost:8080");
         assert!(provider.is_ok());
     }
 

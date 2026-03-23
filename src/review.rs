@@ -7,14 +7,11 @@ use std::path::Path;
 
 use tracing::info;
 
+use crate::codify::{TrajectoryRecord, load_trajectory};
 use crate::error::AppError;
-use crate::codify::{load_trajectory, TrajectoryRecord};
 
 /// Generate a self-contained HTML review file from test artifacts.
-pub fn generate_review_html(
-    artifacts_dir: &Path,
-    output_path: &Path,
-) -> Result<(), AppError> {
+pub fn generate_review_html(artifacts_dir: &Path, output_path: &Path) -> Result<(), AppError> {
     let trajectory_path = artifacts_dir.join("trajectory.jsonl");
     if !trajectory_path.exists() {
         return Err(AppError::Config(format!(
@@ -33,14 +30,19 @@ pub fn generate_review_html(
         let recording_path = artifacts_dir.join("recording.mp4");
         if recording_path.exists() {
             const MAX_EMBED_BYTES: u64 = 50 * 1024 * 1024;
-            let size = std::fs::metadata(&recording_path).map(|m| m.len()).unwrap_or(0);
+            let size = std::fs::metadata(&recording_path)
+                .map(|m| m.len())
+                .unwrap_or(0);
             if size <= MAX_EMBED_BYTES {
                 std::fs::read(&recording_path).ok().map(|bytes| {
                     use base64::Engine;
                     base64::engine::general_purpose::STANDARD.encode(&bytes)
                 })
             } else {
-                info!("Recording too large to embed ({:.1} MB > 50 MB), skipping", size as f64 / 1_048_576.0);
+                info!(
+                    "Recording too large to embed ({:.1} MB > 50 MB), skipping",
+                    size as f64 / 1_048_576.0
+                );
                 None
             }
         } else {
@@ -73,7 +75,12 @@ pub fn generate_review_html(
     let trajectory_path_json = serde_json::to_string(&trajectory_path.to_string_lossy().as_ref())
         .unwrap_or_else(|_| "\"trajectory.jsonl\"".to_string())
         .replace("</", "<\\/");
-    let html = build_html(&steps_json, &recording_b64, &trajectory_path_json, &task_json);
+    let html = build_html(
+        &steps_json,
+        &recording_b64,
+        &trajectory_path_json,
+        &task_json,
+    );
 
     std::fs::write(output_path, &html)
         .map_err(|e| AppError::Infra(format!("Cannot write review HTML: {e}")))?;
@@ -114,7 +121,12 @@ fn build_steps_json(entries: &[TrajectoryRecord], artifacts_dir: &Path) -> Strin
 }
 
 /// Build the complete HTML document using the shared dashboard template.
-fn build_html(steps_json: &str, recording_b64: &Option<String>, trajectory_path_json: &str, task_json: &str) -> String {
+fn build_html(
+    steps_json: &str,
+    recording_b64: &Option<String>,
+    trajectory_path_json: &str,
+    task_json: &str,
+) -> String {
     let has_recording = recording_b64.is_some();
     let recording_data_uri = recording_b64
         .as_ref()
@@ -126,7 +138,10 @@ fn build_html(steps_json: &str, recording_b64: &Option<String>, trajectory_path_
         .replace("/*__STEPS__*/[]", &format!("/*__STEPS__*/{steps_json}"))
         .replace(
             "/*__HAS_RECORDING__*/false",
-            &format!("/*__HAS_RECORDING__*/{}", if has_recording { "true" } else { "false" }),
+            &format!(
+                "/*__HAS_RECORDING__*/{}",
+                if has_recording { "true" } else { "false" }
+            ),
         )
         .replace(
             "/*__RECORDING_URI__*/\"\"",
@@ -209,7 +224,11 @@ mod tests {
             "timeout": 120,
             "max_steps": 10
         });
-        std::fs::write(dir.path().join("task.json"), serde_json::to_string_pretty(&task_json).unwrap()).unwrap();
+        std::fs::write(
+            dir.path().join("task.json"),
+            serde_json::to_string_pretty(&task_json).unwrap(),
+        )
+        .unwrap();
 
         let output = dir.path().join("review.html");
         generate_review_html(dir.path(), &output).unwrap();

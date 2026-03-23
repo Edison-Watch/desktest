@@ -3,8 +3,8 @@ use std::path::Path;
 use futures::StreamExt;
 use tracing::debug;
 
-use crate::error::AppError;
 use super::DockerSession;
+use crate::error::AppError;
 
 impl DockerSession {
     /// Copy a file or directory from the host into the container.
@@ -58,14 +58,12 @@ impl DockerSession {
     /// When copying a directory, `local_path` is the destination directory
     /// (the container directory's contents are extracted into it).
     pub async fn copy_from(&self, container_path: &str, local_path: &Path) -> Result<(), AppError> {
-        let stream = self
-            .client
-            .download_from_container(
-                &self.container_id,
-                Some(bollard::container::DownloadFromContainerOptions {
-                    path: container_path.to_string(),
-                }),
-            );
+        let stream = self.client.download_from_container(
+            &self.container_id,
+            Some(bollard::container::DownloadFromContainerOptions {
+                path: container_path.to_string(),
+            }),
+        );
 
         let mut tar_bytes: Vec<u8> = Vec::new();
         futures::pin_mut!(stream);
@@ -125,14 +123,20 @@ impl DockerSession {
                     std::fs::create_dir_all(parent)
                         .map_err(|e| AppError::Infra(format!("Cannot create dir: {e}")))?;
                 }
-                let mut file = std::fs::File::create(&dest)
-                    .map_err(|e| AppError::Infra(format!("Cannot create file {}: {e}", dest.display())))?;
+                let mut file = std::fs::File::create(&dest).map_err(|e| {
+                    AppError::Infra(format!("Cannot create file {}: {e}", dest.display()))
+                })?;
                 std::io::copy(&mut entry, &mut file)
                     .map_err(|e| AppError::Infra(format!("Copy error: {e}")))?;
             }
         }
 
-        debug!("Copied {} tar entries from container:{} to {}", entry_count, container_path, local_path.display());
+        debug!(
+            "Copied {} tar entries from container:{} to {}",
+            entry_count,
+            container_path,
+            local_path.display()
+        );
         Ok(())
     }
 }

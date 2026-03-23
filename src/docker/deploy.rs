@@ -1,8 +1,8 @@
 use tracing::info;
 
+use super::DockerSession;
 use crate::config::Config;
 use crate::error::AppError;
-use super::DockerSession;
 
 impl DockerSession {
     /// Deploy the app under test into the container. Returns the path to run inside the container.
@@ -70,7 +70,12 @@ impl DockerSession {
     /// Electron apps additionally get --disable-gpu and --force-renderer-accessibility.
     /// For folder deploys, these flags are passed as positional args — scripts that forward
     /// "$@" to the binary will receive them; others can safely ignore them.
-    pub async fn launch_app(&self, app_path: &str, is_appimage: bool, is_electron: bool) -> Result<(), AppError> {
+    pub async fn launch_app(
+        &self,
+        app_path: &str,
+        is_appimage: bool,
+        is_electron: bool,
+    ) -> Result<(), AppError> {
         let mut args: Vec<&str> = vec![app_path];
         if is_appimage {
             args.push("--appimage-extract-and-run");

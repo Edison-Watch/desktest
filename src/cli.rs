@@ -29,13 +29,7 @@ EXAMPLES:
 )]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Option<Command>,
-
-    /// Path to the JSON config file (legacy positional arg)
-    pub config_pos: Option<std::path::PathBuf>,
-
-    /// Path to the instructions Markdown file (legacy positional arg)
-    pub instructions: Option<std::path::PathBuf>,
+    pub command: Command,
 
     /// Path to config JSON file (API key, provider, display settings)
     #[arg(long = "config", global = true)]
@@ -76,10 +70,6 @@ pub struct Cli {
     /// Enable QA mode: agent reports app bugs it encounters during testing
     #[arg(long, default_value_t = false, global = true)]
     pub qa: bool,
-
-    /// Interactive mode: start container and app, then wait for Ctrl+C (no agent) [legacy flag]
-    #[arg(long, default_value_t = false, hide = true)]
-    pub interactive: bool,
 }
 
 #[derive(Subcommand, Debug)]

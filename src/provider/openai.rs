@@ -12,7 +12,7 @@ impl OpenAiProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::{user_message, LlmProvider};
+    use crate::provider::{LlmProvider, user_message};
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -32,9 +32,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/v1/chat/completions"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(mock_text_response("Hello!")),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_text_response("Hello!")))
             .mount(&server)
             .await;
 

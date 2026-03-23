@@ -221,9 +221,7 @@ fn extract_bug_reports(text: &str) -> Vec<String> {
 
         if let Some(ref mut lines) = current_report {
             // End the report on blank line or special command
-            if trimmed.is_empty()
-                || matches!(trimmed, "DONE" | "FAIL" | "WAIT")
-            {
+            if trimmed.is_empty() || matches!(trimmed, "DONE" | "FAIL" | "WAIT") {
                 let desc = lines.join("\n").trim().to_string();
                 if !desc.is_empty() {
                     reports.push(desc);
@@ -254,23 +252,32 @@ pub async fn execute_bash_code(
 ) -> Result<ExecutionResult, AppError> {
     let timeout = step_timeout.unwrap_or(Duration::from_secs(DEFAULT_STEP_TIMEOUT_SECS));
 
-    debug!("Executing bash command ({} bytes, timeout {:?})", code.len(), timeout);
+    debug!(
+        "Executing bash command ({} bytes, timeout {:?})",
+        code.len(),
+        timeout
+    );
 
     let start = std::time::Instant::now();
-    let result = tokio::time::timeout(
-        timeout,
-        session.exec_with_stdin(&["bash"], code.as_bytes()),
-    )
-    .await;
+    let result =
+        tokio::time::timeout(timeout, session.exec_with_stdin(&["bash"], code.as_bytes())).await;
 
     match result {
         Ok(Ok(output)) => {
             let duration_ms = start.elapsed().as_millis() as u64;
-            debug!("Bash output ({} bytes): {}", output.len(), &output[..output.len().min(500)]);
+            debug!(
+                "Bash output ({} bytes): {}",
+                output.len(),
+                &output[..output.len().min(500)]
+            );
             Ok(ExecutionResult {
                 success: true,
                 error: None,
-                output: if output.trim().is_empty() { None } else { Some(output) },
+                output: if output.trim().is_empty() {
+                    None
+                } else {
+                    Some(output)
+                },
                 duration_ms,
             })
         }
@@ -309,7 +316,11 @@ pub async fn execute_code(
 ) -> Result<ExecutionResult, AppError> {
     let timeout = step_timeout.unwrap_or(Duration::from_secs(DEFAULT_STEP_TIMEOUT_SECS));
 
-    debug!("Executing PyAutoGUI code ({} bytes, timeout {:?})", code.len(), timeout);
+    debug!(
+        "Executing PyAutoGUI code ({} bytes, timeout {:?})",
+        code.len(),
+        timeout
+    );
 
     // Execute with timeout
     let result = tokio::time::timeout(
@@ -431,7 +442,11 @@ pub async fn process_turn(
     // Execute bash blocks first (debugging/investigation before action)
     if bash_enabled {
         for (i, code) in parsed.bash_blocks.iter().enumerate() {
-            debug!("Executing bash block {} of {}", i + 1, parsed.bash_blocks.len());
+            debug!(
+                "Executing bash block {} of {}",
+                i + 1,
+                parsed.bash_blocks.len()
+            );
             let result = execute_bash_code(session, code, step_timeout).await?;
 
             if !result.success {
@@ -457,20 +472,17 @@ pub async fn process_turn(
 
     // Execute Python/PyAutoGUI code blocks
     for (i, code) in parsed.code_blocks.iter().enumerate() {
-        debug!("Executing code block {} of {}", i + 1, parsed.code_blocks.len());
+        debug!(
+            "Executing code block {} of {}",
+            i + 1,
+            parsed.code_blocks.len()
+        );
         let result = execute_code(session, code, step_timeout).await?;
 
         if !result.success {
             all_succeeded = false;
-            let err_msg = result
-                .error
-                .as_deref()
-                .unwrap_or("Unknown error");
-            let feedback = format!(
-                "Code block {} failed: {}",
-                i + 1,
-                err_msg,
-            );
+            let err_msg = result.error.as_deref().unwrap_or("Unknown error");
+            let feedback = format!("Code block {} failed: {}", i + 1, err_msg,);
             warn!("{}", feedback);
             if error_feedback.is_none() {
                 error_feedback = Some(feedback);
@@ -597,35 +609,23 @@ pyautogui.typewrite('hello')
 
     #[test]
     fn test_detect_wait_command() {
-        assert_eq!(
-            detect_special_command("WAIT"),
-            Some(SpecialCommand::Wait)
-        );
+        assert_eq!(detect_special_command("WAIT"), Some(SpecialCommand::Wait));
     }
 
     #[test]
     fn test_detect_done_command() {
-        assert_eq!(
-            detect_special_command("DONE"),
-            Some(SpecialCommand::Done)
-        );
+        assert_eq!(detect_special_command("DONE"), Some(SpecialCommand::Done));
     }
 
     #[test]
     fn test_detect_fail_command() {
-        assert_eq!(
-            detect_special_command("FAIL"),
-            Some(SpecialCommand::Fail)
-        );
+        assert_eq!(detect_special_command("FAIL"), Some(SpecialCommand::Fail));
     }
 
     #[test]
     fn test_detect_command_with_surrounding_text() {
         let text = "I've completed the task.\nDONE\nAll looks good.";
-        assert_eq!(
-            detect_special_command(text),
-            Some(SpecialCommand::Done)
-        );
+        assert_eq!(detect_special_command(text), Some(SpecialCommand::Done));
     }
 
     #[test]
@@ -681,7 +681,8 @@ pyautogui.typewrite('hello')
     #[test]
     fn test_parse_response_with_prefix_output() {
         // Sometimes the script might print warnings before the JSON
-        let output = "Warning: something\n{\"success\": true, \"error\": null, \"duration_ms\": 100}";
+        let output =
+            "Warning: something\n{\"success\": true, \"error\": null, \"duration_ms\": 100}";
         let result = parse_executor_response(output).unwrap();
         assert!(result.success);
     }
@@ -844,7 +845,8 @@ This should type the text into the editor."#;
 
     #[test]
     fn test_bug_inside_code_block_ignored() {
-        let text = "```python\nBUG\nprint('not a bug report')\n```\n\nBUG\nActual bug outside code block.";
+        let text =
+            "```python\nBUG\nprint('not a bug report')\n```\n\nBUG\nActual bug outside code block.";
         let reports = extract_bug_reports(text);
         assert_eq!(reports.len(), 1);
         assert!(reports[0].contains("Actual bug"));

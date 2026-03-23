@@ -11,16 +11,13 @@ use crate::task::SetupStep;
 ///
 /// If any step fails, execution aborts immediately with an `AppError::Infra`
 /// (exit code 3), reporting the failing step index and error.
-pub async fn run_setup_steps(
-    session: &DockerSession,
-    steps: &[SetupStep],
-) -> Result<(), AppError> {
+pub async fn run_setup_steps(session: &DockerSession, steps: &[SetupStep]) -> Result<(), AppError> {
     for (i, step) in steps.iter().enumerate() {
         info!("Running setup step {i}: {}", step_description(step));
 
-        run_step(session, step)
-            .await
-            .map_err(|e| AppError::Infra(format!("Setup step {i} ({}) failed: {e}", step_name(step))))?;
+        run_step(session, step).await.map_err(|e| {
+            AppError::Infra(format!("Setup step {i} ({}) failed: {e}", step_name(step)))
+        })?;
     }
 
     if !steps.is_empty() {
@@ -109,28 +106,56 @@ mod tests {
 
     #[test]
     fn test_step_name() {
-        assert_eq!(step_name(&SetupStep::Execute { command: "ls".into() }), "execute");
-        assert_eq!(step_name(&SetupStep::Copy { src: "a".into(), dest: "b".into() }), "copy");
-        assert_eq!(step_name(&SetupStep::Open { target: "f".into(), app: None }), "open");
+        assert_eq!(
+            step_name(&SetupStep::Execute {
+                command: "ls".into()
+            }),
+            "execute"
+        );
+        assert_eq!(
+            step_name(&SetupStep::Copy {
+                src: "a".into(),
+                dest: "b".into()
+            }),
+            "copy"
+        );
+        assert_eq!(
+            step_name(&SetupStep::Open {
+                target: "f".into(),
+                app: None
+            }),
+            "open"
+        );
         assert_eq!(step_name(&SetupStep::Sleep { seconds: 1.0 }), "sleep");
     }
 
     #[test]
     fn test_step_description() {
         assert_eq!(
-            step_description(&SetupStep::Execute { command: "echo hi".into() }),
+            step_description(&SetupStep::Execute {
+                command: "echo hi".into()
+            }),
             "execute: echo hi"
         );
         assert_eq!(
-            step_description(&SetupStep::Copy { src: "/a".into(), dest: "/b".into() }),
+            step_description(&SetupStep::Copy {
+                src: "/a".into(),
+                dest: "/b".into()
+            }),
             "copy: /a -> /b"
         );
         assert_eq!(
-            step_description(&SetupStep::Open { target: "/tmp/file".into(), app: None }),
+            step_description(&SetupStep::Open {
+                target: "/tmp/file".into(),
+                app: None
+            }),
             "open: /tmp/file"
         );
         assert_eq!(
-            step_description(&SetupStep::Open { target: "/tmp/file".into(), app: Some("gedit".into()) }),
+            step_description(&SetupStep::Open {
+                target: "/tmp/file".into(),
+                app: Some("gedit".into())
+            }),
             "open: /tmp/file with gedit"
         );
         assert_eq!(
@@ -176,9 +201,9 @@ mod tests {
         };
         let session = DockerSession::create(&config, None).await.unwrap();
 
-        let steps = vec![
-            SetupStep::Execute { command: "echo hello > /tmp/setup_test.txt".into() },
-        ];
+        let steps = vec![SetupStep::Execute {
+            command: "echo hello > /tmp/setup_test.txt".into(),
+        }];
         run_setup_steps(&session, &steps).await.unwrap();
 
         let output = session.exec(&["cat", "/tmp/setup_test.txt"]).await.unwrap();
@@ -211,12 +236,10 @@ mod tests {
         let tmp = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(tmp.path(), b"setup copy test").unwrap();
 
-        let steps = vec![
-            SetupStep::Copy {
-                src: tmp.path().to_string_lossy().into_owned(),
-                dest: "/home/tester/".into(),
-            },
-        ];
+        let steps = vec![SetupStep::Copy {
+            src: tmp.path().to_string_lossy().into_owned(),
+            dest: "/home/tester/".into(),
+        }];
         run_setup_steps(&session, &steps).await.unwrap();
 
         let filename = tmp.path().file_name().unwrap().to_str().unwrap();
@@ -254,7 +277,10 @@ mod tests {
         let steps = vec![SetupStep::Sleep { seconds: 0.5 }];
         run_setup_steps(&session, &steps).await.unwrap();
         let elapsed = start.elapsed();
-        assert!(elapsed.as_millis() >= 450, "Sleep should have waited at least 450ms");
+        assert!(
+            elapsed.as_millis() >= 450,
+            "Sleep should have waited at least 450ms"
+        );
 
         session.cleanup().await.unwrap();
     }
@@ -280,12 +306,10 @@ mod tests {
         };
         let session = DockerSession::create(&config, None).await.unwrap();
 
-        let steps = vec![
-            SetupStep::Copy {
-                src: "/nonexistent/file/that/does/not/exist".into(),
-                dest: "/home/tester/".into(),
-            },
-        ];
+        let steps = vec![SetupStep::Copy {
+            src: "/nonexistent/file/that/does/not/exist".into(),
+            dest: "/home/tester/".into(),
+        }];
         let err = run_setup_steps(&session, &steps).await.unwrap_err();
         assert!(matches!(err, AppError::Infra(_)));
         assert_eq!(err.exit_code(), 3);
@@ -316,9 +340,15 @@ mod tests {
         let session = DockerSession::create(&config, None).await.unwrap();
 
         let steps = vec![
-            SetupStep::Execute { command: "echo step1 > /tmp/order_test.txt".into() },
-            SetupStep::Execute { command: "echo step2 >> /tmp/order_test.txt".into() },
-            SetupStep::Execute { command: "echo step3 >> /tmp/order_test.txt".into() },
+            SetupStep::Execute {
+                command: "echo step1 > /tmp/order_test.txt".into(),
+            },
+            SetupStep::Execute {
+                command: "echo step2 >> /tmp/order_test.txt".into(),
+            },
+            SetupStep::Execute {
+                command: "echo step3 >> /tmp/order_test.txt".into(),
+            },
         ];
         run_setup_steps(&session, &steps).await.unwrap();
 

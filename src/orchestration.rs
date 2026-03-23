@@ -4,7 +4,6 @@ use tracing::info;
 
 use crate::agent;
 use crate::artifacts;
-use crate::cli::Cli;
 use crate::config::Config;
 use crate::docker;
 use crate::error::{AgentOutcome, AppError};
@@ -27,7 +26,10 @@ pub(crate) struct TaskRunResult {
 }
 
 /// Load config from --config flag path or use task defaults.
-pub(crate) fn load_config_or_defaults(config_flag: &Option<std::path::PathBuf>, resolution: &Option<String>) -> Config {
+pub(crate) fn load_config_or_defaults(
+    config_flag: &Option<std::path::PathBuf>,
+    resolution: &Option<String>,
+) -> Config {
     let mut config = if let Some(config_path) = config_flag {
         match Config::load_and_validate(config_path) {
             Ok(c) => c,
@@ -68,12 +70,12 @@ pub(crate) fn parse_resolution(s: &str) -> Result<(u32, u32), AppError> {
                     "Invalid resolution '{s}': expected WxH (e.g., 1280x720) or preset (720p, 1080p)"
                 )));
             }
-            let w = parts[0].parse::<u32>().map_err(|_| {
-                AppError::Config(format!("Invalid resolution width in '{s}'"))
-            })?;
-            let h = parts[1].parse::<u32>().map_err(|_| {
-                AppError::Config(format!("Invalid resolution height in '{s}'"))
-            })?;
+            let w = parts[0]
+                .parse::<u32>()
+                .map_err(|_| AppError::Config(format!("Invalid resolution width in '{s}'")))?;
+            let h = parts[1]
+                .parse::<u32>()
+                .map_err(|_| AppError::Config(format!("Invalid resolution height in '{s}'")))?;
             if w == 0 || h == 0 {
                 return Err(AppError::Config(format!(
                     "Invalid resolution '{s}': width and height must be greater than zero"
@@ -120,7 +122,8 @@ pub(crate) async fn run_task(
     // Guard: vnc_attach tasks must use `desktest attach`, not `desktest run`
     if matches!(task_def.app, task::AppConfig::VncAttach { .. }) {
         return Err(AppError::Config(
-            "Task uses 'vnc_attach' app type — use 'desktest attach' instead of 'desktest run'.".into()
+            "Task uses 'vnc_attach' app type — use 'desktest attach' instead of 'desktest run'."
+                .into(),
         ));
     }
 
@@ -172,7 +175,15 @@ pub(crate) async fn run_task(
     info!("Cleaning up container...");
     let _ = session.cleanup().await;
 
-    finalize_run(result, &test_id, &task_def, &artifacts_dir, &output_dir, start, qa)
+    finalize_run(
+        result,
+        &test_id,
+        &task_def,
+        &artifacts_dir,
+        &output_dir,
+        start,
+        qa,
+    )
 }
 
 /// Shared post-inner logic: save task.json, write results.json, map to outcome.
@@ -202,13 +213,14 @@ fn finalize_run(
 
     // Write results.json
     let test_result = match &result {
-        Ok(run_result) if !run_result.agent_ran => {
-            results::from_evaluation(
-                test_id,
-                run_result.eval_result.as_ref().expect("programmatic mode has eval_result"),
-                duration_ms,
-            )
-        }
+        Ok(run_result) if !run_result.agent_ran => results::from_evaluation(
+            test_id,
+            run_result
+                .eval_result
+                .as_ref()
+                .expect("programmatic mode has eval_result"),
+            duration_ms,
+        ),
         Ok(run_result) => results::from_outcome(
             test_id,
             &run_result.outcome,
@@ -249,11 +261,14 @@ async fn run_task_inner(
         .map(|e| &e.mode)
         .unwrap_or(&EvaluatorMode::Llm);
 
-    info!("Evaluation mode: {}", match eval_mode {
-        EvaluatorMode::Llm => "llm",
-        EvaluatorMode::Programmatic => "programmatic",
-        EvaluatorMode::Hybrid => "hybrid",
-    });
+    info!(
+        "Evaluation mode: {}",
+        match eval_mode {
+            EvaluatorMode::Llm => "llm",
+            EvaluatorMode::Programmatic => "programmatic",
+            EvaluatorMode::Hybrid => "hybrid",
+        }
+    );
 
     // 1. Wait for desktop to be ready
     info!("Waiting for desktop to be ready...");
@@ -288,18 +303,23 @@ async fn run_task_inner(
                 let baseline_windows = readiness::get_stable_window_list(session).await?;
 
                 info!("Launching app via entrypoint_cmd: {cmd}");
-                session.exec_detached_with_log(
-                    &["bash", "-c", cmd],
-                    "/tmp/app.log",
-                ).await?;
+                session
+                    .exec_detached_with_log(&["bash", "-c", cmd], "/tmp/app.log")
+                    .await?;
 
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-                let pgrep_cmd = format!("pgrep -f {} || true", shell_escape::escape(cmd.as_str().into()));
+                let pgrep_cmd = format!(
+                    "pgrep -f {} || true",
+                    shell_escape::escape(cmd.as_str().into())
+                );
                 let ps_check = session.exec(&["bash", "-c", &pgrep_cmd]).await;
                 if let Ok(output) = &ps_check {
                     if output.trim().is_empty() {
-                        let log = session.exec(&["cat", "/tmp/app.log"]).await.unwrap_or_default();
+                        let log = session
+                            .exec(&["cat", "/tmp/app.log"])
+                            .await
+                            .unwrap_or_default();
                         if !log.trim().is_empty() {
                             tracing::warn!("App process died. Log output:\n{log}");
                         } else {
@@ -311,17 +331,20 @@ async fn run_task_inner(
                 info!("Waiting for app window...");
                 readiness::wait_for_app_window(session, &baseline_windows, timeout, debug).await?;
             } else {
-                info!("No entrypoint_cmd specified, assuming app starts automatically in custom image");
+                info!(
+                    "No entrypoint_cmd specified, assuming app starts automatically in custom image"
+                );
             }
         }
     } else {
-
         info!("Waiting for stable window baseline...");
         let baseline_windows = readiness::get_stable_window_list(session).await?;
 
         let is_appimage = matches!(config.app_type, crate::config::AppType::Appimage);
         info!("Launching app: {app_path}");
-        session.launch_app(&app_path, is_appimage, config.electron).await?;
+        session
+            .launch_app(&app_path, is_appimage, config.electron)
+            .await?;
 
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
@@ -369,7 +392,21 @@ async fn run_task_inner(
     }
 
     // 7-8. Start recording and run agent loop / evaluation
-    run_eval_loop(task_def, config, session, artifacts_dir, eval_mode, debug, verbose, bash_enabled, no_recording, monitor, start_time, qa).await
+    run_eval_loop(
+        task_def,
+        config,
+        session,
+        artifacts_dir,
+        eval_mode,
+        debug,
+        verbose,
+        bash_enabled,
+        no_recording,
+        monitor,
+        start_time,
+        qa,
+    )
+    .await
 }
 
 /// Shared logic for recording, agent loop, and evaluation.
@@ -395,7 +432,9 @@ async fn run_eval_loop(
     let recording = if no_recording {
         None
     } else {
-        match recording::Recording::start(session, config.display_width, config.display_height).await {
+        match recording::Recording::start(session, config.display_width, config.display_height)
+            .await
+        {
             Ok(rec) => Some(rec),
             Err(e) => {
                 tracing::warn!("Failed to start recording: {e}");
@@ -411,8 +450,7 @@ async fn run_eval_loop(
             let evaluator = task_def.evaluator.as_ref().expect(
                 "Programmatic mode requires evaluator config (validated at task load time)",
             );
-            let eval_result =
-                evaluator::run_evaluation(session, evaluator, artifacts_dir).await;
+            let eval_result = evaluator::run_evaluation(session, evaluator, artifacts_dir).await;
 
             if let Some(rec) = &recording {
                 rec.stop(session).await;
@@ -444,7 +482,19 @@ async fn run_eval_loop(
         }
         EvaluatorMode::Llm => {
             info!("Starting agent loop v2 (LLM-only evaluation)...");
-            let agent_loop_result = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose, bash_enabled, recording.as_ref(), monitor, qa).await;
+            let agent_loop_result = run_agent_loop(
+                task_def,
+                config,
+                session,
+                artifacts_dir,
+                debug,
+                verbose,
+                bash_enabled,
+                recording.as_ref(),
+                monitor,
+                qa,
+            )
+            .await;
 
             if let Some(rec) = &recording {
                 rec.stop(session).await;
@@ -462,7 +512,19 @@ async fn run_eval_loop(
         }
         EvaluatorMode::Hybrid => {
             info!("Starting agent loop v2 (hybrid evaluation)...");
-            let agent_loop_result = run_agent_loop(task_def, config, session, artifacts_dir, debug, verbose, bash_enabled, recording.as_ref(), monitor, qa).await;
+            let agent_loop_result = run_agent_loop(
+                task_def,
+                config,
+                session,
+                artifacts_dir,
+                debug,
+                verbose,
+                bash_enabled,
+                recording.as_ref(),
+                monitor,
+                qa,
+            )
+            .await;
 
             if let Some(rec) = &recording {
                 rec.stop(session).await;
@@ -472,11 +534,11 @@ async fn run_eval_loop(
             let agent_outcome = agent_loop_result?;
 
             info!("Agent loop complete, running programmatic evaluation...");
-            let evaluator = task_def.evaluator.as_ref().expect(
-                "Hybrid mode requires evaluator config (validated at task load time)",
-            );
-            let eval_result =
-                evaluator::run_evaluation(session, evaluator, artifacts_dir).await?;
+            let evaluator = task_def
+                .evaluator
+                .as_ref()
+                .expect("Hybrid mode requires evaluator config (validated at task load time)");
+            let eval_result = evaluator::run_evaluation(session, evaluator, artifacts_dir).await?;
 
             let both_passed = agent_outcome.passed && eval_result.passed;
             print_validation_results(Some(&agent_outcome), Some(&eval_result));
@@ -485,7 +547,10 @@ async fn run_eval_loop(
                 m.send(monitor::MonitorEvent::TestComplete {
                     test_id: task_def.id.clone(),
                     passed: both_passed,
-                    reasoning: format_evaluation_reasoning(Some(&agent_outcome), Some(&eval_result)),
+                    reasoning: format_evaluation_reasoning(
+                        Some(&agent_outcome),
+                        Some(&eval_result),
+                    ),
                     duration_ms: start_time.elapsed().as_millis() as u64,
                 });
             }
@@ -493,7 +558,10 @@ async fn run_eval_loop(
             Ok(TaskRunResult {
                 outcome: AgentOutcome {
                     passed: both_passed,
-                    reasoning: format_evaluation_reasoning(Some(&agent_outcome), Some(&eval_result)),
+                    reasoning: format_evaluation_reasoning(
+                        Some(&agent_outcome),
+                        Some(&eval_result),
+                    ),
                     screenshot_count: agent_outcome.screenshot_count,
                     bugs_found: agent_outcome.bugs_found,
                 },
@@ -526,7 +594,9 @@ pub(crate) async fn build_agent_loop_config(
         info!("Using explicit a11y timeout: {secs}s");
         Duration::from_secs(secs)
     } else {
-        match observation::probe_a11y_timing(session, max_a11y_nodes, obs_config.max_a11y_tokens).await {
+        match observation::probe_a11y_timing(session, max_a11y_nodes, obs_config.max_a11y_tokens)
+            .await
+        {
             Ok(measured) => {
                 let timeout = measured
                     .mul_f64(1.5)
@@ -593,7 +663,8 @@ async fn run_agent_loop(
         &config.api_base_url,
     )?;
 
-    let mut loop_config = build_agent_loop_config(task_def, session, debug, verbose, bash_enabled).await;
+    let mut loop_config =
+        build_agent_loop_config(task_def, session, debug, verbose, bash_enabled).await;
     loop_config.qa = qa;
     let full_instruction = task_def.full_instruction();
     let mut agent_loop = agent::loop_v2::AgentLoopV2::new(
@@ -641,7 +712,8 @@ pub(crate) async fn run_attach(
         tracing::warn!(
             "Task '{}' uses app type '{}', but 'desktest attach' skips app deployment. \
              Consider using app type 'vnc_attach' for attach-mode tasks.",
-            task_def.id, app_type
+            task_def.id,
+            app_type
         );
     }
 
@@ -674,7 +746,15 @@ pub(crate) async fn run_attach(
     info!("Collecting artifacts...");
     let _ = artifacts::collect_artifacts(&session, &artifacts_dir).await;
 
-    finalize_run(result, &test_id, &task_def, &artifacts_dir, &output_dir, start, qa)
+    finalize_run(
+        result,
+        &test_id,
+        &task_def,
+        &artifacts_dir,
+        &output_dir,
+        start,
+        qa,
+    )
 }
 
 /// Inner logic for attach mode: run setup steps, agent loop, and evaluation.
@@ -701,11 +781,14 @@ async fn run_attach_inner(
         .map(|e| &e.mode)
         .unwrap_or(&task::EvaluatorMode::Llm);
 
-    info!("Attach mode — evaluation mode: {}", match eval_mode {
-        task::EvaluatorMode::Llm => "llm",
-        task::EvaluatorMode::Programmatic => "programmatic",
-        task::EvaluatorMode::Hybrid => "hybrid",
-    });
+    info!(
+        "Attach mode — evaluation mode: {}",
+        match eval_mode {
+            task::EvaluatorMode::Llm => "llm",
+            task::EvaluatorMode::Programmatic => "programmatic",
+            task::EvaluatorMode::Hybrid => "hybrid",
+        }
+    );
 
     // Run setup steps if any (execute, copy, sleep are useful in attach mode)
     if !task_def.config.is_empty() {
@@ -725,147 +808,21 @@ async fn run_attach_inner(
     }
 
     // Recording, agent loop, and evaluation (shared with run_task_inner)
-    run_eval_loop(task_def, config, session, artifacts_dir, eval_mode, debug, verbose, bash_enabled, no_recording, monitor, start_time, qa).await
-}
-
-pub(crate) async fn run_legacy(cli: Cli) -> Result<AgentOutcome, AppError> {
-    // 1. Validate config
-    let config_path = cli.config_pos.ok_or_else(|| {
-        AppError::Config("Missing config file argument. Usage: desktest <config.json> <instructions.md>\n\nOr use subcommands: desktest run <task.json>, desktest suite <dir>, desktest interactive <task.json>, desktest validate <task.json>".into())
-    })?;
-    let config = Config::load_and_validate(&config_path)?;
-
-    // 2. Read instructions
-    let instructions_path = cli.instructions.ok_or_else(|| {
-        AppError::Config("Missing instructions file argument. Usage: desktest <config.json> <instructions.md>".into())
-    })?;
-    let instructions = std::fs::read_to_string(&instructions_path)
-        .map_err(|e| AppError::Config(format!("Cannot read instructions file: {e}")))?;
-
-    // 3. Set up artifacts directory
-    let artifacts_dir = std::env::current_dir()
-        .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
-        .join("desktest_artifacts");
-    std::fs::create_dir_all(&artifacts_dir)
-        .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
-
-    // 4. Create and start Docker container (inside select! so Ctrl+C works during image build)
-    info!("Creating Docker container...");
-    let session = tokio::select! {
-        biased;
-        _ = tokio::signal::ctrl_c() => {
-            eprintln!("\nInterrupted (Ctrl+C) during container setup");
-            return Err(AppError::Infra("Interrupted by user".into()));
-        }
-        r = async {
-            let effective_image = resolve_image_name(&config, None).await?;
-            docker::DockerSession::create(&config, effective_image).await
-        } => r?,
-    };
-
-    // Run the main logic, racing against Ctrl+C.
-    // No matter how we exit (success, error, or signal), cleanup always runs.
-    let result = tokio::select! {
-        biased;
-        _ = tokio::signal::ctrl_c() => {
-            eprintln!("\nInterrupted (Ctrl+C), cleaning up...");
-            Err(AppError::Infra("Interrupted by user".into()))
-        }
-        r = run_inner(&config, &session, &artifacts_dir, &instructions, cli.debug, cli.interactive) => r,
-    };
-
-    // Always collect artifacts and clean up
-    info!("Collecting artifacts...");
-    let _ = artifacts::collect_artifacts(&session, &artifacts_dir).await;
-
-    info!("Cleaning up container...");
-    let _ = session.cleanup().await;
-
-    result
-}
-
-async fn run_inner(
-    config: &Config,
-    session: &docker::DockerSession,
-    artifacts_dir: &std::path::Path,
-    instructions: &str,
-    debug: bool,
-    interactive: bool,
-) -> Result<AgentOutcome, AppError> {
-    let timeout = Duration::from_secs(config.startup_timeout_seconds);
-
-    // 5. Wait for desktop to be ready
-    info!("Waiting for desktop to be ready...");
-    readiness::wait_for_desktop(session, timeout, debug).await?;
-
-    // 6. Deploy app into container
-    info!("Deploying app...");
-    let app_path = session.deploy_app(config).await?;
-
-    // 7. Get stable baseline windows, launch app, wait for app window
-    info!("Waiting for stable window baseline...");
-    let baseline_windows = readiness::get_stable_window_list(session).await?;
-
-    let is_appimage = matches!(config.app_type, crate::config::AppType::Appimage);
-    info!("Launching app: {app_path}");
-    session.launch_app(&app_path, is_appimage, config.electron).await?;
-
-    // Give the app a moment to start (or crash)
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
-    // Check if the app process is still running
-    let pgrep_cmd = format!("pgrep -f {} || true", shell_escape::escape(app_path.as_str().into()));
-    let ps_check = session
-        .exec(&["bash", "-c", &pgrep_cmd])
-        .await;
-    if let Ok(output) = &ps_check {
-        if output.trim().is_empty() {
-            // App process not found - check the log for errors
-            let log = session
-                .exec(&["cat", "/tmp/app.log"])
-                .await
-                .unwrap_or_default();
-            if !log.trim().is_empty() {
-                tracing::warn!("App process died. Log output:\n{log}");
-            } else {
-                tracing::warn!("App process not found and no log output");
-            }
-        }
-    }
-
-    info!("Waiting for app window...");
-    readiness::wait_for_app_window(session, &baseline_windows, timeout, debug).await?;
-
-    // 8. Print VNC info
-    if let Some(port) = config.vnc_port {
-        println!("VNC available at {}:{}", config.vnc_bind_addr, port);
-    }
-
-    // 9. Interactive mode: just wait, or run agent loop
-    if interactive {
-        println!("Interactive mode: container is running. Press Ctrl+C to stop.");
-        println!("Container ID: {}", session.container_id);
-        println!("  docker exec -it {} bash", session.container_id);
-        // Wait forever (Ctrl+C is handled by the select! in run())
-        std::future::pending::<()>().await;
-        unreachable!()
-    }
-
-    info!("Starting agent loop...");
-    let llm_client = provider::create_provider(
-        &config.provider,
-        &config.api_key,
-        &config.model,
-        &config.api_base_url,
-    )?;
-    let mut agent_loop = agent::AgentLoop::new(
-        llm_client,
+    run_eval_loop(
+        task_def,
+        config,
         session,
-        artifacts_dir.to_path_buf(),
-        instructions.to_string(),
+        artifacts_dir,
+        eval_mode,
         debug,
-    );
-    agent_loop.run().await
+        verbose,
+        bash_enabled,
+        no_recording,
+        monitor,
+        start_time,
+        qa,
+    )
+    .await
 }
 
 /// Print validation results showing which sources passed/failed.
@@ -893,9 +850,9 @@ pub(crate) fn print_validation_results(
 
     // Combined result
     let final_passed = match (agent_outcome, eval_result) {
-        (Some(a), Some(e)) => a.passed && e.passed,  // hybrid
-        (Some(a), None) => a.passed,                   // llm
-        (None, Some(e)) => e.passed,                   // programmatic
+        (Some(a), Some(e)) => a.passed && e.passed, // hybrid
+        (Some(a), None) => a.passed,                // llm
+        (None, Some(e)) => e.passed,                // programmatic
         (None, None) => true,
     };
     let final_verdict = if final_passed { "PASSED" } else { "FAILED" };
@@ -920,7 +877,9 @@ pub(crate) fn format_evaluation_reasoning(
         let passed = result.metric_results.iter().filter(|m| m.passed).count();
         let failed = total - passed;
         if result.passed {
-            parts.push(format!("Programmatic evaluation passed ({passed}/{total} metrics)"));
+            parts.push(format!(
+                "Programmatic evaluation passed ({passed}/{total} metrics)"
+            ));
         } else {
             let failures: Vec<String> = result
                 .metric_results
@@ -955,7 +914,7 @@ mod tests {
     fn make_eval_result(passed: bool, metrics: Vec<MetricResult>) -> EvaluationResult {
         EvaluationResult {
             passed,
-            mode: if passed { "programmatic" } else { "programmatic" }.into(),
+            mode: "programmatic".into(),
             metric_results: metrics,
         }
     }
@@ -1213,7 +1172,10 @@ mod tests {
         }"#;
         let task = task::TaskDefinition::parse_and_validate(json).unwrap();
         match &task.app {
-            task::AppConfig::DockerImage { image, entrypoint_cmd } => {
+            task::AppConfig::DockerImage {
+                image,
+                entrypoint_cmd,
+            } => {
                 assert_eq!(image, "my-app:latest");
                 assert!(entrypoint_cmd.is_none());
             }
@@ -1307,6 +1269,9 @@ mod tests {
         if let Some(ref mut eval) = task_mut.evaluator {
             eval.mode = task::EvaluatorMode::Programmatic;
         }
-        assert_eq!(task_mut.evaluator.as_ref().unwrap().mode, task::EvaluatorMode::Programmatic);
+        assert_eq!(
+            task_mut.evaluator.as_ref().unwrap().mode,
+            task::EvaluatorMode::Programmatic
+        );
     }
 }

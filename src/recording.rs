@@ -33,7 +33,11 @@ impl Recording {
 
         // Create empty caption file for drawtext overlay
         let _ = session
-            .exec(&["bash", "-c", &format!("printf '' > {CONTAINER_CAPTION_PATH}")])
+            .exec(&[
+                "bash",
+                "-c",
+                &format!("printf '' > {CONTAINER_CAPTION_PATH}"),
+            ])
             .await;
 
         // drawtext filter: bottom-left, white text with black outline + dark box, auto-reloads file
@@ -104,7 +108,14 @@ impl Recording {
         }
 
         // Send SIGINT to ffmpeg for graceful shutdown
-        match session.exec(&["bash", "-c", "kill -INT $(pgrep -x ffmpeg) 2>/dev/null || true"]).await {
+        match session
+            .exec(&[
+                "bash",
+                "-c",
+                "kill -INT $(pgrep -x ffmpeg) 2>/dev/null || true",
+            ])
+            .await
+        {
             Ok(_) => debug!("Sent SIGINT to ffmpeg"),
             Err(e) => warn!("Failed to send SIGINT to ffmpeg: {e}"),
         }
@@ -125,7 +136,11 @@ impl Recording {
         // If still running after 5s, force kill
         warn!("ffmpeg did not exit gracefully, force killing");
         let _ = session
-            .exec(&["bash", "-c", "kill -9 $(pgrep -x ffmpeg) 2>/dev/null || true"])
+            .exec(&[
+                "bash",
+                "-c",
+                "kill -9 $(pgrep -x ffmpeg) 2>/dev/null || true",
+            ])
             .await;
     }
 
@@ -189,7 +204,6 @@ impl Recording {
             }
         }
     }
-
 }
 
 /// Maximum characters per caption line (roughly fits 1920px at fontsize 18).
@@ -280,7 +294,11 @@ fn wrap_text(s: &str, width: usize) -> Vec<String> {
     for raw_word in s.split_whitespace() {
         // Truncate words longer than width to prevent line overflow
         let word: &str = if raw_word.chars().count() > width {
-            let end = raw_word.char_indices().nth(width).map(|(i, _)| i).unwrap_or(raw_word.len());
+            let end = raw_word
+                .char_indices()
+                .nth(width)
+                .map(|(i, _)| i)
+                .unwrap_or(raw_word.len());
             &raw_word[..end]
         } else {
             raw_word
@@ -347,11 +365,7 @@ mod tests {
 
     #[test]
     fn test_format_caption_no_thought() {
-        let caption = format_caption(
-            1,
-            None,
-            &["pyautogui.click(100, 200)".to_string()],
-        );
+        let caption = format_caption(1, None, &["pyautogui.click(100, 200)".to_string()]);
         assert!(caption.starts_with("[Step 1]"));
         assert!(caption.contains("> pyautogui.click(100, 200)"));
     }
@@ -377,7 +391,8 @@ mod tests {
 
     #[test]
     fn test_format_caption_multiline_code_block() {
-        let code = "# Focus the window\npyautogui.click(100, 200)\npyautogui.press('enter')".to_string();
+        let code =
+            "# Focus the window\npyautogui.click(100, 200)\npyautogui.press('enter')".to_string();
         let caption = format_caption(2, Some("Clicking"), &[code]);
         assert!(caption.contains("  # Focus the window"));
         assert!(caption.contains("> pyautogui.click(100, 200)"));
