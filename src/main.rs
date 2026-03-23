@@ -309,10 +309,11 @@ async fn main() {
 
                 // Patch the task JSON with replay_script/replay_screenshots_dir (preserves unknown fields)
                 if let Some((task_path, mut value)) = overwrite_json {
-                    let task_dir = task_path.parent().unwrap_or(std::path::Path::new("."));
+                    // Store replay_script as CWD-relative (evaluator resolves from CWD)
+                    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
                     let script_abs = std::fs::canonicalize(&*effective_output).unwrap_or_else(|_| effective_output.to_path_buf());
-                    let task_dir_abs = std::fs::canonicalize(task_dir).unwrap_or_else(|_| task_dir.to_path_buf());
-                    let script_rel = script_abs.strip_prefix(&task_dir_abs)
+                    let cwd_abs = std::fs::canonicalize(&cwd).unwrap_or(cwd);
+                    let script_rel = script_abs.strip_prefix(&cwd_abs)
                         .map(|p| p.to_path_buf())
                         .unwrap_or_else(|_| effective_output.to_path_buf());
 
