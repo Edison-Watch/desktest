@@ -199,6 +199,15 @@ impl Config {
             }
         }
 
+        if !self.vnc_bind_addr.is_empty()
+            && self.vnc_bind_addr.parse::<std::net::IpAddr>().is_err()
+        {
+            return Err(AppError::Config(format!(
+                "vnc_bind_addr is not a valid IP address: {:?}",
+                self.vnc_bind_addr
+            )));
+        }
+
         if let Some(port) = self.vnc_port {
             if port == 0 {
                 return Err(AppError::Config("vnc_port must be > 0".into()));

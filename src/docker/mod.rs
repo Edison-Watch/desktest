@@ -48,6 +48,10 @@ impl DockerSession {
         let image_name = if let Some(img) = custom_image {
             // For custom images, check if the image exists locally; if not, try to pull it.
             // Distinguish "not found" from other Docker errors to avoid misleading warnings.
+            // NOTE: This matches bollard's error variant as of bollard 0.18.x.
+            // If bollard changes its error representation, this arm may stop matching
+            // and fall through to the Err(e) branch (safe but blocks pull). Re-verify
+            // after bumping the bollard dependency.
             match client.inspect_image(img).await {
                 Ok(_) => {}
                 Err(bollard::errors::Error::DockerResponseServerError {
