@@ -154,7 +154,7 @@ pub async fn capture_observation(
 /// Capture a screenshot with retry logic: 3 attempts, 5s interval between retries.
 ///
 /// Returns the local file path and a base64 data URL.
-async fn capture_screenshot_with_retry(
+pub async fn capture_screenshot_with_retry(
     session: &DockerSession,
     artifacts_dir: &Path,
     step_index: usize,
