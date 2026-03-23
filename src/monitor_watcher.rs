@@ -9,7 +9,7 @@ use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::monitor::{MonitorEvent, MonitorHandle};
 use crate::trajectory::chrono_iso8601_now;
@@ -46,7 +46,7 @@ pub async fn run_watcher(watch_dir: PathBuf, handle: MonitorHandle) {
         {
             Ok(map) => phases = Some(map),
             Err(e) => {
-                debug!("spawn_blocking panicked: {e}");
+                warn!("spawn_blocking panicked, phase state lost (all phases will be re-discovered): {e}");
                 phases = Some(HashMap::new());
             }
         }
