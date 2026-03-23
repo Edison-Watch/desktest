@@ -5,7 +5,7 @@
 //! StepComplete, TestComplete) to connected browser clients via SSE.
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -16,9 +16,9 @@ use crate::trajectory::chrono_iso8601_now;
 
 /// State for a single phase being watched.
 struct PhaseState {
-    /// Number of physical lines already consumed from this phase's trajectory.jsonl.
-    /// Includes blank and malformed lines to keep the skip cursor in sync.
-    physical_lines_read: usize,
+    /// Byte offset into the trajectory file — seek here on each poll to avoid
+    /// re-reading already-consumed lines.
+    byte_offset: u64,
     /// Whether we've emitted a synthetic TestStart for late-connecting clients.
     test_start_emitted: bool,
 }
@@ -39,21 +39,14 @@ pub async fn run_watcher(watch_dir: PathBuf, handle: MonitorHandle) {
 }
 
 /// Scan the watch directory for phase subdirectories and tail their trajectory files.
+/// If subdirectories with trajectory.jsonl exist, those are used (multi-phase mode).
+/// Otherwise, if watch_dir itself contains trajectory.jsonl, it's used (single-phase mode).
+/// This avoids phase ID collisions between the root and a same-named subdirectory.
 fn scan_phases(
     watch_dir: &Path,
     phases: &mut HashMap<String, PhaseState>,
     handle: &MonitorHandle,
 ) {
-    // Also check if watch_dir itself contains a trajectory.jsonl (single-phase mode)
-    let trajectory_in_root = watch_dir.join("trajectory.jsonl");
-    if trajectory_in_root.is_file() {
-        let phase_id = watch_dir
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "root".to_string());
-        process_phase(&phase_id, watch_dir, phases, handle);
-    }
-
     let entries = match std::fs::read_dir(watch_dir) {
         Ok(e) => e,
         Err(e) => {
@@ -66,7 +59,9 @@ fn scan_phases(
     let mut dir_entries: Vec<_> = entries.flatten().collect();
     dir_entries.sort_by_key(|e| e.file_name());
 
-    for entry in dir_entries {
+    // Collect qualifying subdirectories
+    let mut found_subdirs = false;
+    for entry in &dir_entries {
         let path = entry.path();
         if !path.is_dir() {
             continue;
@@ -76,12 +71,26 @@ fn scan_phases(
             continue;
         }
 
+        found_subdirs = true;
         let phase_id = path
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
 
         process_phase(&phase_id, &path, phases, handle);
+    }
+
+    // Fallback: if no subdirectories have trajectories, check if watch_dir itself does
+    // (single-phase mode, e.g. `desktest monitor --watch ./desktest_artifacts/`)
+    if !found_subdirs {
+        let trajectory_in_root = watch_dir.join("trajectory.jsonl");
+        if trajectory_in_root.is_file() {
+            let phase_id = watch_dir
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "root".to_string());
+            process_phase(&phase_id, watch_dir, phases, handle);
+        }
     }
 }
 
@@ -106,20 +115,20 @@ fn process_phase(
         phases.insert(
             phase_id.to_string(),
             PhaseState {
-                physical_lines_read: 0,
+                byte_offset: 0,
                 test_start_emitted: false,
             },
         );
     }
 
     let state = phases.get_mut(phase_id).unwrap();
-    let skip = state.physical_lines_read;
+    let offset = state.byte_offset;
 
-    // Read new lines from trajectory.jsonl
+    // Read new lines from trajectory.jsonl, seeking to where we left off
     let ReadResult {
         entries: new_entries,
-        safe_lines_consumed,
-    } = match read_new_lines(&trajectory_path, skip) {
+        new_byte_offset,
+    } = match read_new_lines(&trajectory_path, offset) {
         Ok(result) => result,
         Err(e) => {
             debug!("Error reading trajectory for phase {phase_id}: {e}");
@@ -147,51 +156,53 @@ fn process_phase(
 
     // Only advance past lines that were blank or successfully parsed;
     // malformed lines (possibly partial writes) will be retried next poll
-    state.physical_lines_read = safe_lines_consumed;
+    state.byte_offset = new_byte_offset;
 }
 
-/// Result from reading new lines, tracking both valid entries and safe cursor position.
+/// Result from reading new lines from the trajectory file.
 struct ReadResult {
     entries: Vec<serde_json::Value>,
-    /// Number of physical lines we can safely skip past on the next poll.
-    /// Malformed lines at the end are NOT counted so they're retried next poll
-    /// (they may be partially-written lines that will be complete by then).
-    safe_lines_consumed: usize,
+    /// Byte offset to seek to on the next poll (avoids re-reading consumed lines).
+    /// Only advances past blank or successfully parsed lines; malformed lines at EOF
+    /// are retried on the next poll (they may be partial writes).
+    new_byte_offset: u64,
 }
 
-/// Read lines from a JSONL file starting after `skip` physical lines.
-/// Returns valid parsed entries and a safe cursor for the next poll.
-fn read_new_lines(path: &Path, skip: usize) -> Result<ReadResult, std::io::Error> {
-    let file = std::fs::File::open(path)?;
+/// Read new lines from a JSONL file, seeking to `byte_offset` to skip already-consumed data.
+/// Returns valid parsed entries and updated cursors for the next poll.
+fn read_new_lines(path: &Path, byte_offset: u64) -> Result<ReadResult, std::io::Error> {
+    let mut file = std::fs::File::open(path)?;
+    if byte_offset > 0 {
+        file.seek(SeekFrom::Start(byte_offset))?;
+    }
     let reader = BufReader::new(file);
     let mut entries = Vec::new();
-    let mut safe_lines_consumed = skip;
-
-    for (i, line) in reader.lines().enumerate() {
-        if i < skip {
-            safe_lines_consumed = i + 1;
-            continue;
-        }
+    let mut current_offset = byte_offset;
+    let mut safe_offset = byte_offset;
+    for line in reader.lines() {
         let line = line?;
+        // +1 for the newline character
+        current_offset += line.len() as u64 + 1;
+
         if line.trim().is_empty() {
-            safe_lines_consumed = i + 1;
+            safe_offset = current_offset;
             continue;
         }
         match serde_json::from_str::<serde_json::Value>(&line) {
             Ok(value) => {
                 entries.push(value);
-                safe_lines_consumed = i + 1;
+                safe_offset = current_offset;
             }
             Err(e) => {
-                debug!("Possibly partial line {i} in {}, will retry: {e}", path.display());
-                // Do NOT advance safe_lines_consumed — retry on next poll
+                debug!("Possibly partial line in {}, will retry: {e}", path.display());
+                // Do NOT advance safe_offset — retry on next poll
             }
         }
     }
 
     Ok(ReadResult {
         entries,
-        safe_lines_consumed,
+        new_byte_offset: safe_offset,
     })
 }
 
