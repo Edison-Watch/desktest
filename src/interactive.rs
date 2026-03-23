@@ -31,6 +31,7 @@ pub(crate) async fn run_interactive(
     step: bool,
     validate_only: bool,
     qa: bool,
+    artifacts_dir_override: Option<std::path::PathBuf>,
 ) -> Result<AgentOutcome, AppError> {
     // Guard: vnc_attach tasks must use `desktest attach`, not `desktest interactive`
     if matches!(task_def.app, task::AppConfig::VncAttach { .. }) {
@@ -65,6 +66,7 @@ pub(crate) async fn run_interactive(
             output_dir,
             None,
             qa,
+            artifacts_dir_override,
         )
         .await;
     }
@@ -80,6 +82,7 @@ pub(crate) async fn run_interactive(
             no_recording,
             output_dir,
             qa,
+            artifacts_dir_override,
         )
         .await;
     }
@@ -233,6 +236,7 @@ async fn run_interactive_step(
     no_recording: bool,
     output_dir: std::path::PathBuf,
     qa: bool,
+    artifacts_dir_override: Option<std::path::PathBuf>,
 ) -> Result<AgentOutcome, AppError> {
     let start = Instant::now();
     let resolved_secrets = task_def.resolve_secrets()?;
@@ -240,9 +244,12 @@ async fn run_interactive_step(
     let redactor = crate::redact::Redactor::new(resolved_secrets.values().cloned());
     config.apply_task_app(&task_def.app);
 
-    let artifacts_dir = std::env::current_dir()
-        .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
-        .join("desktest_artifacts");
+    let artifacts_dir = match artifacts_dir_override {
+        Some(dir) => dir,
+        None => std::env::current_dir()
+            .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
+            .join("desktest_artifacts"),
+    };
     std::fs::create_dir_all(&artifacts_dir)
         .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
 

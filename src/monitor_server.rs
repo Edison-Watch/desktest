@@ -69,6 +69,7 @@ fn sse_handler(
                 crate::monitor::MonitorEvent::StepComplete { .. } => "step_complete",
                 crate::monitor::MonitorEvent::TestComplete { .. } => "test_complete",
                 crate::monitor::MonitorEvent::SuiteProgress { .. } => "suite_progress",
+                crate::monitor::MonitorEvent::PhaseStart { .. } => "phase_start",
             };
             let json = serde_json::to_string(&event).unwrap_or_default();
             Some(Ok(Event::default().event(event_type).data(json)))

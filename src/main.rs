@@ -11,6 +11,7 @@ mod interactive;
 mod logs;
 mod monitor;
 mod monitor_server;
+mod monitor_watcher;
 mod observation;
 mod orchestration;
 mod provider;
@@ -112,6 +113,7 @@ async fn main() {
                 cli.output.clone(),
                 monitor_handle,
                 cli.qa,
+                cli.artifacts_dir.clone(),
             )
             .await;
             match result {
@@ -190,6 +192,7 @@ async fn main() {
                 cli.output.clone(),
                 monitor_handle,
                 cli.qa,
+                cli.artifacts_dir.clone(),
             )
             .await;
             match result {
@@ -231,6 +234,7 @@ async fn main() {
                 *step,
                 *validate_only,
                 cli.qa,
+                cli.artifacts_dir.clone(),
             )
             .await;
 
@@ -450,6 +454,7 @@ async fn main() {
                 cli.output.clone(),
                 monitor_handle,
                 cli.qa,
+                cli.artifacts_dir.clone(),
             )
             .await;
             match result {
@@ -494,6 +499,43 @@ async fn main() {
                 Err(e) => {
                     eprintln!("Update failed: {e}");
                     std::process::exit(e.exit_code());
+                }
+            }
+        }
+        Command::Monitor { watch, port } => {
+            let watch_dir = watch.clone();
+            if !watch_dir.is_dir() {
+                eprintln!(
+                    "Watch directory '{}' does not exist or is not a directory.",
+                    watch_dir.display()
+                );
+                std::process::exit(2);
+            }
+
+            let handle = monitor::MonitorHandle::new(256);
+            match monitor_server::start_monitor_server(handle.clone(), *port).await {
+                Some(_server) => {
+                    println!("Monitor dashboard: http://localhost:{}", port);
+                    println!(
+                        "Watching {} for phase directories (Ctrl+C to stop)",
+                        watch_dir.display()
+                    );
+                }
+                None => {
+                    eprintln!("Failed to start monitor server on port {port}");
+                    std::process::exit(3);
+                }
+            }
+
+            // Run the watcher until Ctrl+C
+            tokio::select! {
+                biased;
+                _ = tokio::signal::ctrl_c() => {
+                    println!("\nShutting down monitor.");
+                    std::process::exit(0);
+                }
+                _ = monitor_watcher::run_watcher(watch_dir, handle) => {
+                    // run_watcher loops forever, so this arm shouldn't complete
                 }
             }
         }
