@@ -914,6 +914,7 @@ mod tests {
     fn make_eval_result(passed: bool, metrics: Vec<MetricResult>) -> EvaluationResult {
         EvaluationResult {
             passed,
+            // mode is the evaluation strategy name (e.g. "programmatic", "llm", "hybrid"), not pass/fail
             mode: "programmatic".into(),
             metric_results: metrics,
         }
