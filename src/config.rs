@@ -199,9 +199,7 @@ impl Config {
             }
         }
 
-        if !self.vnc_bind_addr.is_empty()
-            && self.vnc_bind_addr.parse::<std::net::IpAddr>().is_err()
-        {
+        if self.vnc_bind_addr.parse::<std::net::IpAddr>().is_err() {
             return Err(AppError::Config(format!(
                 "vnc_bind_addr is not a valid IP address: {:?}",
                 self.vnc_bind_addr
@@ -400,6 +398,39 @@ mod tests {
         );
         let err = Config::parse_and_validate(&json).unwrap_err();
         assert!(err.to_string().contains("vnc_port must be > 0"));
+    }
+
+    #[test]
+    fn test_vnc_bind_addr_invalid() {
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image",
+            "vnc_bind_addr": "locahost"
+        }"#;
+        let err = Config::parse_and_validate(json).unwrap_err();
+        assert!(err.to_string().contains("vnc_bind_addr is not a valid IP address"));
+    }
+
+    #[test]
+    fn test_vnc_bind_addr_empty() {
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image",
+            "vnc_bind_addr": ""
+        }"#;
+        let err = Config::parse_and_validate(json).unwrap_err();
+        assert!(err.to_string().contains("vnc_bind_addr is not a valid IP address"));
+    }
+
+    #[test]
+    fn test_vnc_bind_addr_valid_ipv4() {
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image",
+            "vnc_bind_addr": "0.0.0.0"
+        }"#;
+        let config = Config::parse_and_validate(json).unwrap();
+        assert_eq!(config.vnc_bind_addr, "0.0.0.0");
     }
 
     #[test]
