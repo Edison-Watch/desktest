@@ -12,7 +12,7 @@ use bollard::container::{
 use bollard::models::{HostConfig, PortBinding};
 use bollard::Docker;
 use futures::StreamExt;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::config::Config;
 use crate::error::AppError;
@@ -43,6 +43,7 @@ impl DockerSession {
         let image_name = if let Some(img) = custom_image {
             // For custom images, check if the image exists locally; if not, try to pull it.
             if client.inspect_image(img).await.is_err() {
+                warn!("Pulling custom image '{img}' from remote registry — ensure you trust this image source");
                 info!("Custom image '{img}' not found locally, attempting to pull...");
                 use bollard::image::CreateImageOptions;
                 let options = CreateImageOptions {
@@ -75,13 +76,24 @@ impl DockerSession {
             format!("VNC_PORT={container_vnc_port}"),
         ];
 
+        // Only grant SYS_ADMIN + /dev/fuse for AppImage apps (they need FUSE to mount).
+        // Other app types don't need these elevated privileges.
+        let needs_fuse = config.app_type == crate::config::AppType::Appimage;
         let mut host_config = HostConfig {
-            cap_add: Some(vec!["SYS_ADMIN".into()]),
-            devices: Some(vec![bollard::models::DeviceMapping {
-                path_on_host: Some("/dev/fuse".into()),
-                path_in_container: Some("/dev/fuse".into()),
-                cgroup_permissions: Some("rwm".into()),
-            }]),
+            cap_add: if needs_fuse {
+                Some(vec!["SYS_ADMIN".into()])
+            } else {
+                None
+            },
+            devices: if needs_fuse {
+                Some(vec![bollard::models::DeviceMapping {
+                    path_on_host: Some("/dev/fuse".into()),
+                    path_in_container: Some("/dev/fuse".into()),
+                    cgroup_permissions: Some("rwm".into()),
+                }])
+            } else {
+                None
+            },
             ..Default::default()
         };
 

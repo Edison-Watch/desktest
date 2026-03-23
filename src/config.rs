@@ -21,7 +21,7 @@ fn default_height() -> u32 {
 }
 
 fn default_vnc_addr() -> String {
-    "0.0.0.0".into()
+    "127.0.0.1".into()
 }
 
 fn default_timeout() -> u64 {
@@ -280,7 +280,7 @@ mod tests {
         assert_eq!(config.model, "claude-sonnet-4-5-20250929");
         assert_eq!(config.display_width, 1920);
         assert_eq!(config.display_height, 1080);
-        assert_eq!(config.vnc_bind_addr, "0.0.0.0");
+        assert_eq!(config.vnc_bind_addr, "127.0.0.1");
         assert!(config.vnc_port.is_none());
         assert_eq!(config.startup_timeout_seconds, 30);
     }

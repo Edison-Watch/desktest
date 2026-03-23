@@ -34,7 +34,7 @@ pub async fn start_monitor_server(handle: MonitorHandle, port: u16) -> Option<Jo
             get(move || async move { state_handler(state_handle).await }),
         );
 
-    let listener = match tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await {
+    let listener = match tokio::net::TcpListener::bind(format!("127.0.0.1:{port}")).await {
         Ok(l) => l,
         Err(e) => {
             warn!("Failed to bind monitor server on port {port}: {e}");
