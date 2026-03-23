@@ -49,9 +49,22 @@ fn parse_version(tag: &str) -> Option<(u32, u32, u32)> {
     ))
 }
 
+fn has_prerelease(tag: &str) -> bool {
+    let v = tag.strip_prefix('v').unwrap_or(tag);
+    v.contains('-')
+}
+
 fn is_newer(latest_tag: &str, current: &str) -> bool {
     match (parse_version(latest_tag), parse_version(current)) {
-        (Some(l), Some(c)) => l > c,
+        (Some(l), Some(c)) => {
+            if l > c {
+                return true;
+            }
+            // Pre-release current (e.g. "0.9.3-dev") is older than same stable version
+            l == c && has_prerelease(current) && !has_prerelease(latest_tag)
+        }
+        // Cannot parse latest tag — allow update rather than silently suppressing
+        (None, _) => true,
         _ => false,
     }
 }
@@ -84,6 +97,8 @@ pub async fn run_update(force: bool) -> Result<(), AppError> {
 
     let client = reqwest::Client::builder()
         .user_agent("desktest-updater")
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .timeout(std::time::Duration::from_secs(300))
         .build()
         .map_err(|e| AppError::Infra(format!("failed to build HTTP client: {e}")))?;
 
@@ -208,7 +223,10 @@ pub async fn run_update(force: bool) -> Result<(), AppError> {
     let current_exe = resolve_symlinks(&current_exe)?;
 
     let tmp_path = {
-        let mut name = current_exe.file_name().unwrap_or_default().to_os_string();
+        let mut name = current_exe
+            .file_name()
+            .ok_or_else(|| AppError::Infra("cannot determine executable filename".into()))?
+            .to_os_string();
         name.push(".update-tmp");
         current_exe.with_file_name(name)
     };
@@ -269,8 +287,12 @@ mod tests {
         assert!(is_newer("v0.9.2", "0.9.1"));
         assert!(!is_newer("v0.9.1", "0.9.1"));
         assert!(!is_newer("v0.9.0", "0.9.1"));
-        // Pre-release current version should still detect newer stable release
+        // Pre-release current version should detect newer stable release
         assert!(is_newer("v0.9.4", "0.9.3-dev"));
+        // Pre-release current should update to same stable version
+        assert!(is_newer("v0.9.3", "0.9.3-dev"));
+        // Unparseable latest tag should allow update
+        assert!(is_newer("nightly-2025-01-01", "0.9.1"));
     }
 
     #[test]
