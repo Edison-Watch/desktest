@@ -4,13 +4,13 @@
 
 use std::convert::Infallible;
 
+use axum::Router;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{Html, Json};
 use axum::routing::get;
-use axum::Router;
 use tokio::task::JoinHandle;
-use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
+use tokio_stream::wrappers::BroadcastStream;
 use tracing::warn;
 
 use crate::monitor::MonitorHandle;
@@ -25,10 +25,7 @@ pub async fn start_monitor_server(handle: MonitorHandle, port: u16) -> Option<Jo
     let state_handle = handle.clone();
     let app = Router::new()
         .route("/", get(move || async move { Html(dashboard_html) }))
-        .route(
-            "/events",
-            get(move || async move { sse_handler(handle) }),
-        )
+        .route("/events", get(move || async move { sse_handler(handle) }))
         .route(
             "/state",
             get(move || async move { state_handler(state_handle).await }),

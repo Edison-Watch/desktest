@@ -9,8 +9,8 @@ use crate::docker;
 use crate::error::{AgentOutcome, AppError};
 use crate::evaluator;
 use crate::orchestration::{
-    build_agent_loop_config, format_evaluation_reasoning, print_validation_results,
-    resolve_image_name, run_task, TaskRunResult,
+    TaskRunResult, build_agent_loop_config, format_evaluation_reasoning, print_validation_results,
+    resolve_image_name, run_task,
 };
 use crate::provider;
 use crate::readiness;
@@ -55,12 +55,33 @@ pub(crate) async fn run_interactive(
             eval.mode = task::EvaluatorMode::Programmatic;
         }
 
-        return run_task(task_def, config, debug, verbose, bash_enabled, no_recording, output_dir, None, qa).await;
+        return run_task(
+            task_def,
+            config,
+            debug,
+            verbose,
+            bash_enabled,
+            no_recording,
+            output_dir,
+            None,
+            qa,
+        )
+        .await;
     }
 
     if step {
         // --step: run agent one step at a time, pausing after each
-        return run_interactive_step(task_def, config, debug, verbose, bash_enabled, no_recording, output_dir, qa).await;
+        return run_interactive_step(
+            task_def,
+            config,
+            debug,
+            verbose,
+            bash_enabled,
+            no_recording,
+            output_dir,
+            qa,
+        )
+        .await;
     }
 
     // Default interactive: start container, run setup, print VNC info, pause
@@ -156,14 +177,18 @@ async fn run_interactive_pause_inner(
         if let task::AppConfig::DockerImage { entrypoint_cmd, .. } = &task_def.app {
             if let Some(cmd) = entrypoint_cmd {
                 info!("Launching app via entrypoint_cmd: {cmd}");
-                session.exec_detached_with_log(&["bash", "-c", cmd], "/tmp/app.log").await?;
+                session
+                    .exec_detached_with_log(&["bash", "-c", cmd], "/tmp/app.log")
+                    .await?;
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             }
         }
     } else {
         let is_appimage = matches!(config.app_type, crate::config::AppType::Appimage);
         info!("Launching app: {app_path}");
-        session.launch_app(&app_path, is_appimage, config.electron).await?;
+        session
+            .launch_app(&app_path, is_appimage, config.electron)
+            .await?;
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
 
@@ -172,7 +197,10 @@ async fn run_interactive_pause_inner(
         println!("VNC available at {}:{}", config.vnc_bind_addr, port);
     }
 
-    println!("\nInteractive mode: container is running with task '{}'.", task_def.id);
+    println!(
+        "\nInteractive mode: container is running with task '{}'.",
+        task_def.id
+    );
     println!("  Instruction: {}", task_def.instruction);
     println!("  Container ID: {}", session.container_id);
     println!("  docker exec -it {} bash", session.container_id);
@@ -243,13 +271,11 @@ async fn run_interactive_step(
 
     // Write results
     let test_result = match &result {
-        Ok(run_result) if !run_result.agent_ran => {
-            results::from_evaluation(
-                &test_id,
-                run_result.eval_result.as_ref().expect("eval_result"),
-                duration_ms,
-            )
-        }
+        Ok(run_result) if !run_result.agent_ran => results::from_evaluation(
+            &test_id,
+            run_result.eval_result.as_ref().expect("eval_result"),
+            duration_ms,
+        ),
         Ok(run_result) => results::from_outcome(
             &test_id,
             &run_result.outcome,
@@ -311,7 +337,9 @@ async fn run_interactive_step_inner(
             if let Some(cmd) = entrypoint_cmd {
                 let baseline_windows = readiness::get_stable_window_list(session).await?;
                 info!("Launching app via entrypoint_cmd: {cmd}");
-                session.exec_detached_with_log(&["bash", "-c", cmd], "/tmp/app.log").await?;
+                session
+                    .exec_detached_with_log(&["bash", "-c", cmd], "/tmp/app.log")
+                    .await?;
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 info!("Waiting for app window...");
                 readiness::wait_for_app_window(session, &baseline_windows, timeout, debug).await?;
@@ -321,7 +349,9 @@ async fn run_interactive_step_inner(
         let baseline_windows = readiness::get_stable_window_list(session).await?;
         let is_appimage = matches!(config.app_type, crate::config::AppType::Appimage);
         info!("Launching app: {app_path}");
-        session.launch_app(&app_path, is_appimage, config.electron).await?;
+        session
+            .launch_app(&app_path, is_appimage, config.electron)
+            .await?;
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         info!("Waiting for app window...");
         readiness::wait_for_app_window(session, &baseline_windows, timeout, debug).await?;
@@ -336,7 +366,9 @@ async fn run_interactive_step_inner(
     let recording = if no_recording {
         None
     } else {
-        match recording::Recording::start(session, config.display_width, config.display_height).await {
+        match recording::Recording::start(session, config.display_width, config.display_height)
+            .await
+        {
             Ok(rec) => Some(rec),
             Err(e) => {
                 tracing::warn!("Failed to start recording: {e}");
@@ -354,7 +386,8 @@ async fn run_interactive_step_inner(
         &config.api_base_url,
     )?;
 
-    let mut loop_config = build_agent_loop_config(&task_def, session, debug, verbose, bash_enabled).await;
+    let mut loop_config =
+        build_agent_loop_config(&task_def, session, debug, verbose, bash_enabled).await;
     loop_config.qa = qa;
     let full_instruction = task_def.full_instruction();
     let mut agent_loop = agent::loop_v2::AgentLoopV2::new(
@@ -387,7 +420,10 @@ async fn run_interactive_step_inner(
         .map(|e| &e.mode)
         .unwrap_or(&EvaluatorMode::Llm);
 
-    let eval_result = if matches!(eval_mode, EvaluatorMode::Hybrid | EvaluatorMode::Programmatic) {
+    let eval_result = if matches!(
+        eval_mode,
+        EvaluatorMode::Hybrid | EvaluatorMode::Programmatic
+    ) {
         info!("Running programmatic evaluation...");
         let evaluator = task_def.evaluator.as_ref().expect("evaluator config");
         Some(evaluator::run_evaluation(session, evaluator, artifacts_dir).await?)

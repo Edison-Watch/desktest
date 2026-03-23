@@ -56,9 +56,8 @@ pub fn discover_tasks(dir: &Path, filter: Option<&str>) -> Result<Vec<SuiteTestE
     })?;
 
     for entry in read_dir {
-        let entry = entry.map_err(|e| {
-            AppError::Infra(format!("Error reading directory entry: {e}"))
-        })?;
+        let entry =
+            entry.map_err(|e| AppError::Infra(format!("Error reading directory entry: {e}")))?;
         let path = entry.path();
 
         // Only process *.json files
@@ -72,7 +71,10 @@ pub fn discover_tasks(dir: &Path, filter: Option<&str>) -> Result<Vec<SuiteTestE
                 // Apply name filter if provided
                 if let Some(pattern) = filter {
                     if !task_def.id.contains(pattern) {
-                        info!("Skipping '{}' (doesn't match filter '{pattern}')", task_def.id);
+                        info!(
+                            "Skipping '{}' (doesn't match filter '{pattern}')",
+                            task_def.id
+                        );
                         continue;
                     }
                 }
@@ -101,8 +103,14 @@ pub fn discover_tasks(dir: &Path, filter: Option<&str>) -> Result<Vec<SuiteTestE
 /// Build a SuiteResult from individual test results.
 pub fn build_suite_result(results: Vec<TestResult>, total_duration_ms: u64) -> SuiteResult {
     let total = results.len();
-    let passed = results.iter().filter(|r| r.status == TestStatus::Pass).count();
-    let errors = results.iter().filter(|r| r.status == TestStatus::Error).count();
+    let passed = results
+        .iter()
+        .filter(|r| r.status == TestStatus::Pass)
+        .count();
+    let errors = results
+        .iter()
+        .filter(|r| r.status == TestStatus::Error)
+        .count();
     let failed = total - passed - errors;
 
     SuiteResult {
@@ -128,9 +136,8 @@ pub fn write_suite_results(result: &SuiteResult, output_dir: &Path) -> Result<()
     })?;
 
     let path = output_dir.join("suite-results.json");
-    let json = serde_json::to_string_pretty(result).map_err(|e| {
-        AppError::Infra(format!("Failed to serialize suite results: {e}"))
-    })?;
+    let json = serde_json::to_string_pretty(result)
+        .map_err(|e| AppError::Infra(format!("Failed to serialize suite results: {e}")))?;
 
     std::fs::write(&path, &json).map_err(|e| {
         AppError::Infra(format!(
@@ -249,7 +256,11 @@ pub async fn run_suite(
 ) -> Result<SuiteResult, AppError> {
     let entries = discover_tasks(dir, filter)?;
 
-    info!("Discovered {} task(s) in '{}'", entries.len(), dir.display());
+    info!(
+        "Discovered {} task(s) in '{}'",
+        entries.len(),
+        dir.display()
+    );
     println!("Running {} test(s)...\n", entries.len());
 
     let mut run_config = if let Some(config_path) = config {
@@ -318,7 +329,10 @@ pub async fn run_suite(
                 results::from_outcome(&entry.task_def.id, &outcome, eval_result, duration_ms, qa)
             }
             Err(ref e) => {
-                println!("  Result: ERROR - {e} ({:.1}s)\n", duration_ms as f64 / 1000.0);
+                println!(
+                    "  Result: ERROR - {e} ({:.1}s)\n",
+                    duration_ms as f64 / 1000.0
+                );
                 results::from_error(&entry.task_def.id, e, duration_ms)
             }
         };

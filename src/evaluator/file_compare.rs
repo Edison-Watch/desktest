@@ -1,9 +1,9 @@
 use std::path::Path;
 use std::time::Duration;
 
+use super::MetricResult;
 use crate::docker::DockerSession;
 use crate::error::AppError;
-use super::MetricResult;
 
 /// file_compare: Copy file from container, compare against expected file.
 pub(super) async fn evaluate_file_compare(
@@ -32,8 +32,11 @@ pub(super) async fn evaluate_file_compare(
 
     let actual_bytes = std::fs::read(&temp_actual)
         .map_err(|e| AppError::Infra(format!("Failed to read copied file: {e}")))?;
-    let expected_bytes = std::fs::read(expected_path)
-        .map_err(|e| AppError::Infra(format!("Failed to read expected file '{expected_path}': {e}")))?;
+    let expected_bytes = std::fs::read(expected_path).map_err(|e| {
+        AppError::Infra(format!(
+            "Failed to read expected file '{expected_path}': {e}"
+        ))
+    })?;
 
     // Clean up temp file
     let _ = std::fs::remove_file(&temp_actual);
@@ -47,7 +50,9 @@ pub(super) async fn evaluate_file_compare(
                 let expected_len = expected_bytes.len();
                 (
                     false,
-                    format!("Files differ (actual: {actual_len} bytes, expected: {expected_len} bytes)"),
+                    format!(
+                        "Files differ (actual: {actual_len} bytes, expected: {expected_len} bytes)"
+                    ),
                 )
             }
         }
@@ -99,8 +104,11 @@ pub(super) async fn evaluate_file_compare_semantic(
 
     let actual_str = std::fs::read_to_string(&temp_actual)
         .map_err(|e| AppError::Infra(format!("Failed to read copied file: {e}")))?;
-    let expected_str = std::fs::read_to_string(expected_path)
-        .map_err(|e| AppError::Infra(format!("Failed to read expected file '{expected_path}': {e}")))?;
+    let expected_str = std::fs::read_to_string(expected_path).map_err(|e| {
+        AppError::Infra(format!(
+            "Failed to read expected file '{expected_path}': {e}"
+        ))
+    })?;
 
     // Clean up temp file
     let _ = std::fs::remove_file(&temp_actual);

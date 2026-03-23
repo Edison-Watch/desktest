@@ -86,6 +86,9 @@ impl MonitorHandle {
 
     /// Get the last `TestStart` event (for late-connecting clients).
     pub fn last_test_start(&self) -> Option<MonitorEvent> {
-        self.last_test_start.read().ok().and_then(|guard| guard.clone())
+        self.last_test_start
+            .read()
+            .ok()
+            .and_then(|guard| guard.clone())
     }
 }

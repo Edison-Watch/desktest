@@ -1,16 +1,15 @@
 #![allow(dead_code)]
 
-mod image;
-mod exec;
-mod transfer;
 mod deploy;
+mod exec;
+mod image;
+mod transfer;
 
+use bollard::Docker;
 use bollard::container::{
-    Config as ContainerConfig, CreateContainerOptions, RemoveContainerOptions,
-    StopContainerOptions,
+    Config as ContainerConfig, CreateContainerOptions, RemoveContainerOptions, StopContainerOptions,
 };
 use bollard::models::{HostConfig, PortBinding};
-use bollard::Docker;
 use futures::StreamExt;
 use tracing::{debug, info, warn};
 
@@ -37,15 +36,17 @@ impl DockerSession {
     /// built-in `desktest-desktop` base image. The custom image is NOT built —
     /// it must already exist locally or be pullable by Docker.
     pub async fn create(config: &Config, custom_image: Option<&str>) -> Result<Self, AppError> {
-        let client =
-            Docker::connect_with_local_defaults().map_err(|e| AppError::Infra(format!("Cannot connect to Docker: {e}")))?;
+        let client = Docker::connect_with_local_defaults()
+            .map_err(|e| AppError::Infra(format!("Cannot connect to Docker: {e}")))?;
 
         let image_name = if let Some(img) = custom_image {
             // For custom images, check if the image exists locally; if not, try to pull it.
             // Distinguish "not found" from other Docker errors to avoid misleading warnings.
             match client.inspect_image(img).await {
-                Ok(_) => {},
-                Err(bollard::errors::Error::DockerResponseServerError { status_code: 404, .. }) => {
+                Ok(_) => {}
+                Err(bollard::errors::Error::DockerResponseServerError {
+                    status_code: 404, ..
+                }) => {
                     warn!("Custom image '{img}' not found locally — pulling from remote registry. Ensure you trust this image source.");
                     use bollard::image::CreateImageOptions;
                     let options = CreateImageOptions {
@@ -54,9 +55,11 @@ impl DockerSession {
                     };
                     let mut stream = client.create_image(Some(options), None, None);
                     while let Some(result) = stream.next().await {
-                        let info = result.map_err(|e| AppError::Config(format!(
-                            "Cannot pull custom Docker image '{img}': {e}"
-                        )))?;
+                        let info = result.map_err(|e| {
+                            AppError::Config(format!(
+                                "Cannot pull custom Docker image '{img}': {e}"
+                            ))
+                        })?;
                         if let Some(status) = &info.status {
                             debug!("Pull: {status}");
                         }
@@ -120,7 +123,10 @@ impl DockerSession {
             port_bindings.insert(exposed_port, Some(vec![host_binding]));
             host_config.port_bindings = Some(port_bindings);
 
-            info!("VNC will be available at {}:{}", config.vnc_bind_addr, vnc_port);
+            info!(
+                "VNC will be available at {}:{}",
+                config.vnc_bind_addr, vnc_port
+            );
         }
 
         let container_config = ContainerConfig {
@@ -190,13 +196,7 @@ impl DockerSession {
     }
 
     /// Required binaries that must exist in custom Docker images.
-    const REQUIRED_BINARIES: &[&str] = &[
-        "xdotool",
-        "scrot",
-        "Xvfb",
-        "ffmpeg",
-        "python3",
-    ];
+    const REQUIRED_BINARIES: &[&str] = &["xdotool", "scrot", "Xvfb", "ffmpeg", "python3"];
 
     /// Required Python packages that must be importable in custom Docker images.
     const REQUIRED_PYTHON_PACKAGES: &[(&str, &str)] = &[
@@ -241,7 +241,8 @@ impl DockerSession {
                 "~/.Xauthority not found — PyAutoGUI will fail to connect to the X display. \
                  Add `RUN touch /home/tester/.Xauthority` to your Dockerfile after `USER tester`."
             );
-            missing.push("/home/tester/.Xauthority (required by PyAutoGUI/python-xlib)".to_string());
+            missing
+                .push("/home/tester/.Xauthority (required by PyAutoGUI/python-xlib)".to_string());
         }
 
         if missing.is_empty() {
@@ -260,10 +261,7 @@ impl DockerSession {
         debug!("Stopping container {}", self.container_id);
         let _ = self
             .client
-            .stop_container(
-                &self.container_id,
-                Some(StopContainerOptions { t: 5 }),
-            )
+            .stop_container(&self.container_id, Some(StopContainerOptions { t: 5 }))
             .await;
 
         debug!("Removing container {}", self.container_id);

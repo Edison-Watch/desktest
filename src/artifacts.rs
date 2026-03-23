@@ -50,7 +50,10 @@ pub async fn collect_artifacts(
     }
 
     // Capture system logs from /tmp (Xvfb, x11vnc, etc.)
-    match session.exec(&["bash", "-c", "ls /tmp/*.log 2>/dev/null || true"]).await {
+    match session
+        .exec(&["bash", "-c", "ls /tmp/*.log 2>/dev/null || true"])
+        .await
+    {
         Ok(output) => {
             for log_file in output.lines().filter(|l| !l.trim().is_empty()) {
                 let log_file = log_file.trim();
@@ -103,7 +106,9 @@ async fn collect_docker_logs(session: &DockerSession, artifacts_dir: &Path) {
     };
 
     let mut output = String::new();
-    let stream = session.docker_client().logs(&session.container_id, Some(options));
+    let stream = session
+        .docker_client()
+        .logs(&session.container_id, Some(options));
     futures::pin_mut!(stream);
 
     while let Some(chunk) = futures::StreamExt::next(&mut stream).await {

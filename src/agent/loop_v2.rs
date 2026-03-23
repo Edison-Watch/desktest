@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use tracing::{debug, info, warn};
 
 use crate::agent::context::{ContextManager, TrajectoryTurn};
-use crate::agent::llm_retry::{extract_text_content, extract_reasoning};
+use crate::agent::llm_retry::{extract_reasoning, extract_text_content};
 use crate::agent::pyautogui::{self, SpecialCommand};
 use crate::docker::DockerSession;
 use crate::error::{AgentOutcome, AppError};
@@ -231,7 +231,9 @@ impl<'a> AgentLoopV2<'a> {
             let messages = self.context.build_messages(&current_observation);
 
             // Call LLM with retry on transient errors and step timeout
-            let llm_result = self.call_llm_with_retry(&messages, &current_observation).await;
+            let llm_result = self
+                .call_llm_with_retry(&messages, &current_observation)
+                .await;
 
             let response = match llm_result {
                 Ok(msg) => msg,
@@ -261,7 +263,8 @@ impl<'a> AgentLoopV2<'a> {
                 .collect();
 
             // Update video caption with agent's thought before executing
-            self.update_caption(step_index, &response_text, &all_blocks).await;
+            self.update_caption(step_index, &response_text, &all_blocks)
+                .await;
 
             let turn_result = pyautogui::process_turn(
                 self.session,
@@ -272,7 +275,12 @@ impl<'a> AgentLoopV2<'a> {
             .await?;
 
             // Handle bug reports (non-terminal, always process before commands)
-            self.handle_bug_reports(step_index, &turn_result.bug_reports, &current_observation, turn_result.bash_output.as_deref());
+            self.handle_bug_reports(
+                step_index,
+                &turn_result.bug_reports,
+                &current_observation,
+                turn_result.bash_output.as_deref(),
+            );
 
             // Check for special commands
             if let Some(ref command) = turn_result.command {
@@ -379,8 +387,7 @@ impl<'a> AgentLoopV2<'a> {
                             bash_output: turn_result.bash_output.clone(),
                         });
                         // Re-observe without executing any code
-                        current_observation =
-                            self.capture_observation_for_step(step_index).await?;
+                        current_observation = self.capture_observation_for_step(step_index).await?;
                         continue;
                     }
                 }
@@ -462,7 +469,8 @@ impl<'a> AgentLoopV2<'a> {
                     passed: false,
                     reasoning: format!(
                         "Total timeout ({}s) exceeded after {} steps",
-                        self.config.total_timeout.as_secs(), step_index
+                        self.config.total_timeout.as_secs(),
+                        step_index
                     ),
                     screenshot_count: step_index,
                     bugs_found: self.bugs_found(),
@@ -483,8 +491,10 @@ impl<'a> AgentLoopV2<'a> {
             step_index += 1;
 
             // Pause and wait for user input (timeout does NOT tick during this wait)
-            println!("\n--- Step {}/{} --- Press Enter to execute, 'q' to quit ---",
-                step_index, self.config.max_steps);
+            println!(
+                "\n--- Step {}/{} --- Press Enter to execute, 'q' to quit ---",
+                step_index, self.config.max_steps
+            );
             let mut input = String::new();
             if std::io::stdin().read_line(&mut input).is_ok() {
                 let trimmed = input.trim().to_lowercase();
@@ -501,11 +511,16 @@ impl<'a> AgentLoopV2<'a> {
             }
 
             let step_start = Instant::now();
-            info!("--- Executing step {}/{} ---", step_index, self.config.max_steps);
+            info!(
+                "--- Executing step {}/{} ---",
+                step_index, self.config.max_steps
+            );
 
             // Build messages and call LLM
             let messages = self.context.build_messages(&current_observation);
-            let llm_result = self.call_llm_with_retry(&messages, &current_observation).await;
+            let llm_result = self
+                .call_llm_with_retry(&messages, &current_observation)
+                .await;
 
             let response = match llm_result {
                 Ok(msg) => msg,
@@ -536,7 +551,8 @@ impl<'a> AgentLoopV2<'a> {
                 .collect();
 
             // Update video caption with agent's thought before executing
-            self.update_caption(step_index, &response_text, &all_blocks).await;
+            self.update_caption(step_index, &response_text, &all_blocks)
+                .await;
 
             let turn_result = pyautogui::process_turn(
                 self.session,
@@ -547,7 +563,12 @@ impl<'a> AgentLoopV2<'a> {
             .await?;
 
             // Handle bug reports (non-terminal, always process before commands)
-            self.handle_bug_reports(step_index, &turn_result.bug_reports, &current_observation, turn_result.bash_output.as_deref());
+            self.handle_bug_reports(
+                step_index,
+                &turn_result.bug_reports,
+                &current_observation,
+                turn_result.bash_output.as_deref(),
+            );
 
             // Check for special commands
             if let Some(ref command) = turn_result.command {
@@ -555,9 +576,14 @@ impl<'a> AgentLoopV2<'a> {
                     SpecialCommand::Done => {
                         println!("  => Agent signalled DONE");
                         self.log_trajectory_entry(
-                            step_index, &response_text, &all_blocks, &current_observation,
-                            "done", Some(&response_text),
-                            turn_result.bash_output.as_deref(), turn_result.error_feedback.as_deref(),
+                            step_index,
+                            &response_text,
+                            &all_blocks,
+                            &current_observation,
+                            "done",
+                            Some(&response_text),
+                            turn_result.bash_output.as_deref(),
+                            turn_result.error_feedback.as_deref(),
                         );
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
@@ -576,9 +602,14 @@ impl<'a> AgentLoopV2<'a> {
                     SpecialCommand::Fail => {
                         println!("  => Agent signalled FAIL");
                         self.log_trajectory_entry(
-                            step_index, &response_text, &all_blocks, &current_observation,
-                            "fail", Some(&response_text),
-                            turn_result.bash_output.as_deref(), turn_result.error_feedback.as_deref(),
+                            step_index,
+                            &response_text,
+                            &all_blocks,
+                            &current_observation,
+                            "fail",
+                            Some(&response_text),
+                            turn_result.bash_output.as_deref(),
+                            turn_result.error_feedback.as_deref(),
                         );
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
@@ -597,9 +628,14 @@ impl<'a> AgentLoopV2<'a> {
                     SpecialCommand::Wait => {
                         println!("  => Agent signalled WAIT, re-observing...");
                         self.log_trajectory_entry(
-                            step_index, &response_text, &all_blocks, &current_observation,
-                            "wait", Some(&response_text),
-                            turn_result.bash_output.as_deref(), turn_result.error_feedback.as_deref(),
+                            step_index,
+                            &response_text,
+                            &all_blocks,
+                            &current_observation,
+                            "wait",
+                            Some(&response_text),
+                            turn_result.bash_output.as_deref(),
+                            turn_result.error_feedback.as_deref(),
                         );
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
@@ -616,15 +652,30 @@ impl<'a> AgentLoopV2<'a> {
 
             // Show execution result
             let result_str = if turn_result.all_succeeded {
-                println!("  => Executed {} code block(s) successfully", turn_result.executions.len());
+                println!(
+                    "  => Executed {} code block(s) successfully",
+                    turn_result.executions.len()
+                );
                 "success".to_string()
             } else {
-                let err = turn_result.error_feedback.as_deref().unwrap_or("unknown error");
+                let err = turn_result
+                    .error_feedback
+                    .as_deref()
+                    .unwrap_or("unknown error");
                 println!("  => Execution error: {err}");
                 format!("error:{err}")
             };
 
-            self.log_trajectory_entry(step_index, &response_text, &all_blocks, &current_observation, &result_str, Some(&response_text), turn_result.bash_output.as_deref(), turn_result.error_feedback.as_deref());
+            self.log_trajectory_entry(
+                step_index,
+                &response_text,
+                &all_blocks,
+                &current_observation,
+                &result_str,
+                Some(&response_text),
+                turn_result.bash_output.as_deref(),
+                turn_result.error_feedback.as_deref(),
+            );
             self.context.push_turn(TrajectoryTurn {
                 observation: current_observation,
                 response_text: response_text.clone(),
@@ -693,7 +744,8 @@ impl<'a> AgentLoopV2<'a> {
             let thought = crate::trajectory::extract_thought(response_text, code_blocks);
             let action_code = code_blocks.join("\n");
             let screenshot_base64 = observation.screenshot_data_url.as_ref().and_then(|url| {
-                url.strip_prefix("data:image/png;base64,").map(|s| s.to_string())
+                url.strip_prefix("data:image/png;base64,")
+                    .map(|s| s.to_string())
             });
             let timestamp = crate::trajectory::chrono_iso8601_now();
             m.send(MonitorEvent::StepComplete {
@@ -792,9 +844,8 @@ impl<'a> AgentLoopV2<'a> {
                 if let Some(content) = val.get_mut("content") {
                     if let Some(arr) = content.as_array_mut() {
                         for item in arr.iter_mut() {
-                            if let Some(url) = item
-                                .get_mut("image_url")
-                                .and_then(|u| u.get_mut("url"))
+                            if let Some(url) =
+                                item.get_mut("image_url").and_then(|u| u.get_mut("url"))
                             {
                                 if let Some(s) = url.as_str() {
                                     if s.starts_with("data:image/") {
@@ -832,8 +883,14 @@ mod tests {
     fn test_default_config() {
         let config = AgentLoopV2Config::default();
         assert_eq!(config.max_steps, DEFAULT_MAX_STEPS);
-        assert_eq!(config.step_timeout, Duration::from_secs(DEFAULT_STEP_TIMEOUT_SECS));
-        assert_eq!(config.total_timeout, Duration::from_secs(DEFAULT_TOTAL_TIMEOUT_SECS));
+        assert_eq!(
+            config.step_timeout,
+            Duration::from_secs(DEFAULT_STEP_TIMEOUT_SECS)
+        );
+        assert_eq!(
+            config.total_timeout,
+            Duration::from_secs(DEFAULT_TOTAL_TIMEOUT_SECS)
+        );
         assert_eq!(config.max_trajectory_length, 3);
         assert!(!config.debug);
         assert!(!config.verbose);

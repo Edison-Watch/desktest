@@ -28,14 +28,19 @@ pub struct TrajectoryRecord {
 
 /// Load trajectory entries from a JSONL file.
 pub fn load_trajectory(path: &Path) -> Result<Vec<TrajectoryRecord>, AppError> {
-    let file = std::fs::File::open(path)
-        .map_err(|e| AppError::Config(format!("Cannot open trajectory file '{}': {e}", path.display())))?;
+    let file = std::fs::File::open(path).map_err(|e| {
+        AppError::Config(format!(
+            "Cannot open trajectory file '{}': {e}",
+            path.display()
+        ))
+    })?;
 
     let reader = std::io::BufReader::new(file);
     let mut entries = Vec::new();
 
     for (line_num, line) in reader.lines().enumerate() {
-        let line = line.map_err(|e| AppError::Infra(format!("Error reading line {}: {e}", line_num + 1)))?;
+        let line =
+            line.map_err(|e| AppError::Infra(format!("Error reading line {}: {e}", line_num + 1)))?;
         let line = line.trim().to_string();
         if line.is_empty() {
             continue;
@@ -100,7 +105,10 @@ pub fn generate_replay_script(
             if !keep {
                 if let Some(ref set) = filter_set {
                     if set.contains(&e.step) {
-                        eprintln!("Warning: step {} has empty action_code and will be skipped", e.step);
+                        eprintln!(
+                            "Warning: step {} has empty action_code and will be skipped",
+                            e.step
+                        );
                     }
                 }
             }
@@ -145,14 +153,12 @@ pub fn generate_replay_script(
                 script.push_str(&format!(
                     "    # Verify pre-action screen state (threshold: {threshold})\n"
                 ));
+                script.push_str("    time.sleep(0.5)  # Wait for UI to settle\n");
                 script.push_str(
-                    "    time.sleep(0.5)  # Wait for UI to settle\n"
+                    "    subprocess.run(['scrot', '/tmp/_replay_actual.png'], check=True)\n",
                 );
                 script.push_str(
-                    "    subprocess.run(['scrot', '/tmp/_replay_actual.png'], check=True)\n"
-                );
-                script.push_str(
-                    "    subprocess.run(['python3', '/usr/local/bin/screenshot-compare',\n"
+                    "    subprocess.run(['python3', '/usr/local/bin/screenshot-compare',\n",
                 );
                 // Build container path: /home/tester/<dir_name>/<filename>
                 let container_screenshot = if let Some(dir_name) = screenshots_dir_name {
@@ -160,7 +166,9 @@ pub fn generate_replay_script(
                 } else {
                     format!("/home/tester/{screenshot}")
                 };
-                let screenshot_escaped = container_screenshot.replace('\\', "\\\\").replace('\'', "\\'");
+                let screenshot_escaped = container_screenshot
+                    .replace('\\', "\\\\")
+                    .replace('\'', "\\'");
                 script.push_str(&format!(
                     "        '--expected', '{screenshot_escaped}', '--actual', '/tmp/_replay_actual.png', '--threshold', '{threshold}'], check=True)\n"
                 ));
@@ -226,12 +234,14 @@ pub fn parse_steps(steps_str: &str) -> Result<Vec<usize>, AppError> {
                     "Invalid step range '{part}': expected format N-M"
                 )));
             }
-            let start: usize = start_str.trim().parse().map_err(|e| {
-                AppError::Config(format!("Invalid step number '{start_str}': {e}"))
-            })?;
-            let end: usize = end_str.trim().parse().map_err(|e| {
-                AppError::Config(format!("Invalid step number '{end_str}': {e}"))
-            })?;
+            let start: usize = start_str
+                .trim()
+                .parse()
+                .map_err(|e| AppError::Config(format!("Invalid step number '{start_str}': {e}")))?;
+            let end: usize = end_str
+                .trim()
+                .parse()
+                .map_err(|e| AppError::Config(format!("Invalid step number '{end_str}': {e}")))?;
             if start > end {
                 return Err(AppError::Config(format!(
                     "Invalid step range '{part}': start ({start}) is greater than end ({end})"
@@ -239,9 +249,9 @@ pub fn parse_steps(steps_str: &str) -> Result<Vec<usize>, AppError> {
             }
             result.extend(start..=end);
         } else {
-            let n: usize = part.parse().map_err(|e| {
-                AppError::Config(format!("Invalid step number '{part}': {e}"))
-            })?;
+            let n: usize = part
+                .parse()
+                .map_err(|e| AppError::Config(format!("Invalid step number '{part}': {e}")))?;
             result.push(n);
         }
     }
@@ -311,7 +321,8 @@ mod tests {
     #[test]
     fn test_generate_replay_with_screenshots() {
         let entries = sample_entries();
-        let (script, _count) = generate_replay_script(&entries, None, 0.5, true, 0.95, Some("artifacts"));
+        let (script, _count) =
+            generate_replay_script(&entries, None, 0.5, true, 0.95, Some("artifacts"));
         assert!(script.contains("import subprocess"));
         assert!(script.contains("screenshot-compare"));
     }

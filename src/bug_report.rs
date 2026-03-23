@@ -59,7 +59,11 @@ impl BugReporter {
         if let Some(output) = bash_output {
             if !output.trim().is_empty() {
                 let truncated: String = output.chars().take(5000).collect();
-                let suffix = if output.chars().count() > 5000 { "\n... (truncated)" } else { "" };
+                let suffix = if output.chars().count() > 5000 {
+                    "\n... (truncated)"
+                } else {
+                    ""
+                };
                 md.push_str(&format!(
                     "## Diagnostic Evidence\n\n\
                      ```\n{truncated}{suffix}\n```\n\n"
@@ -70,7 +74,11 @@ impl BugReporter {
         if let Some(a11y) = a11y_tree_text {
             // Truncate large a11y trees to keep reports readable
             let truncated: String = a11y.chars().take(3000).collect();
-            let suffix = if a11y.chars().count() > 3000 { "\n... (truncated)" } else { "" };
+            let suffix = if a11y.chars().count() > 3000 {
+                "\n... (truncated)"
+            } else {
+                ""
+            };
             md.push_str(&format!(
                 "## Accessibility Tree State\n\n\
                  ```\n{truncated}{suffix}\n```\n"
@@ -111,8 +119,12 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let mut reporter = BugReporter::new(tmp.path()).unwrap();
 
-        let id1 = reporter.report_bug(1, "First bug", None, None, None).unwrap();
-        let id2 = reporter.report_bug(2, "Second bug", None, None, None).unwrap();
+        let id1 = reporter
+            .report_bug(1, "First bug", None, None, None)
+            .unwrap();
+        let id2 = reporter
+            .report_bug(2, "Second bug", None, None, None)
+            .unwrap();
 
         assert_eq!(id1, "BUG-001");
         assert_eq!(id2, "BUG-002");
@@ -150,7 +162,9 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let mut reporter = BugReporter::new(tmp.path()).unwrap();
 
-        reporter.report_bug(1, "Simple bug", None, None, None).unwrap();
+        reporter
+            .report_bug(1, "Simple bug", None, None, None)
+            .unwrap();
 
         let content = fs::read_to_string(tmp.path().join("bugs/BUG-001.md")).unwrap();
         assert!(content.contains("# BUG-001"));

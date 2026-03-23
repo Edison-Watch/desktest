@@ -226,9 +226,9 @@ fn parse_data_url_to_image_block(data_url: &str) -> Result<ContentBlock, AppErro
         .strip_prefix("data:")
         .ok_or_else(|| AppError::Agent("Invalid image data URL: missing data: prefix".into()))?;
 
-    let (media_type, base64_data) = rest
-        .split_once(";base64,")
-        .ok_or_else(|| AppError::Agent("Invalid image data URL: missing ;base64, separator".into()))?;
+    let (media_type, base64_data) = rest.split_once(";base64,").ok_or_else(|| {
+        AppError::Agent("Invalid image data URL: missing ;base64, separator".into())
+    })?;
 
     Ok(ContentBlock::Image {
         source: ImageSource {
@@ -489,8 +489,8 @@ mod tests {
             .mount(&server)
             .await;
 
-        let provider =
-            AnthropicProvider::new("sk-ant-test", "claude-sonnet-4-20250514").with_base_url(&server.uri());
+        let provider = AnthropicProvider::new("sk-ant-test", "claude-sonnet-4-20250514")
+            .with_base_url(&server.uri());
         let messages = vec![user_message("Hi")];
         let result = provider.chat_completion(&messages, &[]).await.unwrap();
 
@@ -507,14 +507,12 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/v1/messages"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(mock_anthropic_response("ok")),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_anthropic_response("ok")))
             .mount(&server)
             .await;
 
-        let provider =
-            AnthropicProvider::new("sk-test", "claude-sonnet-4-20250514").with_base_url(&server.uri());
+        let provider = AnthropicProvider::new("sk-test", "claude-sonnet-4-20250514")
+            .with_base_url(&server.uri());
         let messages = vec![system_message("Be concise."), user_message("Hi")];
         let result = provider.chat_completion(&messages, &[]).await;
         assert!(result.is_ok());
@@ -529,11 +527,9 @@ mod tests {
             .mount(&server)
             .await;
 
-        let provider =
-            AnthropicProvider::new("sk-test", "claude-sonnet-4-20250514").with_base_url(&server.uri());
-        let result = provider
-            .chat_completion(&[user_message("test")], &[])
-            .await;
+        let provider = AnthropicProvider::new("sk-test", "claude-sonnet-4-20250514")
+            .with_base_url(&server.uri());
+        let result = provider.chat_completion(&[user_message("test")], &[]).await;
 
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -550,11 +546,9 @@ mod tests {
             .mount(&server)
             .await;
 
-        let provider =
-            AnthropicProvider::new("sk-test", "claude-sonnet-4-20250514").with_base_url(&server.uri());
-        let result = provider
-            .chat_completion(&[user_message("test")], &[])
-            .await;
+        let provider = AnthropicProvider::new("sk-test", "claude-sonnet-4-20250514")
+            .with_base_url(&server.uri());
+        let result = provider.chat_completion(&[user_message("test")], &[]).await;
 
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("500"));
@@ -573,7 +567,8 @@ mod tests {
             .await;
 
         let provider: Box<dyn LlmProvider> = Box::new(
-            AnthropicProvider::new("sk-test", "claude-sonnet-4-20250514").with_base_url(&server.uri()),
+            AnthropicProvider::new("sk-test", "claude-sonnet-4-20250514")
+                .with_base_url(&server.uri()),
         );
         let messages = vec![user_message("Hi")];
         let result = provider.chat_completion(&messages, &[]).await.unwrap();
@@ -597,8 +592,8 @@ mod tests {
             .mount(&server)
             .await;
 
-        let provider =
-            AnthropicProvider::new("sk-test", "claude-sonnet-4-20250514").with_base_url(&server.uri());
+        let provider = AnthropicProvider::new("sk-test", "claude-sonnet-4-20250514")
+            .with_base_url(&server.uri());
         let messages = vec![user_image_message("data:image/png;base64,iVBORw0KGgo=")];
         let result = provider.chat_completion(&messages, &[]).await;
         assert!(result.is_ok());

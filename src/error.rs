@@ -56,7 +56,11 @@ impl fmt::Display for AgentOutcome {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verdict = if self.passed { "PASSED" } else { "FAILED" };
         if self.bugs_found > 0 {
-            write!(f, "Test {}: {} ({} bug(s) reported)", verdict, self.reasoning, self.bugs_found)
+            write!(
+                f,
+                "Test {}: {} ({} bug(s) reported)",
+                verdict, self.reasoning, self.bugs_found
+            )
         } else {
             write!(f, "Test {}: {}", verdict, self.reasoning)
         }

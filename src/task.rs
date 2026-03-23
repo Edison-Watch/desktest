@@ -275,7 +275,9 @@ impl TaskDefinition {
             Some(evaluator) => {
                 evaluator.mode = EvaluatorMode::Programmatic;
                 // Remove any existing ScriptReplay metrics to avoid duplicates
-                evaluator.metrics.retain(|m| !matches!(m, MetricConfig::ScriptReplay { .. }));
+                evaluator
+                    .metrics
+                    .retain(|m| !matches!(m, MetricConfig::ScriptReplay { .. }));
                 evaluator.metrics.insert(0, replay_metric);
             }
             None => {
@@ -301,16 +303,17 @@ impl TaskDefinition {
 
     /// Load and validate a task definition from a JSON file.
     pub fn load(path: &Path) -> Result<Self, AppError> {
-        let contents = std::fs::read_to_string(path)
-            .map_err(|e| AppError::Config(format!("Cannot read task file '{}': {e}", path.display())))?;
+        let contents = std::fs::read_to_string(path).map_err(|e| {
+            AppError::Config(format!("Cannot read task file '{}': {e}", path.display()))
+        })?;
 
         Self::parse_and_validate(&contents)
     }
 
     /// Parse JSON string and validate the task definition.
     pub fn parse_and_validate(json: &str) -> Result<Self, AppError> {
-        let task: TaskDefinition =
-            serde_json::from_str(json).map_err(|e| AppError::Config(format!("Invalid task JSON: {e}")))?;
+        let task: TaskDefinition = serde_json::from_str(json)
+            .map_err(|e| AppError::Config(format!("Invalid task JSON: {e}")))?;
 
         task.validate()?;
         Ok(task)
@@ -329,7 +332,9 @@ impl TaskDefinition {
         }
 
         if self.instruction.is_empty() {
-            return Err(AppError::Config("Task 'instruction' must not be empty.".into()));
+            return Err(AppError::Config(
+                "Task 'instruction' must not be empty.".into(),
+            ));
         }
 
         if self.timeout == 0 {
@@ -903,7 +908,11 @@ mod tests {
 
         let task = TaskDefinition::parse_and_validate(json).unwrap();
         match &task.app {
-            AppConfig::Folder { dir, entrypoint, electron } => {
+            AppConfig::Folder {
+                dir,
+                entrypoint,
+                electron,
+            } => {
                 assert_eq!(dir, "/apps/myelectronapp");
                 assert_eq!(entrypoint, "myelectronapp");
                 assert!(electron);
@@ -1092,7 +1101,10 @@ mod tests {
         let task = TaskDefinition::parse_and_validate(json).unwrap();
         match &task.app {
             AppConfig::VncAttach { note } => {
-                assert_eq!(note.as_deref(), Some("This task is designed for desktest attach mode"));
+                assert_eq!(
+                    note.as_deref(),
+                    Some("This task is designed for desktest attach mode")
+                );
             }
             _ => panic!("Expected VncAttach app config"),
         }

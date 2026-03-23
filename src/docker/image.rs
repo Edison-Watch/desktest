@@ -1,12 +1,12 @@
 use std::path::Path;
 
-use bollard::image::BuildImageOptions;
 use bollard::Docker;
+use bollard::image::BuildImageOptions;
 use futures::StreamExt;
 use tracing::{debug, info};
 
-use crate::error::AppError;
 use super::{DockerSession, IMAGE_NAME, IMAGE_NAME_ELECTRON};
+use crate::error::AppError;
 
 impl DockerSession {
     /// Build the Docker image from the docker/ directory if it doesn't already exist.
@@ -46,7 +46,10 @@ impl DockerSession {
     }
 
     /// Build the Electron Docker image from docker/Dockerfile.electron if it doesn't already exist.
-    pub async fn ensure_electron_image(client: &Docker, force_rebuild: bool) -> Result<(), AppError> {
+    pub async fn ensure_electron_image(
+        client: &Docker,
+        force_rebuild: bool,
+    ) -> Result<(), AppError> {
         if !force_rebuild {
             if client.inspect_image(IMAGE_NAME_ELECTRON).await.is_ok() {
                 debug!("Image {IMAGE_NAME_ELECTRON} already exists, skipping build");

@@ -121,7 +121,11 @@ impl Config {
                 self.app_path = Some(PathBuf::from(path));
                 self.electron = *electron;
             }
-            crate::task::AppConfig::Folder { dir, entrypoint, electron } => {
+            crate::task::AppConfig::Folder {
+                dir,
+                entrypoint,
+                electron,
+            } => {
                 self.app_type = AppType::Folder;
                 self.app_dir = Some(PathBuf::from(dir));
                 self.entrypoint = Some(entrypoint.clone());
@@ -148,8 +152,8 @@ impl Config {
 
     /// Parse JSON string and validate cross-field constraints.
     pub fn parse_and_validate(json: &str) -> Result<Self, AppError> {
-        let config: Config =
-            serde_json::from_str(json).map_err(|e| AppError::Config(format!("Invalid JSON: {e}")))?;
+        let config: Config = serde_json::from_str(json)
+            .map_err(|e| AppError::Config(format!("Invalid JSON: {e}")))?;
 
         config.validate()?;
         Ok(config)
@@ -158,10 +162,9 @@ impl Config {
     fn validate(&self) -> Result<(), AppError> {
         match self.app_type {
             AppType::Appimage => {
-                let app_path = self
-                    .app_path
-                    .as_ref()
-                    .ok_or_else(|| AppError::Config("app_path is required when app_type is \"appimage\"".into()))?;
+                let app_path = self.app_path.as_ref().ok_or_else(|| {
+                    AppError::Config("app_path is required when app_type is \"appimage\"".into())
+                })?;
 
                 if !app_path.exists() {
                     return Err(AppError::Config(format!(
@@ -171,10 +174,9 @@ impl Config {
                 }
             }
             AppType::Folder => {
-                let app_dir = self
-                    .app_dir
-                    .as_ref()
-                    .ok_or_else(|| AppError::Config("app_dir is required when app_type is \"folder\"".into()))?;
+                let app_dir = self.app_dir.as_ref().ok_or_else(|| {
+                    AppError::Config("app_dir is required when app_type is \"folder\"".into())
+                })?;
 
                 if !app_dir.exists() {
                     return Err(AppError::Config(format!(
@@ -204,7 +206,9 @@ impl Config {
         }
 
         if self.display_width == 0 || self.display_height == 0 {
-            return Err(AppError::Config("display_width and display_height must be > 0".into()));
+            return Err(AppError::Config(
+                "display_width and display_height must be > 0".into(),
+            ));
         }
 
         Ok(())
@@ -368,8 +372,7 @@ mod tests {
 
     #[test]
     fn test_app_path_not_found() {
-        let json =
-            r#"{"api_key": "sk-test", "app_type": "appimage", "app_path": "/nonexistent/app.AppImage"}"#;
+        let json = r#"{"api_key": "sk-test", "app_type": "appimage", "app_path": "/nonexistent/app.AppImage"}"#;
         let err = Config::parse_and_validate(json).unwrap_err();
         assert!(err.to_string().contains("app_path does not exist"));
     }

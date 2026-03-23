@@ -115,7 +115,9 @@ impl TrajectoryLogger {
 
         // Save a11y tree to file and get the relative path
         let a11y_tree_path = if let Some(text) = a11y_tree_text {
-            let a11y_path = self.artifacts_dir.join(format!("step_{:03}_a11y.txt", step));
+            let a11y_path = self
+                .artifacts_dir
+                .join(format!("step_{:03}_a11y.txt", step));
             match std::fs::write(&a11y_path, text) {
                 Ok(()) => a11y_path
                     .file_name()
@@ -281,7 +283,8 @@ mod tests {
 
     #[test]
     fn test_extract_thought_strips_bash_blocks() {
-        let response = "Let me check the process.\n\n```bash\nps aux | grep myapp\n```\n\nNow clicking.";
+        let response =
+            "Let me check the process.\n\n```bash\nps aux | grep myapp\n```\n\nNow clicking.";
         // all_blocks has bash blocks prefixed with "# [bash]\n"
         let all_blocks = vec!["# [bash]\nps aux | grep myapp".to_string()];
         let thought = extract_thought(response, &all_blocks);
@@ -400,7 +403,8 @@ mod tests {
         // Verbose: build_entry SHOULD include raw response
         let dir2 = tempfile::tempdir().unwrap();
         let logger2 = TrajectoryLogger::new(dir2.path(), true).unwrap();
-        let entry2 = logger2.build_entry(1, "text", &[], None, None, "done", Some("raw"), None, None);
+        let entry2 =
+            logger2.build_entry(1, "text", &[], None, None, "done", Some("raw"), None, None);
         assert!(entry2.llm_raw_response.is_some());
     }
 
