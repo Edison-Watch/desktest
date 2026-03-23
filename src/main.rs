@@ -16,6 +16,7 @@ mod orchestration;
 mod provider;
 mod readiness;
 mod recording;
+mod redact;
 mod results;
 mod review;
 mod setup;

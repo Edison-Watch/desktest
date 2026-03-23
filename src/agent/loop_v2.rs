@@ -16,8 +16,9 @@ use crate::docker::DockerSession;
 use crate::error::{AgentOutcome, AppError};
 use crate::monitor::{MonitorEvent, MonitorHandle};
 use crate::observation::{self, Observation, ObservationConfig};
-use crate::provider::LlmProvider;
+use crate::provider::{ChatMessage, LlmProvider};
 use crate::recording::Recording;
+use crate::redact::Redactor;
 use crate::trajectory::TrajectoryLogger;
 
 /// Default maximum number of agent steps per test.
@@ -88,6 +89,7 @@ pub struct AgentLoopV2<'a> {
     pub(super) monitor: Option<MonitorHandle>,
     pub(super) test_id: String,
     pub(super) bug_reporter: Option<crate::bug_report::BugReporter>,
+    pub(super) redactor: Option<Redactor>,
 }
 
 impl<'a> AgentLoopV2<'a> {
@@ -103,6 +105,7 @@ impl<'a> AgentLoopV2<'a> {
         recording: Option<&'a Recording>,
         monitor: Option<MonitorHandle>,
         test_id: String,
+        redactor: Option<Redactor>,
     ) -> Self {
         let context = ContextManager::new(
             display_width,
@@ -113,13 +116,14 @@ impl<'a> AgentLoopV2<'a> {
             config.qa,
         );
 
-        let trajectory = match TrajectoryLogger::new(&artifacts_dir, config.verbose) {
-            Ok(logger) => Some(logger),
-            Err(e) => {
-                warn!("Failed to create trajectory logger: {e}");
-                None
-            }
-        };
+        let trajectory =
+            match TrajectoryLogger::new(&artifacts_dir, config.verbose, redactor.clone()) {
+                Ok(logger) => Some(logger),
+                Err(e) => {
+                    warn!("Failed to create trajectory logger: {e}");
+                    None
+                }
+            };
 
         let bug_reporter = if config.qa {
             match crate::bug_report::BugReporter::new(&artifacts_dir) {
@@ -144,6 +148,7 @@ impl<'a> AgentLoopV2<'a> {
             monitor,
             test_id,
             bug_reporter,
+            redactor,
         }
     }
 
@@ -247,7 +252,11 @@ impl<'a> AgentLoopV2<'a> {
             // Extract text content from the response
             let response_text = extract_text_content(&response);
             if self.config.debug {
-                debug!("LLM response: {response_text}");
+                let display_text = match &self.redactor {
+                    Some(r) => r.redact(&response_text),
+                    None => response_text.clone(),
+                };
+                debug!("LLM response: {display_text}");
             }
             info!("LLM response length: {} chars", response_text.len());
 
@@ -535,9 +544,13 @@ impl<'a> AgentLoopV2<'a> {
             println!("  LLM response ({} chars):", response_text.len());
 
             // Show a preview of the response
-            let preview: String = response_text.chars().take(500).collect();
+            let display_text = match &self.redactor {
+                Some(r) => r.redact(&response_text),
+                None => response_text.clone(),
+            };
+            let preview: String = display_text.chars().take(500).collect();
             println!("  {preview}");
-            if response_text.len() > 500 {
+            if display_text.len() > 500 {
                 println!("  ... (truncated)");
             }
 
@@ -836,33 +849,7 @@ impl<'a> AgentLoopV2<'a> {
         let messages = self.context.build_messages(&dummy_obs);
         let log_path = self.artifacts_dir.join("agent_conversation.json");
 
-        // Sanitize base64 image data for readability
-        let sanitized: Vec<serde_json::Value> = messages
-            .iter()
-            .map(|msg| {
-                let mut val = serde_json::to_value(msg).unwrap_or_default();
-                if let Some(content) = val.get_mut("content") {
-                    if let Some(arr) = content.as_array_mut() {
-                        for item in arr.iter_mut() {
-                            if let Some(url) =
-                                item.get_mut("image_url").and_then(|u| u.get_mut("url"))
-                            {
-                                if let Some(s) = url.as_str() {
-                                    if s.starts_with("data:image/") {
-                                        *url = serde_json::Value::String(
-                                            "[base64 image data omitted]".into(),
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                val
-            })
-            .collect();
-
-        match serde_json::to_string_pretty(&sanitized) {
+        match serialize_conversation_log(&messages, self.redactor.as_ref()) {
             Ok(json) => {
                 if let Err(e) = std::fs::write(&log_path, json) {
                     warn!("Failed to write conversation log: {e}");
@@ -873,9 +860,47 @@ impl<'a> AgentLoopV2<'a> {
     }
 }
 
+fn serialize_conversation_log(
+    messages: &[ChatMessage],
+    redactor: Option<&Redactor>,
+) -> Result<String, serde_json::Error> {
+    // Sanitize base64 image data for readability
+    let sanitized: Vec<serde_json::Value> = messages
+        .iter()
+        .map(|msg| {
+            let mut val = serde_json::to_value(msg).unwrap_or_default();
+            if let Some(content) = val.get_mut("content") {
+                if let Some(arr) = content.as_array_mut() {
+                    for item in arr.iter_mut() {
+                        if let Some(url) = item.get_mut("image_url").and_then(|u| u.get_mut("url"))
+                        {
+                            if let Some(s) = url.as_str() {
+                                if s.starts_with("data:image/") {
+                                    *url = serde_json::Value::String(
+                                        "[base64 image data omitted]".into(),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            val
+        })
+        .collect();
+
+    let mut sanitized = serde_json::Value::Array(sanitized);
+    if let Some(redactor) = redactor {
+        crate::redact::redact_json_value(&mut sanitized, redactor);
+    }
+    serde_json::to_string_pretty(&sanitized)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::provider::user_message;
+    use crate::redact::Redactor;
 
     // --- AgentLoopV2Config tests ---
 
@@ -917,5 +942,30 @@ mod tests {
         assert_eq!(config.max_trajectory_length, 5);
         assert!(config.debug);
         assert!(config.verbose);
+    }
+
+    #[test]
+    fn test_serialize_conversation_log_redacts_secrets() {
+        let messages = vec![user_message("password is s3cret")];
+        let redactor = Redactor::new(["s3cret".to_string()]);
+
+        let json = serialize_conversation_log(&messages, Some(&redactor)).unwrap();
+
+        assert!(!json.contains("s3cret"));
+        assert!(json.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn test_step_preview_redacts_secrets() {
+        let redactor = Redactor::new(["s3cret".to_string()]);
+        let response_text = "Use password s3cret to log in".to_string();
+        let display_text = match Some(&redactor) {
+            Some(r) => r.redact(&response_text),
+            None => response_text.clone(),
+        };
+        let preview: String = display_text.chars().take(500).collect();
+
+        assert!(!preview.contains("s3cret"));
+        assert!(preview.contains("[REDACTED]"));
     }
 }

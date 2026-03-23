@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -5,6 +6,16 @@ use serde::{Deserialize, Serialize};
 use crate::error::AppError;
 
 const SUPPORTED_SCHEMA_VERSION: &str = "1.0";
+
+/// Definition for a secret sourced from an environment variable.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SecretDef {
+    /// Environment variable name to read the secret value from.
+    pub env: String,
+    /// Optional default value when the environment variable is not set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<String>,
+}
 
 /// A structured task definition for desktop app testing.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -48,6 +59,11 @@ pub struct TaskDefinition {
     /// Optional max a11y tree nodes to extract (default: 10000).
     #[serde(default)]
     pub max_a11y_nodes: Option<usize>,
+
+    /// Named secrets sourced from environment variables.
+    /// Keys are placeholder names used in `{{key}}` substitution.
+    #[serde(default)]
+    pub secrets: HashMap<String, SecretDef>,
 
     /// Optional metadata (tags, author, etc.).
     #[serde(default)]
@@ -257,6 +273,119 @@ pub enum MatchMode {
     Regex,
 }
 
+/// Replace `{{key}}` placeholders in `text` with values from `resolved`.
+///
+/// Any `{{key}}` that is not present in the `secrets` definition map produces an error.
+fn substitute_secrets(
+    text: &str,
+    resolved: &HashMap<String, String>,
+    defined: &HashMap<String, SecretDef>,
+) -> Result<String, AppError> {
+    let mut result = text.to_string();
+    // Find all {{key}} placeholders
+    let mut start = 0;
+    while let Some(open) = result[start..].find("{{") {
+        let open = start + open;
+        if let Some(close) = result[open..].find("}}") {
+            let close = open + close;
+            let key = &result[open + 2..close];
+            if !defined.contains_key(key) {
+                return Err(AppError::Config(format!(
+                    "Placeholder '{{{{{key}}}}}' references undefined secret '{key}'"
+                )));
+            }
+            if let Some(value) = resolved.get(key) {
+                result.replace_range(open..close + 2, value);
+                start = open + value.len();
+            } else {
+                start = close + 2;
+            }
+        } else {
+            break;
+        }
+    }
+    Ok(result)
+}
+
+fn apply_secrets_to_metric(
+    metric: &mut MetricConfig,
+    resolved: &HashMap<String, String>,
+    defined: &HashMap<String, SecretDef>,
+) -> Result<(), AppError> {
+    match metric {
+        MetricConfig::FileCompare {
+            actual_path,
+            expected_path,
+            ..
+        }
+        | MetricConfig::FileCompareSemantic {
+            actual_path,
+            expected_path,
+            ..
+        } => {
+            *actual_path = substitute_secrets(actual_path, resolved, defined)?;
+            *expected_path = substitute_secrets(expected_path, resolved, defined)?;
+        }
+        MetricConfig::CommandOutput {
+            command, expected, ..
+        } => {
+            *command = substitute_secrets(command, resolved, defined)?;
+            *expected = substitute_secrets(expected, resolved, defined)?;
+        }
+        MetricConfig::FileExists { path, .. } => {
+            *path = substitute_secrets(path, resolved, defined)?;
+        }
+        MetricConfig::ExitCode { command, .. } => {
+            *command = substitute_secrets(command, resolved, defined)?;
+        }
+        MetricConfig::ScriptReplay {
+            script_path,
+            screenshots_dir,
+        } => {
+            *script_path = substitute_secrets(script_path, resolved, defined)?;
+            if let Some(dir) = screenshots_dir {
+                *dir = substitute_secrets(dir, resolved, defined)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn apply_secrets_to_app(
+    app: &mut AppConfig,
+    resolved: &HashMap<String, String>,
+    defined: &HashMap<String, SecretDef>,
+) -> Result<(), AppError> {
+    match app {
+        AppConfig::Appimage { path, .. } => {
+            *path = substitute_secrets(path, resolved, defined)?;
+        }
+        AppConfig::Folder {
+            dir, entrypoint, ..
+        } => {
+            *dir = substitute_secrets(dir, resolved, defined)?;
+            *entrypoint = substitute_secrets(entrypoint, resolved, defined)?;
+        }
+        AppConfig::DockerImage {
+            image,
+            entrypoint_cmd,
+        } => {
+            *image = substitute_secrets(image, resolved, defined)?;
+            if let Some(cmd) = entrypoint_cmd {
+                *cmd = substitute_secrets(cmd, resolved, defined)?;
+            }
+        }
+        AppConfig::VncAttach { note } => {
+            if let Some(text) = note {
+                *text = substitute_secrets(text, resolved, defined)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 impl TaskDefinition {
     /// Switch this task to replay mode: inject a `script_replay` metric and set programmatic mode.
     ///
@@ -290,6 +419,74 @@ impl TaskDefinition {
             }
         }
 
+        Ok(())
+    }
+
+    /// Resolve all secrets by reading environment variables and applying defaults.
+    ///
+    /// Returns a map of secret name → resolved value, or an error if a required
+    /// env var is missing and no default is provided.
+    pub fn resolve_secrets(&self) -> Result<HashMap<String, String>, AppError> {
+        let mut resolved = HashMap::new();
+        for (name, def) in &self.secrets {
+            let value = match std::env::var(&def.env) {
+                Ok(v) => v,
+                Err(_) => match &def.default {
+                    Some(d) => d.clone(),
+                    None => {
+                        return Err(AppError::Config(format!(
+                            "Secret '{name}': environment variable '{}' is not set and no default provided",
+                            def.env
+                        )));
+                    }
+                },
+            };
+            resolved.insert(name.clone(), value);
+        }
+        Ok(resolved)
+    }
+
+    /// Substitute `{{key}}` placeholders in instruction, completion_condition,
+    /// app configuration, setup steps, and evaluator metric fields with
+    /// resolved secret values.
+    ///
+    /// When no secrets are defined, this is a no-op so literal `{{...}}` text
+    /// remains backward compatible. Once a task defines secrets, any
+    /// `{{key}}` placeholder encountered in the supported fields must refer to
+    /// a declared secret name or this returns an error.
+    pub fn apply_secrets(&mut self, resolved: &HashMap<String, String>) -> Result<(), AppError> {
+        if self.secrets.is_empty() {
+            return Ok(());
+        }
+
+        self.instruction = substitute_secrets(&self.instruction, resolved, &self.secrets)?;
+        if let Some(ref cond) = self.completion_condition {
+            self.completion_condition = Some(substitute_secrets(cond, resolved, &self.secrets)?);
+        }
+        apply_secrets_to_app(&mut self.app, resolved, &self.secrets)?;
+        for step in &mut self.config {
+            match step {
+                SetupStep::Execute { command } => {
+                    *command = substitute_secrets(command, resolved, &self.secrets)?;
+                }
+                SetupStep::Copy { src, dest } => {
+                    *src = substitute_secrets(src, resolved, &self.secrets)?;
+                    *dest = substitute_secrets(dest, resolved, &self.secrets)?;
+                }
+                SetupStep::Open { target, app } => {
+                    *target = substitute_secrets(target, resolved, &self.secrets)?;
+                    if let Some(app) = app {
+                        *app = substitute_secrets(app, resolved, &self.secrets)?;
+                    }
+                }
+                SetupStep::Sleep { .. } => {}
+            }
+        }
+        if let Some(evaluator) = &mut self.evaluator {
+            for metric in &mut evaluator.metrics {
+                apply_secrets_to_metric(metric, resolved, &self.secrets)?;
+            }
+        }
         Ok(())
     }
 
@@ -495,7 +692,14 @@ impl TaskDefinition {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Mutex, OnceLock};
+
     use super::*;
+
+    fn env_lock() -> &'static Mutex<()> {
+        static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        ENV_LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     fn minimal_valid_task() -> &'static str {
         r#"{
@@ -1140,5 +1344,279 @@ mod tests {
         assert_eq!(task.timeout, 60);
         assert_eq!(task.max_steps, 10);
         assert_eq!(task.evaluator.unwrap().mode, EvaluatorMode::Llm);
+    }
+
+    #[test]
+    fn test_secrets_resolve_from_env() {
+        let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "Log in as {{username}}",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "secrets": {
+                "username": {"env": "DESKTEST_TEST_USERNAME"}
+            }
+        }"#;
+
+        unsafe { std::env::set_var("DESKTEST_TEST_USERNAME", "alice") };
+        let task = TaskDefinition::parse_and_validate(json).unwrap();
+        let resolved = task.resolve_secrets().unwrap();
+        assert_eq!(resolved["username"], "alice");
+        unsafe { std::env::remove_var("DESKTEST_TEST_USERNAME") };
+    }
+
+    #[test]
+    fn test_secrets_default_value() {
+        let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "Log in as {{username}}",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "secrets": {
+                "username": {"env": "DESKTEST_TEST_NOEXIST_VAR", "default": "testuser"}
+            }
+        }"#;
+
+        unsafe { std::env::remove_var("DESKTEST_TEST_NOEXIST_VAR") };
+        let task = TaskDefinition::parse_and_validate(json).unwrap();
+        let resolved = task.resolve_secrets().unwrap();
+        assert_eq!(resolved["username"], "testuser");
+    }
+
+    #[test]
+    fn test_secrets_missing_env_no_default() {
+        let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "Log in as {{password}}",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "secrets": {
+                "password": {"env": "DESKTEST_TEST_NOEXIST_PASS"}
+            }
+        }"#;
+
+        unsafe { std::env::remove_var("DESKTEST_TEST_NOEXIST_PASS") };
+        let task = TaskDefinition::parse_and_validate(json).unwrap();
+        let err = task.resolve_secrets().unwrap_err();
+        assert!(err.to_string().contains("DESKTEST_TEST_NOEXIST_PASS"));
+        assert!(err.to_string().contains("not set"));
+    }
+
+    #[test]
+    fn test_secrets_apply_substitution() {
+        let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "Log in as {{username}} with {{password}}",
+            "completion_condition": "See {{username}} in the header",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "config": [
+                {"type": "execute", "command": "echo '{{password}}' > /tmp/.token"}
+            ],
+            "secrets": {
+                "username": {"env": "DESKTEST_TEST_U", "default": "alice"},
+                "password": {"env": "DESKTEST_TEST_P", "default": "s3cret"}
+            }
+        }"#;
+
+        unsafe { std::env::remove_var("DESKTEST_TEST_U") };
+        unsafe { std::env::remove_var("DESKTEST_TEST_P") };
+        let mut task = TaskDefinition::parse_and_validate(json).unwrap();
+        let resolved = task.resolve_secrets().unwrap();
+        task.apply_secrets(&resolved).unwrap();
+
+        assert_eq!(task.instruction, "Log in as alice with s3cret");
+        assert_eq!(
+            task.completion_condition.as_deref(),
+            Some("See alice in the header")
+        );
+        match &task.config[0] {
+            SetupStep::Execute { command } => {
+                assert_eq!(command, "echo 's3cret' > /tmp/.token");
+            }
+            _ => panic!("Expected Execute step"),
+        }
+    }
+
+    #[test]
+    fn test_secrets_apply_substitution_in_copy_and_open_steps() {
+        let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "Use {{username}}",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "config": [
+                {"type": "copy", "src": "/home/{{username}}/data.txt", "dest": "/tmp/{{username}}/"},
+                {"type": "open", "target": "/tmp/{{username}}/report.txt", "app": "{{viewer}}"}
+            ],
+            "secrets": {
+                "username": {"env": "DESKTEST_TEST_COPY_USER", "default": "alice"},
+                "viewer": {"env": "DESKTEST_TEST_OPEN_APP", "default": "xdg-open"}
+            }
+        }"#;
+
+        unsafe { std::env::remove_var("DESKTEST_TEST_COPY_USER") };
+        unsafe { std::env::remove_var("DESKTEST_TEST_OPEN_APP") };
+        let mut task = TaskDefinition::parse_and_validate(json).unwrap();
+        let resolved = task.resolve_secrets().unwrap();
+        task.apply_secrets(&resolved).unwrap();
+
+        match &task.config[0] {
+            SetupStep::Copy { src, dest } => {
+                assert_eq!(src, "/home/alice/data.txt");
+                assert_eq!(dest, "/tmp/alice/");
+            }
+            _ => panic!("Expected Copy step"),
+        }
+        match &task.config[1] {
+            SetupStep::Open { target, app } => {
+                assert_eq!(target, "/tmp/alice/report.txt");
+                assert_eq!(app.as_deref(), Some("xdg-open"));
+            }
+            _ => panic!("Expected Open step"),
+        }
+    }
+
+    #[test]
+    fn test_secrets_undefined_placeholder() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "Log in with {{undefined_key}}",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "secrets": {
+                "defined_key": {"env": "DESKTEST_DEFINED_KEY", "default": "value"}
+            }
+        }"#;
+
+        let mut task = TaskDefinition::parse_and_validate(json).unwrap();
+        let resolved = task.resolve_secrets().unwrap();
+        let err = task.apply_secrets(&resolved).unwrap_err();
+        assert!(err.to_string().contains("undefined_key"));
+    }
+
+    #[test]
+    fn test_secrets_apply_substitution_in_evaluator_metrics() {
+        let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "Check {{username}}",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "evaluator": {
+                "mode": "programmatic",
+                "metrics": [
+                    {
+                        "type": "command_output",
+                        "command": "echo {{username}}",
+                        "expected": "{{username}}",
+                        "match_mode": "contains"
+                    },
+                    {
+                        "type": "file_exists",
+                        "path": "/tmp/{{username}}.txt"
+                    }
+                ]
+            },
+            "secrets": {
+                "username": {"env": "DESKTEST_TEST_EVAL_USER", "default": "alice"}
+            }
+        }"#;
+
+        unsafe { std::env::remove_var("DESKTEST_TEST_EVAL_USER") };
+        let mut task = TaskDefinition::parse_and_validate(json).unwrap();
+        let resolved = task.resolve_secrets().unwrap();
+        task.apply_secrets(&resolved).unwrap();
+
+        let evaluator = task.evaluator.expect("evaluator");
+        match &evaluator.metrics[0] {
+            MetricConfig::CommandOutput {
+                command, expected, ..
+            } => {
+                assert_eq!(command, "echo alice");
+                assert_eq!(expected, "alice");
+            }
+            _ => panic!("Expected CommandOutput metric"),
+        }
+        match &evaluator.metrics[1] {
+            MetricConfig::FileExists { path, .. } => {
+                assert_eq!(path, "/tmp/alice.txt");
+            }
+            _ => panic!("Expected FileExists metric"),
+        }
+    }
+
+    #[test]
+    fn test_secrets_apply_substitution_in_app_config() {
+        let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "Run app",
+            "app": {
+                "type": "docker_image",
+                "image": "{{registry}}/myapp:{{tag}}",
+                "entrypoint_cmd": "run --token {{token}}"
+            },
+            "secrets": {
+                "registry": {"env": "DESKTEST_TEST_REGISTRY", "default": "registry.local"},
+                "tag": {"env": "DESKTEST_TEST_TAG", "default": "stable"},
+                "token": {"env": "DESKTEST_TEST_TOKEN", "default": "abc123"}
+            }
+        }"#;
+
+        unsafe { std::env::remove_var("DESKTEST_TEST_REGISTRY") };
+        unsafe { std::env::remove_var("DESKTEST_TEST_TAG") };
+        unsafe { std::env::remove_var("DESKTEST_TEST_TOKEN") };
+        let mut task = TaskDefinition::parse_and_validate(json).unwrap();
+        let resolved = task.resolve_secrets().unwrap();
+        task.apply_secrets(&resolved).unwrap();
+
+        match &task.app {
+            AppConfig::DockerImage {
+                image,
+                entrypoint_cmd,
+            } => {
+                assert_eq!(image, "registry.local/myapp:stable");
+                assert_eq!(entrypoint_cmd.as_deref(), Some("run --token abc123"));
+            }
+            _ => panic!("Expected DockerImage app"),
+        }
+    }
+
+    #[test]
+    fn test_secrets_empty_map_backward_compat() {
+        let mut task = TaskDefinition::parse_and_validate(minimal_valid_task()).unwrap();
+        assert!(task.secrets.is_empty());
+        let resolved = task.resolve_secrets().unwrap();
+        assert!(resolved.is_empty());
+        task.apply_secrets(&resolved).unwrap();
+        assert_eq!(task.instruction, "Open gedit and type hello");
+    }
+
+    #[test]
+    fn test_literal_braces_without_secrets_remain_unchanged() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "Render {{name}} literally",
+            "completion_condition": "Expect {{status}} text",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"}
+        }"#;
+
+        let mut task = TaskDefinition::parse_and_validate(json).unwrap();
+        let resolved = task.resolve_secrets().unwrap();
+        task.apply_secrets(&resolved).unwrap();
+
+        assert_eq!(task.instruction, "Render {{name}} literally");
+        assert_eq!(
+            task.completion_condition.as_deref(),
+            Some("Expect {{status}} text")
+        );
     }
 }

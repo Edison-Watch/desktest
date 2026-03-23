@@ -5,18 +5,29 @@ use tracing::info;
 
 use crate::docker::DockerSession;
 use crate::error::AppError;
+use crate::redact::Redactor;
 use crate::task::SetupStep;
 
 /// Execute a list of setup steps in order inside the container.
 ///
 /// If any step fails, execution aborts immediately with an `AppError::Infra`
 /// (exit code 3), reporting the failing step index and error.
-pub async fn run_setup_steps(session: &DockerSession, steps: &[SetupStep]) -> Result<(), AppError> {
+pub async fn run_setup_steps(
+    session: &DockerSession,
+    steps: &[SetupStep],
+    redactor: Option<&Redactor>,
+) -> Result<(), AppError> {
     for (i, step) in steps.iter().enumerate() {
-        info!("Running setup step {i}: {}", step_description(step));
+        info!(
+            "Running setup step {i}: {}",
+            redact_text(&step_description(step), redactor)
+        );
 
-        run_step(session, step).await.map_err(|e| {
-            AppError::Infra(format!("Setup step {i} ({}) failed: {e}", step_name(step)))
+        run_step(session, step, redactor).await.map_err(|e| {
+            AppError::Infra(redact_text(
+                &format!("Setup step {i} ({}) failed: {e}", step_name(step)),
+                redactor,
+            ))
         })?;
     }
 
@@ -28,7 +39,11 @@ pub async fn run_setup_steps(session: &DockerSession, steps: &[SetupStep]) -> Re
 }
 
 /// Execute a single setup step.
-async fn run_step(session: &DockerSession, step: &SetupStep) -> Result<(), AppError> {
+async fn run_step(
+    session: &DockerSession,
+    step: &SetupStep,
+    redactor: Option<&Redactor>,
+) -> Result<(), AppError> {
     match step {
         SetupStep::Execute { command } => {
             let (output, exit_code) = session
@@ -37,11 +52,12 @@ async fn run_step(session: &DockerSession, step: &SetupStep) -> Result<(), AppEr
             // Log output if non-empty for debugging
             let trimmed = output.trim();
             if !trimmed.is_empty() {
-                tracing::debug!("execute output: {trimmed}");
+                tracing::debug!("execute output: {}", redact_text(trimmed, redactor));
             }
             if exit_code != 0 {
-                return Err(AppError::Infra(format!(
-                    "Command exited with code {exit_code}: {command}"
+                return Err(AppError::Infra(redact_text(
+                    &format!("Command exited with code {exit_code}: {command}"),
+                    redactor,
                 )));
             }
             Ok(())
@@ -71,6 +87,13 @@ async fn run_step(session: &DockerSession, step: &SetupStep) -> Result<(), AppEr
             tokio::time::sleep(duration).await;
             Ok(())
         }
+    }
+}
+
+fn redact_text(text: &str, redactor: Option<&Redactor>) -> String {
+    match redactor {
+        Some(redactor) => redactor.redact(text),
+        None => text.to_string(),
     }
 }
 
@@ -165,6 +188,16 @@ mod tests {
     }
 
     #[test]
+    fn test_redact_text_uses_redactor_when_present() {
+        let redactor = Redactor::new(["s3cret".to_string()]);
+        assert_eq!(
+            redact_text("execute: echo s3cret", Some(&redactor)),
+            "execute: echo [REDACTED]"
+        );
+        assert_eq!(redact_text("plain text", None), "plain text");
+    }
+
+    #[test]
     fn test_run_setup_steps_empty_is_ok() {
         // An empty step list should succeed immediately.
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -199,12 +232,12 @@ mod tests {
             startup_timeout_seconds: 30,
             electron: false,
         };
-        let session = DockerSession::create(&config, None).await.unwrap();
+        let session = DockerSession::create(&config, None, None).await.unwrap();
 
         let steps = vec![SetupStep::Execute {
             command: "echo hello > /tmp/setup_test.txt".into(),
         }];
-        run_setup_steps(&session, &steps).await.unwrap();
+        run_setup_steps(&session, &steps, None).await.unwrap();
 
         let output = session.exec(&["cat", "/tmp/setup_test.txt"]).await.unwrap();
         assert!(output.trim().contains("hello"));
@@ -231,7 +264,7 @@ mod tests {
             startup_timeout_seconds: 30,
             electron: false,
         };
-        let session = DockerSession::create(&config, None).await.unwrap();
+        let session = DockerSession::create(&config, None, None).await.unwrap();
 
         let tmp = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(tmp.path(), b"setup copy test").unwrap();
@@ -240,7 +273,7 @@ mod tests {
             src: tmp.path().to_string_lossy().into_owned(),
             dest: "/home/tester/".into(),
         }];
-        run_setup_steps(&session, &steps).await.unwrap();
+        run_setup_steps(&session, &steps, None).await.unwrap();
 
         let filename = tmp.path().file_name().unwrap().to_str().unwrap();
         let output = session
@@ -271,11 +304,11 @@ mod tests {
             startup_timeout_seconds: 30,
             electron: false,
         };
-        let session = DockerSession::create(&config, None).await.unwrap();
+        let session = DockerSession::create(&config, None, None).await.unwrap();
 
         let start = std::time::Instant::now();
         let steps = vec![SetupStep::Sleep { seconds: 0.5 }];
-        run_setup_steps(&session, &steps).await.unwrap();
+        run_setup_steps(&session, &steps, None).await.unwrap();
         let elapsed = start.elapsed();
         assert!(
             elapsed.as_millis() >= 450,
@@ -304,13 +337,13 @@ mod tests {
             startup_timeout_seconds: 30,
             electron: false,
         };
-        let session = DockerSession::create(&config, None).await.unwrap();
+        let session = DockerSession::create(&config, None, None).await.unwrap();
 
         let steps = vec![SetupStep::Copy {
             src: "/nonexistent/file/that/does/not/exist".into(),
             dest: "/home/tester/".into(),
         }];
-        let err = run_setup_steps(&session, &steps).await.unwrap_err();
+        let err = run_setup_steps(&session, &steps, None).await.unwrap_err();
         assert!(matches!(err, AppError::Infra(_)));
         assert_eq!(err.exit_code(), 3);
         assert!(err.to_string().contains("Setup step 0"));
@@ -337,7 +370,7 @@ mod tests {
             startup_timeout_seconds: 30,
             electron: false,
         };
-        let session = DockerSession::create(&config, None).await.unwrap();
+        let session = DockerSession::create(&config, None, None).await.unwrap();
 
         let steps = vec![
             SetupStep::Execute {
@@ -350,7 +383,7 @@ mod tests {
                 command: "echo step3 >> /tmp/order_test.txt".into(),
             },
         ];
-        run_setup_steps(&session, &steps).await.unwrap();
+        run_setup_steps(&session, &steps, None).await.unwrap();
 
         let output = session.exec(&["cat", "/tmp/order_test.txt"]).await.unwrap();
         let lines: Vec<&str> = output.trim().lines().collect();
