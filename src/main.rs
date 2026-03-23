@@ -154,7 +154,11 @@ async fn main() {
                 }
             }
         }
-        Command::Attach { task, container, replay } => {
+        Command::Attach {
+            task,
+            container,
+            replay,
+        } => {
             let mut task_def = match task::TaskDefinition::load(task) {
                 Ok(t) => t,
                 Err(e) => {
