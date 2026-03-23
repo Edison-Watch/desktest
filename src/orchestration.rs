@@ -447,10 +447,64 @@ async fn run_eval_loop(
         EvaluatorMode::Programmatic => {
             info!("Programmatic mode: skipping agent loop, running evaluation...");
 
+            // Create trajectory logger so review HTML has something to display
+            let mut trajectory_logger =
+                crate::trajectory::TrajectoryLogger::new(artifacts_dir, false).ok();
+
+            // Capture pre-evaluation screenshot
+            let mut screenshot_count = 0usize;
+            if let Ok((path, _)) =
+                observation::capture_screenshot_with_retry(session, artifacts_dir, 1).await
+            {
+                screenshot_count += 1;
+                if let Some(ref mut tl) = trajectory_logger {
+                    let entry = crate::trajectory::TrajectoryEntry {
+                        step: 1,
+                        timestamp: crate::trajectory::chrono_iso8601_now(),
+                        action_code: String::new(),
+                        thought: Some("Pre-evaluation screenshot".into()),
+                        screenshot_path: path.file_name().map(|n| n.to_string_lossy().to_string()),
+                        a11y_tree_path: None,
+                        result: "success".into(),
+                        llm_raw_response: None,
+                        bash_output: None,
+                        error_feedback: None,
+                    };
+                    tl.log_entry(&entry);
+                }
+            }
+
             let evaluator = task_def.evaluator.as_ref().expect(
                 "Programmatic mode requires evaluator config (validated at task load time)",
             );
             let eval_result = evaluator::run_evaluation(session, evaluator, artifacts_dir).await;
+
+            // Capture post-evaluation screenshot
+            if let Ok((path, _)) =
+                observation::capture_screenshot_with_retry(session, artifacts_dir, 2).await
+            {
+                screenshot_count += 1;
+                if let Some(ref mut tl) = trajectory_logger {
+                    let result_str = match &eval_result {
+                        Ok(r) if r.passed => "evaluation_passed",
+                        Ok(_) => "evaluation_failed",
+                        Err(_) => "evaluation_error",
+                    };
+                    let entry = crate::trajectory::TrajectoryEntry {
+                        step: 2,
+                        timestamp: crate::trajectory::chrono_iso8601_now(),
+                        action_code: String::new(),
+                        thought: Some("Post-evaluation screenshot".into()),
+                        screenshot_path: path.file_name().map(|n| n.to_string_lossy().to_string()),
+                        a11y_tree_path: None,
+                        result: result_str.into(),
+                        llm_raw_response: None,
+                        bash_output: None,
+                        error_feedback: None,
+                    };
+                    tl.log_entry(&entry);
+                }
+            }
 
             if let Some(rec) = &recording {
                 rec.stop(session).await;
@@ -473,7 +527,7 @@ async fn run_eval_loop(
                 outcome: AgentOutcome {
                     passed: eval_result.passed,
                     reasoning: format_evaluation_reasoning(None, Some(&eval_result)),
-                    screenshot_count: 0,
+                    screenshot_count,
                     bugs_found: 0,
                 },
                 eval_result: Some(eval_result),
