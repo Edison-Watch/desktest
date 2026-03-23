@@ -352,6 +352,40 @@ fn apply_secrets_to_metric(
     Ok(())
 }
 
+fn apply_secrets_to_app(
+    app: &mut AppConfig,
+    resolved: &HashMap<String, String>,
+    defined: &HashMap<String, SecretDef>,
+) -> Result<(), AppError> {
+    match app {
+        AppConfig::Appimage { path, .. } => {
+            *path = substitute_secrets(path, resolved, defined)?;
+        }
+        AppConfig::Folder {
+            dir, entrypoint, ..
+        } => {
+            *dir = substitute_secrets(dir, resolved, defined)?;
+            *entrypoint = substitute_secrets(entrypoint, resolved, defined)?;
+        }
+        AppConfig::DockerImage {
+            image,
+            entrypoint_cmd,
+        } => {
+            *image = substitute_secrets(image, resolved, defined)?;
+            if let Some(cmd) = entrypoint_cmd {
+                *cmd = substitute_secrets(cmd, resolved, defined)?;
+            }
+        }
+        AppConfig::VncAttach { note } => {
+            if let Some(text) = note {
+                *text = substitute_secrets(text, resolved, defined)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 impl TaskDefinition {
     /// Switch this task to replay mode: inject a `script_replay` metric and set programmatic mode.
     ///
@@ -413,9 +447,13 @@ impl TaskDefinition {
     }
 
     /// Substitute `{{key}}` placeholders in instruction, completion_condition,
-    /// setup steps, and evaluator metric fields with resolved secret values.
+    /// app configuration, setup steps, and evaluator metric fields with
+    /// resolved secret values.
     ///
-    /// Returns an error if a `{{key}}` placeholder references an undefined secret name.
+    /// When no secrets are defined, this is a no-op so literal `{{...}}` text
+    /// remains backward compatible. Once a task defines secrets, any
+    /// `{{key}}` placeholder encountered in the supported fields must refer to
+    /// a declared secret name or this returns an error.
     pub fn apply_secrets(&mut self, resolved: &HashMap<String, String>) -> Result<(), AppError> {
         if self.secrets.is_empty() {
             return Ok(());
@@ -425,6 +463,7 @@ impl TaskDefinition {
         if let Some(ref cond) = self.completion_condition {
             self.completion_condition = Some(substitute_secrets(cond, resolved, &self.secrets)?);
         }
+        apply_secrets_to_app(&mut self.app, resolved, &self.secrets)?;
         for step in &mut self.config {
             match step {
                 SetupStep::Execute { command } => {
@@ -1509,6 +1548,44 @@ mod tests {
                 assert_eq!(path, "/tmp/alice.txt");
             }
             _ => panic!("Expected FileExists metric"),
+        }
+    }
+
+    #[test]
+    fn test_secrets_apply_substitution_in_app_config() {
+        let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "Run app",
+            "app": {
+                "type": "docker_image",
+                "image": "{{registry}}/myapp:{{tag}}",
+                "entrypoint_cmd": "run --token {{token}}"
+            },
+            "secrets": {
+                "registry": {"env": "DESKTEST_TEST_REGISTRY", "default": "registry.local"},
+                "tag": {"env": "DESKTEST_TEST_TAG", "default": "stable"},
+                "token": {"env": "DESKTEST_TEST_TOKEN", "default": "abc123"}
+            }
+        }"#;
+
+        unsafe { std::env::remove_var("DESKTEST_TEST_REGISTRY") };
+        unsafe { std::env::remove_var("DESKTEST_TEST_TAG") };
+        unsafe { std::env::remove_var("DESKTEST_TEST_TOKEN") };
+        let mut task = TaskDefinition::parse_and_validate(json).unwrap();
+        let resolved = task.resolve_secrets().unwrap();
+        task.apply_secrets(&resolved).unwrap();
+
+        match &task.app {
+            AppConfig::DockerImage {
+                image,
+                entrypoint_cmd,
+            } => {
+                assert_eq!(image, "registry.local/myapp:stable");
+                assert_eq!(entrypoint_cmd.as_deref(), Some("run --token abc123"));
+            }
+            _ => panic!("Expected DockerImage app"),
         }
     }
 
