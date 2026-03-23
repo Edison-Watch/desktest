@@ -288,6 +288,9 @@ async fn main() {
                 // replay_script is CWD-relative (evaluator resolves it from CWD), so use it directly.
                 let effective_output = if let Some((ref _task_path, ref value)) = overwrite_json {
                     if let Some(existing_script) = value.get("replay_script").and_then(|v| v.as_str()) {
+                        if existing_script != output.to_string_lossy().as_ref() {
+                            eprintln!("Note: --output ignored; writing to existing replay_script path '{}' from task JSON", existing_script);
+                        }
                         std::borrow::Cow::Owned(std::path::PathBuf::from(existing_script))
                     } else {
                         std::borrow::Cow::Borrowed(output.as_path())
