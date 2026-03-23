@@ -12,8 +12,8 @@ WORKFLOWS:
   Test authoring (explore → codify → CI):
     desktest run task.json --monitor          # 1. Watch the agent explore your app
     desktest review desktest_artifacts/       # 2. Inspect the trajectory in a browser
-    desktest codify desktest_artifacts/trajectory.jsonl  # 3. Convert to replay script
-    desktest run task.json                    # 4. Run codified test (no LLM needed)
+    desktest codify trajectory.jsonl --overwrite task.json  # 3. Convert + update task JSON
+    desktest run task.json --replay           # 4. Deterministic replay (no LLM, no API costs)
 
   Live monitoring + agent-assisted debugging:
     desktest run task.json --monitor          # 1. Watch live, spot the failure
@@ -96,6 +96,10 @@ EXAMPLES:
     Run {
         /// Path to the task JSON file
         task: std::path::PathBuf,
+
+        /// Use the replay_script from the task JSON for deterministic execution (no LLM, no API costs)
+        #[arg(long, default_value_t = false)]
+        replay: bool,
     },
 
     /// Run a suite of tests from a directory of task JSON files
@@ -148,6 +152,10 @@ EXAMPLES:
         #[arg(long, default_value = "desktest_replay.py")]
         output: std::path::PathBuf,
 
+        /// Path to a task JSON file to update with the replay_script path
+        #[arg(long)]
+        overwrite: Option<std::path::PathBuf>,
+
         /// Only include these step numbers (comma-separated, 1-indexed)
         #[arg(long)]
         steps: Option<String>,
@@ -180,8 +188,10 @@ EXAMPLES:
         container: String,
     },
 
-    /// Replay a codified Python script inside a container
+    /// Replay a codified Python script inside a container (deprecated: use `desktest run --replay` instead)
     #[command(after_help = "\
+DEPRECATED: Prefer setting 'replay_script' in your task JSON and using `desktest run --replay`\n\
+for deterministic execution with no LLM and zero API costs.\n\n\
 EXAMPLES:
   desktest replay task.json --script desktest_replay.py
   desktest replay task.json --script desktest_replay.py --screenshots-dir desktest_artifacts/")]
