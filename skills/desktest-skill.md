@@ -157,8 +157,8 @@ After a test run, artifacts are in `desktest_artifacts/`:
 desktest_artifacts/
   trajectory.jsonl          # Step-by-step agent log (used by `logs` and `codify`; secrets redacted)
   agent_conversation.json   # Full LLM conversation (secrets redacted)
-  step_001.png              # Screenshot per step
-  step_001_a11y.txt         # Accessibility tree per step
+  step_001.png              # Screenshot per step (NOT redacted — may contain on-screen secret values)
+  step_001_a11y.txt         # Accessibility tree per step (NOT redacted — may contain on-screen secret values)
   recording.mp4             # Video (only with --record)
   task.json                 # Copy of the task definition (secrets redacted)
   bugs/                     # Bug reports (only with --qa)
@@ -187,7 +187,7 @@ test-results/
     "password": { "env": "APP_PASSWORD" }
   },
   "config": [
-    { "type": "execute", "command": "echo '{{password}}' > /tmp/.token" },
+    { "type": "execute", "command": "./setup.sh --token '{{password}}'" },
     { "type": "copy", "src": "./file", "dest": "/home/tester/file" },
     { "type": "sleep", "seconds": 2 }
   ],
@@ -216,9 +216,9 @@ test-results/
 The `secrets` field lets you pass credentials without hardcoding them in the task JSON. Secrets are:
 
 - **Sourced from environment variables** — each secret declares an `env` key (required) and an optional `default`
-- **Substituted** via `{{key}}` syntax in `instruction`, `completion_condition`, and setup step `command` fields
+- **Substituted** via `{{key}}` syntax in `instruction`, `completion_condition`, app config fields, all setup step string fields, and evaluator metric fields
 - **Redacted** from all output — trajectory logs, conversation logs, results.json, task.json artifacts, tracing, and step previews all show `[REDACTED]` instead of the actual value
-- **Injected** into the container as `DESKTEST_SECRET_{KEY}` environment variables
+- **Injected** into the container as `DESKTEST_SECRET_{key}` environment variables, where `{key}` is the literal secret name from the JSON (e.g. `password` → `DESKTEST_SECRET_password`)
 
 ```json
 {
