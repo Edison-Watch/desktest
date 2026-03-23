@@ -305,7 +305,7 @@ async fn run_interactive_step(
         ),
         Err(e) => results::from_error(&test_id, e, duration_ms),
     };
-    if let Err(e) = results::write_results(&test_result, &output_dir) {
+    if let Err(e) = results::write_results(&test_result, &output_dir, Some(&redactor)) {
         tracing::warn!("Failed to write results.json: {e}");
     }
 

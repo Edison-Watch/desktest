@@ -251,7 +251,7 @@ fn finalize_run(
         ),
         Err(e) => results::from_error(test_id, e, duration_ms),
     };
-    if let Err(e) = results::write_results(&test_result, output_dir) {
+    if let Err(e) = results::write_results(&test_result, output_dir, redactor) {
         tracing::warn!("Failed to write results.json: {e}");
     }
 
