@@ -186,6 +186,7 @@ pub async fn run_update(force: bool) -> Result<(), AppError> {
     // Verify checksum if available
     if let Some(expected) = &expected_hash {
         print!("Verifying SHA-256 checksum...");
+        let _ = std::io::Write::flush(&mut std::io::stdout());
         let actual = sha256_hex(&bytes);
         if actual != *expected {
             println!(" FAILED");
