@@ -506,6 +506,9 @@ async fn main() {
             }
         }
         Command::Monitor { watch } => {
+            if cli.artifacts_dir.is_some() {
+                eprintln!("Warning: --artifacts-dir is ignored for the monitor command (the monitor reads existing artifacts, it does not write them).");
+            }
             let watch_dir = watch.clone();
             let port = cli.monitor_port;
             if !watch_dir.is_dir() {

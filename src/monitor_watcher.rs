@@ -26,14 +26,30 @@ struct PhaseState {
 /// Watches `watch_dir` for subdirectories containing `trajectory.jsonl` files.
 /// Emits monitor events as new trajectory entries appear.
 pub async fn run_watcher(watch_dir: PathBuf, handle: MonitorHandle) {
-    let mut phases: HashMap<String, PhaseState> = HashMap::new();
+    let mut phases: Option<HashMap<String, PhaseState>> = Some(HashMap::new());
 
     info!("Watching {} for phase directories...", watch_dir.display());
 
     // Poll loop: check for new/updated trajectory files every 500ms.
     // Using polling instead of inotify/FSEvents for simplicity and cross-platform compat.
+    // scan_phases does synchronous file I/O (including screenshot reads), so we run it
+    // on spawn_blocking to avoid stalling the Tokio executor.
     loop {
-        scan_phases(&watch_dir, &mut phases, &handle);
+        let dir = watch_dir.clone();
+        let h = handle.clone();
+        let mut map = phases.take().unwrap_or_default();
+        match tokio::task::spawn_blocking(move || {
+            scan_phases(&dir, &mut map, &h);
+            map
+        })
+        .await
+        {
+            Ok(map) => phases = Some(map),
+            Err(e) => {
+                debug!("spawn_blocking panicked: {e}");
+                phases = Some(HashMap::new());
+            }
+        }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
 }
