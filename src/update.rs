@@ -63,9 +63,8 @@ fn is_newer(latest_tag: &str, current: &str) -> bool {
             // Pre-release current (e.g. "0.9.3-dev") is older than same stable version
             l == c && has_prerelease(current) && !has_prerelease(latest_tag)
         }
-        // Cannot parse latest tag — allow update rather than silently suppressing
-        (None, _) => true,
-        _ => false,
+        // Cannot parse either version — allow update rather than silently suppressing
+        (None, _) | (_, None) => true,
     }
 }
 
@@ -102,16 +101,30 @@ pub async fn run_update(force: bool) -> Result<(), AppError> {
         .build()
         .map_err(|e| AppError::Infra(format!("failed to build HTTP client: {e}")))?;
 
+    // Optional: use GITHUB_TOKEN to avoid rate limits (60/hr unauthenticated → 5000/hr)
+    let github_token = std::env::var("GITHUB_TOKEN").ok();
+
     println!("Checking for latest release...");
-    let release: Release = client
-        .get(format!(
-            "https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-        ))
+    let mut req = client.get(format!(
+        "https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+    ));
+    if let Some(ref token) = github_token {
+        req = req.bearer_auth(token);
+    }
+    let response = req
         .send()
         .await
-        .map_err(|e| AppError::Infra(format!("failed to fetch latest release: {e}")))?
-        .error_for_status()
-        .map_err(|e| AppError::Infra(format!("failed to fetch latest release: {e}")))?
+        .map_err(|e| AppError::Infra(format!("failed to fetch latest release: {e}")))?;
+    if let Err(e) = response.error_for_status_ref() {
+        let status = e.status().map(|s| s.as_u16()).unwrap_or(0);
+        if status == 403 || status == 429 {
+            return Err(AppError::Infra(format!(
+                "GitHub API rate limit exceeded. Set GITHUB_TOKEN env var to raise the limit (60/hr → 5000/hr): {e}"
+            )));
+        }
+        return Err(AppError::Infra(format!("failed to fetch latest release: {e}")));
+    }
+    let release: Release = response
         .json()
         .await
         .map_err(|e| AppError::Infra(format!("failed to parse release response: {e}")))?;
@@ -149,8 +162,11 @@ pub async fn run_update(force: bool) -> Result<(), AppError> {
 
     // sums_available: true if SHA256SUMS.txt exists in the release
     let (expected_hash, sums_available) = if let Some(sums_asset) = checksums_asset {
-        let sums_text = client
-            .get(&sums_asset.browser_download_url)
+        let mut req = client.get(&sums_asset.browser_download_url);
+        if let Some(ref token) = github_token {
+            req = req.bearer_auth(token);
+        }
+        let sums_text = req
             .send()
             .await
             .map_err(|e| AppError::Infra(format!("failed to download checksums: {e}")))?
@@ -172,8 +188,11 @@ pub async fn run_update(force: bool) -> Result<(), AppError> {
     };
 
     println!("Downloading {}...", asset.name);
-    let bytes = client
-        .get(&asset.browser_download_url)
+    let mut req = client.get(&asset.browser_download_url);
+    if let Some(ref token) = github_token {
+        req = req.bearer_auth(token);
+    }
+    let bytes = req
         .send()
         .await
         .map_err(|e| AppError::Infra(format!("failed to download asset: {e}")))?
@@ -294,6 +313,8 @@ mod tests {
         assert!(is_newer("v0.9.3", "0.9.3-dev"));
         // Unparseable latest tag should allow update
         assert!(is_newer("nightly-2025-01-01", "0.9.1"));
+        // Unparseable current version should allow update
+        assert!(is_newer("v0.9.1", "custom-build"));
     }
 
     #[test]
