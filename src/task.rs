@@ -307,6 +307,51 @@ fn substitute_secrets(
     Ok(result)
 }
 
+fn apply_secrets_to_metric(
+    metric: &mut MetricConfig,
+    resolved: &HashMap<String, String>,
+    defined: &HashMap<String, SecretDef>,
+) -> Result<(), AppError> {
+    match metric {
+        MetricConfig::FileCompare {
+            actual_path,
+            expected_path,
+            ..
+        }
+        | MetricConfig::FileCompareSemantic {
+            actual_path,
+            expected_path,
+            ..
+        } => {
+            *actual_path = substitute_secrets(actual_path, resolved, defined)?;
+            *expected_path = substitute_secrets(expected_path, resolved, defined)?;
+        }
+        MetricConfig::CommandOutput {
+            command, expected, ..
+        } => {
+            *command = substitute_secrets(command, resolved, defined)?;
+            *expected = substitute_secrets(expected, resolved, defined)?;
+        }
+        MetricConfig::FileExists { path, .. } => {
+            *path = substitute_secrets(path, resolved, defined)?;
+        }
+        MetricConfig::ExitCode { command, .. } => {
+            *command = substitute_secrets(command, resolved, defined)?;
+        }
+        MetricConfig::ScriptReplay {
+            script_path,
+            screenshots_dir,
+        } => {
+            *script_path = substitute_secrets(script_path, resolved, defined)?;
+            if let Some(dir) = screenshots_dir {
+                *dir = substitute_secrets(dir, resolved, defined)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 impl TaskDefinition {
     /// Switch this task to replay mode: inject a `script_replay` metric and set programmatic mode.
     ///
@@ -374,12 +419,16 @@ impl TaskDefinition {
     pub fn apply_secrets(&mut self, resolved: &HashMap<String, String>) -> Result<(), AppError> {
         self.instruction = substitute_secrets(&self.instruction, resolved, &self.secrets)?;
         if let Some(ref cond) = self.completion_condition {
-            self.completion_condition =
-                Some(substitute_secrets(cond, resolved, &self.secrets)?);
+            self.completion_condition = Some(substitute_secrets(cond, resolved, &self.secrets)?);
         }
         for step in &mut self.config {
             if let SetupStep::Execute { command } = step {
                 *command = substitute_secrets(command, resolved, &self.secrets)?;
+            }
+        }
+        if let Some(evaluator) = &mut self.evaluator {
+            for metric in &mut evaluator.metrics {
+                apply_secrets_to_metric(metric, resolved, &self.secrets)?;
             }
         }
         Ok(())
@@ -587,7 +636,14 @@ impl TaskDefinition {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Mutex, OnceLock};
+
     use super::*;
+
+    fn env_lock() -> &'static Mutex<()> {
+        static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        ENV_LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     fn minimal_valid_task() -> &'static str {
         r#"{
@@ -1236,6 +1292,7 @@ mod tests {
 
     #[test]
     fn test_secrets_resolve_from_env() {
+        let _guard = env_lock().lock().unwrap();
         let json = r#"{
             "schema_version": "1.0",
             "id": "test",
@@ -1255,6 +1312,7 @@ mod tests {
 
     #[test]
     fn test_secrets_default_value() {
+        let _guard = env_lock().lock().unwrap();
         let json = r#"{
             "schema_version": "1.0",
             "id": "test",
@@ -1273,6 +1331,7 @@ mod tests {
 
     #[test]
     fn test_secrets_missing_env_no_default() {
+        let _guard = env_lock().lock().unwrap();
         let json = r#"{
             "schema_version": "1.0",
             "id": "test",
@@ -1292,6 +1351,7 @@ mod tests {
 
     #[test]
     fn test_secrets_apply_substitution() {
+        let _guard = env_lock().lock().unwrap();
         let json = r#"{
             "schema_version": "1.0",
             "id": "test",
@@ -1340,6 +1400,57 @@ mod tests {
         let resolved = task.resolve_secrets().unwrap();
         let err = task.apply_secrets(&resolved).unwrap_err();
         assert!(err.to_string().contains("undefined_key"));
+    }
+
+    #[test]
+    fn test_secrets_apply_substitution_in_evaluator_metrics() {
+        let _guard = env_lock().lock().unwrap();
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "Check {{username}}",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "evaluator": {
+                "mode": "programmatic",
+                "metrics": [
+                    {
+                        "type": "command_output",
+                        "command": "echo {{username}}",
+                        "expected": "{{username}}",
+                        "match_mode": "contains"
+                    },
+                    {
+                        "type": "file_exists",
+                        "path": "/tmp/{{username}}.txt"
+                    }
+                ]
+            },
+            "secrets": {
+                "username": {"env": "DESKTEST_TEST_EVAL_USER", "default": "alice"}
+            }
+        }"#;
+
+        unsafe { std::env::remove_var("DESKTEST_TEST_EVAL_USER") };
+        let mut task = TaskDefinition::parse_and_validate(json).unwrap();
+        let resolved = task.resolve_secrets().unwrap();
+        task.apply_secrets(&resolved).unwrap();
+
+        let evaluator = task.evaluator.expect("evaluator");
+        match &evaluator.metrics[0] {
+            MetricConfig::CommandOutput {
+                command, expected, ..
+            } => {
+                assert_eq!(command, "echo alice");
+                assert_eq!(expected, "alice");
+            }
+            _ => panic!("Expected CommandOutput metric"),
+        }
+        match &evaluator.metrics[1] {
+            MetricConfig::FileExists { path, .. } => {
+                assert_eq!(path, "/tmp/alice.txt");
+            }
+            _ => panic!("Expected FileExists metric"),
+        }
     }
 
     #[test]

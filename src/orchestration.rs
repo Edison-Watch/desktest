@@ -194,6 +194,7 @@ pub(crate) async fn run_task(
         &output_dir,
         start,
         qa,
+        Some(&redactor),
     )
 }
 
@@ -208,6 +209,7 @@ fn finalize_run(
     output_dir: &std::path::Path,
     start: Instant,
     qa: bool,
+    redactor: Option<&crate::redact::Redactor>,
 ) -> Result<AgentOutcome, AppError> {
     let duration_ms = start.elapsed().as_millis() as u64;
 
@@ -215,6 +217,10 @@ fn finalize_run(
     let task_json_path = artifacts_dir.join("task.json");
     match serde_json::to_string_pretty(task_def) {
         Ok(json) => {
+            let json = match redactor {
+                Some(redactor) => redactor.redact(&json),
+                None => json,
+            };
             if let Err(e) = std::fs::write(&task_json_path, &json) {
                 tracing::warn!("Failed to write task.json to artifacts: {e}");
             }
@@ -777,6 +783,7 @@ pub(crate) async fn run_attach(
         &output_dir,
         start,
         qa,
+        Some(&redactor),
     )
 }
 

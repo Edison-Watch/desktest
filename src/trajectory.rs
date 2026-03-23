@@ -92,16 +92,10 @@ impl TrajectoryLogger {
                 thought: entry.thought.as_ref().map(|t| redactor.redact(t)),
                 screenshot_path: entry.screenshot_path.clone(),
                 a11y_tree_path: entry.a11y_tree_path.clone(),
-                result: entry.result.clone(),
-                llm_raw_response: entry
-                    .llm_raw_response
-                    .as_ref()
-                    .map(|r| redactor.redact(r)),
+                result: redactor.redact(&entry.result),
+                llm_raw_response: entry.llm_raw_response.as_ref().map(|r| redactor.redact(r)),
                 bash_output: entry.bash_output.as_ref().map(|o| redactor.redact(o)),
-                error_feedback: entry
-                    .error_feedback
-                    .as_ref()
-                    .map(|e| redactor.redact(e)),
+                error_feedback: entry.error_feedback.as_ref().map(|e| redactor.redact(e)),
             };
             &redacted
         } else {
