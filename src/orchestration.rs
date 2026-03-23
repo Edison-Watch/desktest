@@ -449,7 +449,13 @@ async fn run_eval_loop(
 
             // Create trajectory logger so review HTML has something to display
             let mut trajectory_logger =
-                crate::trajectory::TrajectoryLogger::new(artifacts_dir, false).ok();
+                match crate::trajectory::TrajectoryLogger::new(artifacts_dir, verbose) {
+                    Ok(tl) => Some(tl),
+                    Err(e) => {
+                        tracing::warn!("Failed to create trajectory logger, review HTML may be empty: {e}");
+                        None
+                    }
+                };
 
             // Capture pre-evaluation screenshot
             let mut screenshot_count = 0usize;
