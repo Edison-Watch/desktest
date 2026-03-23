@@ -413,7 +413,7 @@ impl TaskDefinition {
     }
 
     /// Substitute `{{key}}` placeholders in instruction, completion_condition,
-    /// and setup step commands with resolved secret values.
+    /// setup steps, and evaluator metric fields with resolved secret values.
     ///
     /// Returns an error if a `{{key}}` placeholder references an undefined secret name.
     pub fn apply_secrets(&mut self, resolved: &HashMap<String, String>) -> Result<(), AppError> {
@@ -422,8 +422,21 @@ impl TaskDefinition {
             self.completion_condition = Some(substitute_secrets(cond, resolved, &self.secrets)?);
         }
         for step in &mut self.config {
-            if let SetupStep::Execute { command } = step {
-                *command = substitute_secrets(command, resolved, &self.secrets)?;
+            match step {
+                SetupStep::Execute { command } => {
+                    *command = substitute_secrets(command, resolved, &self.secrets)?;
+                }
+                SetupStep::Copy { src, dest } => {
+                    *src = substitute_secrets(src, resolved, &self.secrets)?;
+                    *dest = substitute_secrets(dest, resolved, &self.secrets)?;
+                }
+                SetupStep::Open { target, app } => {
+                    *target = substitute_secrets(target, resolved, &self.secrets)?;
+                    if let Some(app) = app {
+                        *app = substitute_secrets(app, resolved, &self.secrets)?;
+                    }
+                }
+                SetupStep::Sleep { .. } => {}
             }
         }
         if let Some(evaluator) = &mut self.evaluator {
@@ -1383,6 +1396,46 @@ mod tests {
                 assert_eq!(command, "echo 's3cret' > /tmp/.token");
             }
             _ => panic!("Expected Execute step"),
+        }
+    }
+
+    #[test]
+    fn test_secrets_apply_substitution_in_copy_and_open_steps() {
+        let _guard = env_lock().lock().unwrap();
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test",
+            "instruction": "Use {{username}}",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "config": [
+                {"type": "copy", "src": "/home/{{username}}/data.txt", "dest": "/tmp/{{username}}/"},
+                {"type": "open", "target": "/tmp/{{username}}/report.txt", "app": "{{viewer}}"}
+            ],
+            "secrets": {
+                "username": {"env": "DESKTEST_TEST_COPY_USER", "default": "alice"},
+                "viewer": {"env": "DESKTEST_TEST_OPEN_APP", "default": "xdg-open"}
+            }
+        }"#;
+
+        unsafe { std::env::remove_var("DESKTEST_TEST_COPY_USER") };
+        unsafe { std::env::remove_var("DESKTEST_TEST_OPEN_APP") };
+        let mut task = TaskDefinition::parse_and_validate(json).unwrap();
+        let resolved = task.resolve_secrets().unwrap();
+        task.apply_secrets(&resolved).unwrap();
+
+        match &task.config[0] {
+            SetupStep::Copy { src, dest } => {
+                assert_eq!(src, "/home/alice/data.txt");
+                assert_eq!(dest, "/tmp/alice/");
+            }
+            _ => panic!("Expected Copy step"),
+        }
+        match &task.config[1] {
+            SetupStep::Open { target, app } => {
+                assert_eq!(target, "/tmp/alice/report.txt");
+                assert_eq!(app.as_deref(), Some("xdg-open"));
+            }
+            _ => panic!("Expected Open step"),
         }
     }
 

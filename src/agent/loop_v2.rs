@@ -16,7 +16,7 @@ use crate::docker::DockerSession;
 use crate::error::{AgentOutcome, AppError};
 use crate::monitor::{MonitorEvent, MonitorHandle};
 use crate::observation::{self, Observation, ObservationConfig};
-use crate::provider::LlmProvider;
+use crate::provider::{ChatMessage, LlmProvider};
 use crate::recording::Recording;
 use crate::redact::Redactor;
 use crate::trajectory::TrajectoryLogger;
@@ -116,13 +116,14 @@ impl<'a> AgentLoopV2<'a> {
             config.qa,
         );
 
-        let trajectory = match TrajectoryLogger::new(&artifacts_dir, config.verbose, redactor.clone()) {
-            Ok(logger) => Some(logger),
-            Err(e) => {
-                warn!("Failed to create trajectory logger: {e}");
-                None
-            }
-        };
+        let trajectory =
+            match TrajectoryLogger::new(&artifacts_dir, config.verbose, redactor.clone()) {
+                Ok(logger) => Some(logger),
+                Err(e) => {
+                    warn!("Failed to create trajectory logger: {e}");
+                    None
+                }
+            };
 
         let bug_reporter = if config.qa {
             match crate::bug_report::BugReporter::new(&artifacts_dir) {
@@ -844,33 +845,7 @@ impl<'a> AgentLoopV2<'a> {
         let messages = self.context.build_messages(&dummy_obs);
         let log_path = self.artifacts_dir.join("agent_conversation.json");
 
-        // Sanitize base64 image data for readability
-        let sanitized: Vec<serde_json::Value> = messages
-            .iter()
-            .map(|msg| {
-                let mut val = serde_json::to_value(msg).unwrap_or_default();
-                if let Some(content) = val.get_mut("content") {
-                    if let Some(arr) = content.as_array_mut() {
-                        for item in arr.iter_mut() {
-                            if let Some(url) =
-                                item.get_mut("image_url").and_then(|u| u.get_mut("url"))
-                            {
-                                if let Some(s) = url.as_str() {
-                                    if s.starts_with("data:image/") {
-                                        *url = serde_json::Value::String(
-                                            "[base64 image data omitted]".into(),
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                val
-            })
-            .collect();
-
-        match serde_json::to_string_pretty(&sanitized) {
+        match serialize_conversation_log(&messages, self.redactor.as_ref()) {
             Ok(json) => {
                 if let Err(e) = std::fs::write(&log_path, json) {
                     warn!("Failed to write conversation log: {e}");
@@ -881,9 +856,47 @@ impl<'a> AgentLoopV2<'a> {
     }
 }
 
+fn serialize_conversation_log(
+    messages: &[ChatMessage],
+    redactor: Option<&Redactor>,
+) -> Result<String, serde_json::Error> {
+    // Sanitize base64 image data for readability
+    let sanitized: Vec<serde_json::Value> = messages
+        .iter()
+        .map(|msg| {
+            let mut val = serde_json::to_value(msg).unwrap_or_default();
+            if let Some(content) = val.get_mut("content") {
+                if let Some(arr) = content.as_array_mut() {
+                    for item in arr.iter_mut() {
+                        if let Some(url) = item.get_mut("image_url").and_then(|u| u.get_mut("url"))
+                        {
+                            if let Some(s) = url.as_str() {
+                                if s.starts_with("data:image/") {
+                                    *url = serde_json::Value::String(
+                                        "[base64 image data omitted]".into(),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            val
+        })
+        .collect();
+
+    let json = serde_json::to_string_pretty(&sanitized)?;
+    Ok(match redactor {
+        Some(redactor) => redactor.redact(&json),
+        None => json,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::provider::user_message;
+    use crate::redact::Redactor;
 
     // --- AgentLoopV2Config tests ---
 
@@ -925,5 +938,16 @@ mod tests {
         assert_eq!(config.max_trajectory_length, 5);
         assert!(config.debug);
         assert!(config.verbose);
+    }
+
+    #[test]
+    fn test_serialize_conversation_log_redacts_secrets() {
+        let messages = vec![user_message("password is s3cret")];
+        let redactor = Redactor::new(["s3cret".to_string()]);
+
+        let json = serialize_conversation_log(&messages, Some(&redactor)).unwrap();
+
+        assert!(!json.contains("s3cret"));
+        assert!(json.contains("[REDACTED]"));
     }
 }
