@@ -1,9 +1,9 @@
 use std::time::Duration;
 
+use super::MetricResult;
 use crate::docker::DockerSession;
 use crate::error::AppError;
 use crate::task::MatchMode;
-use super::MetricResult;
 
 /// command_output: Run command in container, check stdout.
 pub(super) async fn evaluate_command_output(
@@ -78,7 +78,10 @@ pub(super) async fn evaluate_file_exists(
     should_not_exist: bool,
     eval_timeout: Duration,
 ) -> Result<MetricResult, AppError> {
-    let check_cmd = format!("test -e {} && echo EXISTS || echo MISSING", shell_escape::escape(path.into()));
+    let check_cmd = format!(
+        "test -e {} && echo EXISTS || echo MISSING",
+        shell_escape::escape(path.into())
+    );
     let output = tokio::time::timeout(eval_timeout, session.exec(&["bash", "-c", &check_cmd]))
         .await
         .map_err(|_| {

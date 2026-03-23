@@ -7,7 +7,7 @@
 //! - Current observation (screenshot + a11y tree)
 
 use crate::observation::Observation;
-use crate::provider::{system_message, user_image_message, user_message, ChatMessage};
+use crate::provider::{ChatMessage, system_message, user_image_message, user_message};
 
 /// Default number of recent trajectory turns to keep.
 pub const DEFAULT_MAX_TRAJECTORY_LENGTH: usize = 3;
@@ -101,16 +101,12 @@ impl ContextManager {
 
             // Bash output (if any)
             if let Some(ref output) = turn.bash_output {
-                messages.push(user_message(&format!(
-                    "Bash command output:\n{output}"
-                )));
+                messages.push(user_message(&format!("Bash command output:\n{output}")));
             }
 
             // Error feedback (if any)
             if let Some(ref feedback) = turn.error_feedback {
-                messages.push(user_message(&format!(
-                    "Action execution error: {feedback}"
-                )));
+                messages.push(user_message(&format!("Action execution error: {feedback}")));
             }
         }
 
@@ -220,7 +216,12 @@ fn observation_to_message(observation: &Observation) -> Vec<ChatMessage> {
 /// - Special commands (DONE, FAIL, WAIT)
 /// - Display dimensions
 /// - Coordinate system
-pub fn build_system_prompt(display_width: u32, display_height: u32, bash_enabled: bool, qa: bool) -> String {
+pub fn build_system_prompt(
+    display_width: u32,
+    display_height: u32,
+    bash_enabled: bool,
+    qa: bool,
+) -> String {
     let bash_section = if bash_enabled {
         r#"
 
@@ -518,13 +519,15 @@ mod tests {
         assert_eq!(messages.len(), 3);
         assert_eq!(messages[0].role, "system");
         assert_eq!(messages[1].role, "user");
-        assert!(messages[1]
-            .content
-            .as_ref()
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .contains("Click the button"));
+        assert!(
+            messages[1]
+                .content
+                .as_ref()
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .contains("Click the button")
+        );
         assert_eq!(messages[2].role, "user"); // observation
     }
 
@@ -594,20 +597,10 @@ mod tests {
 
         // Verify only the last 2 turns are included
         // messages[3] = "Turn 2" assistant response, messages[5] = "Turn 3" assistant response
-        let turn2_text = messages[3]
-            .content
-            .as_ref()
-            .unwrap()
-            .as_str()
-            .unwrap();
+        let turn2_text = messages[3].content.as_ref().unwrap().as_str().unwrap();
         assert_eq!(turn2_text, "Turn 2");
 
-        let turn3_text = messages[5]
-            .content
-            .as_ref()
-            .unwrap()
-            .as_str()
-            .unwrap();
+        let turn3_text = messages[5].content.as_ref().unwrap().as_str().unwrap();
         assert_eq!(turn3_text, "Turn 3");
     }
 
@@ -731,9 +724,7 @@ mod tests {
     #[test]
     fn test_context_length_error_anthropic() {
         assert!(is_context_length_error("prompt is too long: 200000 tokens"));
-        assert!(is_context_length_error(
-            "maximum number of tokens exceeded"
-        ));
+        assert!(is_context_length_error("maximum number of tokens exceeded"));
     }
 
     #[test]
@@ -818,7 +809,10 @@ mod tests {
         let special_cmds_idx = prompt.find("## Special Commands").unwrap();
         let observation_idx = prompt.find("## Observation").unwrap();
         let special_section = &prompt[special_cmds_idx..observation_idx];
-        assert!(special_section.contains("**BUG**"), "BUG should be listed in Special Commands when QA is enabled");
+        assert!(
+            special_section.contains("**BUG**"),
+            "BUG should be listed in Special Commands when QA is enabled"
+        );
     }
 
     #[test]

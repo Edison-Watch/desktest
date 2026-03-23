@@ -3,8 +3,8 @@ use bollard::exec::StartExecResults;
 use futures::StreamExt;
 use tokio::io::AsyncWriteExt;
 
-use crate::error::AppError;
 use super::DockerSession;
+use crate::error::AppError;
 
 impl DockerSession {
     /// Execute a command inside the container and return stdout.
@@ -31,7 +31,10 @@ impl DockerSession {
             .map_err(AppError::Docker)?;
 
         let mut output = String::new();
-        if let StartExecResults::Attached { output: mut stream, .. } = start_result {
+        if let StartExecResults::Attached {
+            output: mut stream, ..
+        } = start_result
+        {
             while let Some(chunk) = stream.next().await {
                 let chunk = chunk.map_err(AppError::Docker)?;
                 output.push_str(&chunk.to_string());
@@ -70,7 +73,10 @@ impl DockerSession {
             .map_err(AppError::Docker)?;
 
         let mut output = String::new();
-        if let StartExecResults::Attached { output: mut stream, .. } = start_result {
+        if let StartExecResults::Attached {
+            output: mut stream, ..
+        } = start_result
+        {
             while let Some(chunk) = stream.next().await {
                 let chunk = chunk.map_err(AppError::Docker)?;
                 output.push_str(&chunk.to_string());
@@ -89,7 +95,11 @@ impl DockerSession {
 
     /// Execute a command inside the container with data piped to stdin,
     /// and return stdout.
-    pub async fn exec_with_stdin(&self, cmd: &[&str], stdin_data: &[u8]) -> Result<String, AppError> {
+    pub async fn exec_with_stdin(
+        &self,
+        cmd: &[&str],
+        stdin_data: &[u8],
+    ) -> Result<String, AppError> {
         let exec = self
             .client
             .create_exec(
@@ -113,7 +123,11 @@ impl DockerSession {
             .map_err(AppError::Docker)?;
 
         let mut output = String::new();
-        if let StartExecResults::Attached { output: mut stream, input: mut writer } = start_result {
+        if let StartExecResults::Attached {
+            output: mut stream,
+            input: mut writer,
+        } = start_result
+        {
             // Write stdin data and close the writer
             writer
                 .write_all(stdin_data)
@@ -142,7 +156,11 @@ impl DockerSession {
     }
 
     /// Execute a command in the background, redirecting stdout/stderr to a log file.
-    pub async fn exec_detached_with_log(&self, cmd: &[&str], log_path: &str) -> Result<(), AppError> {
+    pub async fn exec_detached_with_log(
+        &self,
+        cmd: &[&str],
+        log_path: &str,
+    ) -> Result<(), AppError> {
         // bollard doesn't have a `detach` option on CreateExecOptions,
         // so we launch a background process via bash.
         let escaped_cmd = cmd
@@ -154,7 +172,10 @@ impl DockerSession {
         self.exec(&[
             "bash",
             "-c",
-            &format!("nohup {escaped_cmd} > {} 2>&1 &", shell_escape::escape(log_path.into())),
+            &format!(
+                "nohup {escaped_cmd} > {} 2>&1 &",
+                shell_escape::escape(log_path.into())
+            ),
         ])
         .await?;
 

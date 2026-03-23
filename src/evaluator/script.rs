@@ -2,9 +2,9 @@ use std::time::Duration;
 
 use tracing::{info, warn};
 
+use super::MetricResult;
 use crate::docker::DockerSession;
 use crate::error::AppError;
-use super::MetricResult;
 
 /// script_replay: Copy a Python script into the container, run it, check for REPLAY_COMPLETE.
 /// If `screenshots_dir` is provided, copies that directory into the container so that
@@ -58,14 +58,17 @@ pub(super) async fn evaluate_script_replay(
     let container_script = format!("/home/tester/{script_name}");
 
     // Make executable and run
-    tokio::time::timeout(eval_timeout, session.exec(&["chmod", "+x", &container_script]))
-        .await
-        .map_err(|_| {
-            AppError::Agent(format!(
-                "Evaluation command timed out after {}s: chmod script",
-                eval_timeout.as_secs()
-            ))
-        })??;
+    tokio::time::timeout(
+        eval_timeout,
+        session.exec(&["chmod", "+x", &container_script]),
+    )
+    .await
+    .map_err(|_| {
+        AppError::Agent(format!(
+            "Evaluation command timed out after {}s: chmod script",
+            eval_timeout.as_secs()
+        ))
+    })??;
     let (output, exit_code) = tokio::time::timeout(
         eval_timeout,
         session.exec_with_exit_code(&["python3", &container_script]),

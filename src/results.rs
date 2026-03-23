@@ -80,11 +80,7 @@ pub fn from_outcome(
         (None, None)
     };
 
-    let bugs_found = if qa {
-        Some(outcome.bugs_found)
-    } else {
-        None
-    };
+    let bugs_found = if qa { Some(outcome.bugs_found) } else { None };
 
     TestResult {
         schema_version: RESULTS_SCHEMA_VERSION.to_string(),
@@ -118,10 +114,7 @@ pub fn from_evaluation(
             .filter(|m| !m.passed)
             .map(|m| format!("{}: {}", m.metric, m.detail))
             .collect();
-        (
-            Some("test_failure".to_string()),
-            Some(failures.join("; ")),
-        )
+        (Some("test_failure".to_string()), Some(failures.join("; ")))
     } else {
         (None, None)
     };
@@ -170,9 +163,8 @@ pub fn write_results(result: &TestResult, output_dir: &Path) -> Result<(), AppEr
     })?;
 
     let results_path = output_dir.join("results.json");
-    let json = serde_json::to_string_pretty(result).map_err(|e| {
-        AppError::Infra(format!("Failed to serialize results: {e}"))
-    })?;
+    let json = serde_json::to_string_pretty(result)
+        .map_err(|e| AppError::Infra(format!("Failed to serialize results: {e}")))?;
 
     std::fs::write(&results_path, &json).map_err(|e| {
         AppError::Infra(format!(

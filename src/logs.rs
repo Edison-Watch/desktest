@@ -8,9 +8,15 @@ use crate::codify;
 use crate::error::AppError;
 
 /// Print trajectory logs to stdout.
-pub fn print_logs(artifacts_dir: &Path, brief: bool, step_filter: Option<Vec<usize>>) -> Result<(), AppError> {
+pub fn print_logs(
+    artifacts_dir: &Path,
+    brief: bool,
+    step_filter: Option<Vec<usize>>,
+) -> Result<(), AppError> {
     if brief && step_filter.is_some() {
-        return Err(AppError::Config("--brief and --step/--steps cannot be used together".into()));
+        return Err(AppError::Config(
+            "--brief and --step/--steps cannot be used together".into(),
+        ));
     }
 
     let trajectory_path = artifacts_dir.join("trajectory.jsonl");
@@ -27,7 +33,10 @@ pub fn print_logs(artifacts_dir: &Path, brief: bool, step_filter: Option<Vec<usi
     // Compute summary
     let total_steps = entries.len();
     let last_step_num = entries.last().map(|e| e.step).unwrap_or(0);
-    let final_result = entries.last().map(|e| e.result.as_str()).unwrap_or("unknown");
+    let final_result = entries
+        .last()
+        .map(|e| e.result.as_str())
+        .unwrap_or("unknown");
     let duration = compute_duration(&entries);
 
     // Print header
@@ -46,7 +55,10 @@ pub fn print_logs(artifacts_dir: &Path, brief: bool, step_filter: Option<Vec<usi
         print_brief(&entries);
     } else if let Some(ref filter) = step_filter {
         let filter_set: std::collections::HashSet<usize> = filter.iter().copied().collect();
-        let matching: Vec<_> = entries.iter().filter(|e| filter_set.contains(&e.step)).collect();
+        let matching: Vec<_> = entries
+            .iter()
+            .filter(|e| filter_set.contains(&e.step))
+            .collect();
         if matching.is_empty() {
             println!("No entries found for the requested steps.");
         } else {
@@ -64,14 +76,13 @@ pub fn print_logs(artifacts_dir: &Path, brief: bool, step_filter: Option<Vec<usi
 }
 
 fn print_brief(entries: &[codify::TrajectoryRecord]) {
-    println!("{:<6} {:<12} {:<26} {}", "Step", "Result", "Timestamp", "Thought");
+    println!(
+        "{:<6} {:<12} {:<26} {}",
+        "Step", "Result", "Timestamp", "Thought"
+    );
     println!("{}", "-".repeat(80));
     for entry in entries {
-        let thought = entry
-            .thought
-            .as_deref()
-            .unwrap_or("")
-            .replace('\n', " ");
+        let thought = entry.thought.as_deref().unwrap_or("").replace('\n', " ");
         let thought_truncated: String = thought.chars().take(40).collect();
         let result_truncated: String = entry.result.chars().take(12).collect();
         println!(
@@ -82,7 +93,10 @@ fn print_brief(entries: &[codify::TrajectoryRecord]) {
 }
 
 fn print_step_detail(entry: &codify::TrajectoryRecord) {
-    println!("--- Step {} [{}] {} ---", entry.step, entry.result, entry.timestamp);
+    println!(
+        "--- Step {} [{}] {} ---",
+        entry.step, entry.result, entry.timestamp
+    );
     if let Some(thought) = &entry.thought {
         println!("Thought: {thought}");
     }
@@ -163,7 +177,8 @@ fn parse_timestamp_secs(ts: &str) -> Option<u64> {
     let leap_offset: u64 = if is_leap && month > 2 { 1 } else { 0 };
     // Use year-1 for leap day accumulation so current year's leap day isn't double-counted
     let yp = year.saturating_sub(1);
-    let days = year * 365 + yp / 4 - yp / 100 + yp / 400 + MONTH_DAYS[month_idx] + day + leap_offset;
+    let days =
+        year * 365 + yp / 4 - yp / 100 + yp / 400 + MONTH_DAYS[month_idx] + day + leap_offset;
     let raw_secs = (days * 86400 + hour * 3600 + min * 60 + sec) as i64;
     // Apply timezone offset to get UTC-relative seconds
     let utc_secs = raw_secs - offset_secs;
@@ -174,5 +189,7 @@ fn load_task_id(artifacts_dir: &Path) -> Option<String> {
     let task_json_path = artifacts_dir.join("task.json");
     let content = std::fs::read_to_string(&task_json_path).ok()?;
     let val: serde_json::Value = serde_json::from_str(&content).ok()?;
-    val.get("id").and_then(|v| v.as_str()).map(|s| s.to_string())
+    val.get("id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
 }

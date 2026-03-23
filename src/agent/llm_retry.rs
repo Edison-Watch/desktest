@@ -2,11 +2,11 @@ use std::time::Duration;
 
 use tracing::{info, warn};
 
+use super::loop_v2::AgentLoopV2;
 use crate::agent::context::is_context_length_error;
 use crate::error::AppError;
 use crate::observation::Observation;
 use crate::provider::ChatMessage;
-use super::loop_v2::AgentLoopV2;
 
 /// Retry interval for LLM API transient errors (429, 5xx).
 pub(super) const LLM_RETRY_INTERVAL: Duration = Duration::from_secs(30);
@@ -78,7 +78,9 @@ impl<'a> AgentLoopV2<'a> {
                                 Ok(Ok(response)) => return Ok(response),
                                 Ok(Err(fb_err)) => {
                                     if is_transient_error(&fb_err.to_string()) {
-                                        warn!("Transient error on fallback (attempt {fallback_attempt}): {fb_err}");
+                                        warn!(
+                                            "Transient error on fallback (attempt {fallback_attempt}): {fb_err}"
+                                        );
                                         fallback_last_err = Some(fb_err);
                                         continue;
                                     }
@@ -86,7 +88,9 @@ impl<'a> AgentLoopV2<'a> {
                                     return Err(fb_err);
                                 }
                                 Err(_timeout) => {
-                                    warn!("Fallback LLM call timed out (attempt {fallback_attempt})");
+                                    warn!(
+                                        "Fallback LLM call timed out (attempt {fallback_attempt})"
+                                    );
                                     fallback_last_err = Some(AppError::Agent(format!(
                                         "Fallback LLM call timed out after {:?}",
                                         self.config.step_timeout
@@ -125,9 +129,7 @@ impl<'a> AgentLoopV2<'a> {
             }
         }
 
-        Err(last_err.unwrap_or_else(|| {
-            AppError::Agent("LLM call failed after max retries".into())
-        }))
+        Err(last_err.unwrap_or_else(|| AppError::Agent("LLM call failed after max retries".into())))
     }
 }
 
@@ -290,15 +292,23 @@ mod tests {
 
     #[test]
     fn test_transient_503() {
-        assert!(is_transient_error("error 503 Service Temporarily Unavailable"));
+        assert!(is_transient_error(
+            "error 503 Service Temporarily Unavailable"
+        ));
     }
 
     #[test]
     fn test_transient_provider_format() {
         // Actual provider error format: "OpenAI API error (502 Bad Gateway): ..."
-        assert!(is_transient_error("Agent error: OpenAI API error (502 Bad Gateway): upstream error"));
-        assert!(is_transient_error("Agent error: Anthropic API error (503 Service Unavailable): overloaded"));
-        assert!(is_transient_error("Agent error: Custom API error (504 Gateway Timeout): timeout"));
+        assert!(is_transient_error(
+            "Agent error: OpenAI API error (502 Bad Gateway): upstream error"
+        ));
+        assert!(is_transient_error(
+            "Agent error: Anthropic API error (503 Service Unavailable): overloaded"
+        ));
+        assert!(is_transient_error(
+            "Agent error: Custom API error (504 Gateway Timeout): timeout"
+        ));
     }
 
     #[test]
@@ -357,7 +367,8 @@ mod tests {
 
     #[test]
     fn test_reasoning_extraction_preserves_code_blocks() {
-        let text = "I see the editor. Let me type.\n\n```python\npyautogui.click(100, 200)\n```\n\nDONE";
+        let text =
+            "I see the editor. Let me type.\n\n```python\npyautogui.click(100, 200)\n```\n\nDONE";
         let reasoning = extract_reasoning(text);
         assert!(reasoning.contains("I see the editor"));
         assert!(reasoning.contains("```python"));

@@ -1,5 +1,5 @@
-mod file_compare;
 mod command;
+mod file_compare;
 mod script;
 
 use std::path::Path;
@@ -43,7 +43,9 @@ pub async fn run_evaluation(
     artifacts_dir: &Path,
 ) -> Result<EvaluationResult, AppError> {
     let eval_timeout = Duration::from_secs(
-        evaluator.eval_timeout_secs.unwrap_or(DEFAULT_EVAL_TIMEOUT_SECS),
+        evaluator
+            .eval_timeout_secs
+            .unwrap_or(DEFAULT_EVAL_TIMEOUT_SECS),
     );
 
     info!(
@@ -117,17 +119,40 @@ async fn evaluate_metric(
             actual_path,
             expected_path,
             compare_mode,
-        } => file_compare::evaluate_file_compare(session, actual_path, expected_path, compare_mode, artifacts_dir, eval_timeout).await,
+        } => {
+            file_compare::evaluate_file_compare(
+                session,
+                actual_path,
+                expected_path,
+                compare_mode,
+                artifacts_dir,
+                eval_timeout,
+            )
+            .await
+        }
         MetricConfig::FileCompareSemantic {
             actual_path,
             expected_path,
             format,
-        } => file_compare::evaluate_file_compare_semantic(session, actual_path, expected_path, format, artifacts_dir, eval_timeout).await,
+        } => {
+            file_compare::evaluate_file_compare_semantic(
+                session,
+                actual_path,
+                expected_path,
+                format,
+                artifacts_dir,
+                eval_timeout,
+            )
+            .await
+        }
         MetricConfig::CommandOutput {
             command,
             expected,
             match_mode,
-        } => command::evaluate_command_output(session, command, expected, match_mode, eval_timeout).await,
+        } => {
+            command::evaluate_command_output(session, command, expected, match_mode, eval_timeout)
+                .await
+        }
         MetricConfig::FileExists {
             path,
             should_not_exist,
@@ -135,8 +160,17 @@ async fn evaluate_metric(
         MetricConfig::ExitCode { command, expected } => {
             command::evaluate_exit_code(session, command, *expected, eval_timeout).await
         }
-        MetricConfig::ScriptReplay { script_path, screenshots_dir } => {
-            script::evaluate_script_replay(session, script_path, screenshots_dir.as_deref(), eval_timeout).await
+        MetricConfig::ScriptReplay {
+            script_path,
+            screenshots_dir,
+        } => {
+            script::evaluate_script_replay(
+                session,
+                script_path,
+                screenshots_dir.as_deref(),
+                eval_timeout,
+            )
+            .await
         }
     }
 }

@@ -180,9 +180,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/v1/chat/completions"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(mock_text_response("Hello!")),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_text_response("Hello!")))
             .mount(&server)
             .await;
 
@@ -212,8 +210,7 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/v1/chat/completions"))
             .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(mock_tool_call_response(vec![tool_call])),
+                ResponseTemplate::new(200).set_body_json(mock_tool_call_response(vec![tool_call])),
             )
             .mount(&server)
             .await;
@@ -243,9 +240,7 @@ mod tests {
         ];
         Mock::given(method("POST"))
             .and(path("/v1/chat/completions"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(mock_tool_call_response(calls)),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_tool_call_response(calls)))
             .mount(&server)
             .await;
 
@@ -271,9 +266,7 @@ mod tests {
             .await;
 
         let client = HttpProvider::new("sk-test", "gpt-4.1", &server.uri(), "Test");
-        let result = client
-            .chat_completion(&[user_message("test")], &[])
-            .await;
+        let result = client.chat_completion(&[user_message("test")], &[]).await;
 
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -291,9 +284,7 @@ mod tests {
             .await;
 
         let client = HttpProvider::new("sk-test", "gpt-4.1", &server.uri(), "Test");
-        let result = client
-            .chat_completion(&[user_message("test")], &[])
-            .await;
+        let result = client.chat_completion(&[user_message("test")], &[]).await;
 
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("500"));
@@ -304,9 +295,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/v1/chat/completions"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(mock_text_response("ok")),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_text_response("ok")))
             .expect(1)
             .mount(&server)
             .await;
@@ -337,8 +326,12 @@ mod tests {
             .mount(&server)
             .await;
 
-        let provider: Box<dyn LlmProvider> =
-            Box::new(HttpProvider::new("sk-test", "gpt-4.1", &server.uri(), "Test"));
+        let provider: Box<dyn LlmProvider> = Box::new(HttpProvider::new(
+            "sk-test",
+            "gpt-4.1",
+            &server.uri(),
+            "Test",
+        ));
         let messages = vec![user_message("Hi")];
         let result = provider.chat_completion(&messages, &[]).await.unwrap();
 
@@ -369,8 +362,7 @@ mod tests {
 
     #[test]
     fn test_completions_url_with_path_prefix() {
-        let provider =
-            HttpProvider::new("key", "model", "https://gateway.example.com/api", "Test");
+        let provider = HttpProvider::new("key", "model", "https://gateway.example.com/api", "Test");
         assert_eq!(
             provider.completions_url(),
             "https://gateway.example.com/api/v1/chat/completions"

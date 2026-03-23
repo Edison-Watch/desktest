@@ -35,7 +35,7 @@ cargo test -- --ignored --test-threads=1       # Integration tests (require Dock
 
 ### Non-obvious details
 
-- `src/agent/mod.rs` contains a **legacy** tool-call-based agent loop kept for backward compat — the active agent is `agent/loop_v2.rs`
+- The agent loop lives in `agent/loop_v2.rs` (`AgentLoopV2`) — the OSWorld-style PyAutoGUI code execution loop
 - `src/task.rs` uses serde tagged enums (`#[serde(tag = "type")]`) for `AppConfig` (including `VncAttach` for attach mode), `MetricConfig`, and `SetupStep`
 - `AppError` variants in `src/error.rs` map to specific exit codes (0–4) — don't change the mapping without updating docs
 - `pub(crate) use orchestration::{parse_resolution, run_task}` in `main.rs` re-exports these for `suite.rs` to use as `crate::run_task`
