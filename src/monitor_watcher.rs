@@ -132,6 +132,7 @@ fn process_phase(
     let ReadResult {
         entries: new_entries,
         new_byte_offset,
+        truncated,
     } = match read_new_lines(&trajectory_path, offset) {
         Ok(result) => result,
         Err(e) => {
@@ -139,6 +140,13 @@ fn process_phase(
             return;
         }
     };
+
+    // On file truncation (phase re-run), reset state so we re-emit TestStart
+    // and the dashboard gets a fresh test_start event to clear stale steps
+    if truncated {
+        info!("Trajectory truncated for phase {phase_id} (re-run detected), resetting state");
+        state.test_start_emitted = false;
+    }
 
     // Emit a synthetic TestStart for the first valid entry so the dashboard header populates
     if !state.test_start_emitted && !new_entries.is_empty() {
@@ -170,6 +178,8 @@ struct ReadResult {
     /// Only advances past blank or successfully parsed lines; malformed lines at EOF
     /// are retried on the next poll (they may be partial writes).
     new_byte_offset: u64,
+    /// True if the file was truncated since the last poll (e.g., phase re-run).
+    truncated: bool,
 }
 
 /// Read new lines from a JSONL file, seeking to `byte_offset` to skip already-consumed data.
@@ -180,11 +190,8 @@ fn read_new_lines(path: &Path, byte_offset: u64) -> Result<ReadResult, std::io::
     let file_len = file.metadata()?.len();
 
     // Detect file truncation (e.g., phase re-run with truncate:true)
-    let byte_offset = if byte_offset > file_len {
-        0
-    } else {
-        byte_offset
-    };
+    let truncated = byte_offset > file_len;
+    let byte_offset = if truncated { 0 } else { byte_offset };
 
     if byte_offset > 0 {
         file.seek(SeekFrom::Start(byte_offset))?;
@@ -223,6 +230,7 @@ fn read_new_lines(path: &Path, byte_offset: u64) -> Result<ReadResult, std::io::
     Ok(ReadResult {
         entries,
         new_byte_offset: safe_offset,
+        truncated,
     })
 }
 
