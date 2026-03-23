@@ -85,9 +85,10 @@ fn scan_phases(
     // subdirectories appear later).
     let trajectory_in_root = watch_dir.join("trajectory.jsonl");
     if trajectory_in_root.is_file() {
+        // Prefix root phase ID to avoid collision with a same-named subdirectory
         let root_phase_id = watch_dir
             .file_name()
-            .map(|n| n.to_string_lossy().to_string())
+            .map(|n| format!("__root_{}", n.to_string_lossy()))
             .unwrap_or_else(|| "root".to_string());
 
         let already_registered = phases.contains_key(&root_phase_id);
@@ -172,26 +173,42 @@ struct ReadResult {
 }
 
 /// Read new lines from a JSONL file, seeking to `byte_offset` to skip already-consumed data.
-/// Returns valid parsed entries and updated cursors for the next poll.
+/// Detects file truncation (e.g., phase re-run) and resets offset to 0.
+/// Uses `read_line` instead of `lines()` for exact byte accounting (handles CRLF correctly).
 fn read_new_lines(path: &Path, byte_offset: u64) -> Result<ReadResult, std::io::Error> {
     let mut file = std::fs::File::open(path)?;
+    let file_len = file.metadata()?.len();
+
+    // Detect file truncation (e.g., phase re-run with truncate:true)
+    let byte_offset = if byte_offset > file_len {
+        0
+    } else {
+        byte_offset
+    };
+
     if byte_offset > 0 {
         file.seek(SeekFrom::Start(byte_offset))?;
     }
-    let reader = BufReader::new(file);
+    let mut reader = BufReader::new(file);
     let mut entries = Vec::new();
     let mut current_offset = byte_offset;
     let mut safe_offset = byte_offset;
-    for line in reader.lines() {
-        let line = line?;
-        // +1 for the newline character
-        current_offset += line.len() as u64 + 1;
+    let mut raw_line = String::new();
 
-        if line.trim().is_empty() {
+    loop {
+        raw_line.clear();
+        let bytes_read = reader.read_line(&mut raw_line)?;
+        if bytes_read == 0 {
+            break; // EOF
+        }
+        current_offset += bytes_read as u64;
+        let trimmed = raw_line.trim_end_matches(['\n', '\r']);
+
+        if trimmed.trim().is_empty() {
             safe_offset = current_offset;
             continue;
         }
-        match serde_json::from_str::<serde_json::Value>(&line) {
+        match serde_json::from_str::<serde_json::Value>(trimmed) {
             Ok(value) => {
                 entries.push(value);
                 safe_offset = current_offset;
@@ -283,7 +300,9 @@ fn emit_trajectory_event(
         error_feedback,
     });
 
-    // If this is a terminal result, emit TestComplete
+    // If this is a terminal result, emit TestComplete.
+    // These result strings are an established contract written by AgentLoopV2 in agent/loop_v2.rs.
+    // Only the agent loop writes these exact values; action execution results use "success" or "error:...".
     if result == "done" || result == "fail" || result == "timeout" || result == "max_steps" {
         let passed = result == "done";
         handle.send(MonitorEvent::TestComplete {
