@@ -93,7 +93,7 @@ fn scan_phases(
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        process_phase(&phase_id, &path, phases, handle);
+        process_phase(&phase_id, &phase_id, &path, phases, handle);
     }
 
     // Check root trajectory: register as a phase if no subdirs exist yet,
@@ -107,16 +107,24 @@ fn scan_phases(
             .map(|n| format!("__root_{}", n.to_string_lossy()))
             .unwrap_or_else(|| "root".to_string());
 
+        // Display name strips the __root_ prefix so the dashboard shows a clean label
+        let root_display_name = watch_dir
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "root".to_string());
+
         let already_registered = phases.contains_key(&root_phase_id);
         if !found_subdirs || already_registered {
-            process_phase(&root_phase_id, watch_dir, phases, handle);
+            process_phase(&root_phase_id, &root_display_name, watch_dir, phases, handle);
         }
     }
 }
 
 /// Process a single phase directory: emit PhaseStart if new, then tail new trajectory lines.
+/// `display_name` overrides the phase label shown in the dashboard (strips internal prefixes).
 fn process_phase(
     phase_id: &str,
+    display_name: &str,
     phase_dir: &Path,
     phases: &mut HashMap<String, PhaseState>,
     handle: &MonitorHandle,
@@ -129,7 +137,7 @@ fn process_phase(
         info!("Discovered new phase: {phase_id}");
         handle.send(MonitorEvent::PhaseStart {
             phase_id: phase_id.to_string(),
-            phase_name: phase_id.to_string(),
+            phase_name: display_name.to_string(),
             timestamp: chrono_iso8601_now(),
         });
         phases.insert(
