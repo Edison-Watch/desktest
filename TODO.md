@@ -6,9 +6,9 @@ Items identified during a security audit (2026-03-23). Prioritized by impact.
 
 ### High Priority
 
-- **Eliminate SYS_ADMIN for AppImages**: Investigate `--appimage-extract-and-run` as default for AppImage deploys. This would remove the need for `CAP_SYS_ADMIN` + `/dev/fuse` entirely, closing the container escape chain. Fall back to FUSE only if extraction fails.
+- ~~**Eliminate SYS_ADMIN for AppImages**~~: Done — `--appimage-extract-and-run` was already in use for all AppImages, so SYS_ADMIN + `/dev/fuse` have been removed entirely from container creation.
 
-- **`needs_fuse` config escape hatch**: Add a `needs_fuse: true` config/task field so `docker_image` app types that internally use AppImages or FUSE-dependent binaries can opt in to `CAP_SYS_ADMIN` + `/dev/fuse`. Currently only `appimage` app type gets these privileges.
+- **`needs_fuse` config escape hatch**: Add a `needs_fuse: true` config/task field so custom Docker images that internally depend on FUSE can opt in to `CAP_SYS_ADMIN` + `/dev/fuse`. No app types currently receive these privileges.
 
 - **Container network egress restrictions**: Add an option (e.g., `--no-network` or a config field) to disable outbound network access inside containers. Especially important for CI use cases where LLM-generated code runs inside the container with full internet access.
 

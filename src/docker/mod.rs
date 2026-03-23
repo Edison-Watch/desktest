@@ -36,11 +36,11 @@ impl DockerSession {
     /// built-in `desktest-desktop` base image. The custom image is NOT built —
     /// it must already exist locally or be pullable by Docker.
     ///
-    /// **FUSE / SYS_ADMIN:** Only `AppType::Appimage` containers receive
-    /// `CAP_SYS_ADMIN` and `/dev/fuse`. Custom Docker images that internally
-    /// run AppImages or other FUSE-dependent binaries will fail at runtime
-    /// without these privileges. A future `needs_fuse` config field will
-    /// provide an explicit opt-in for this case.
+    /// **Privileges:** No containers receive `CAP_SYS_ADMIN` or `/dev/fuse`.
+    /// AppImages are launched with `--appimage-extract-and-run`, bypassing
+    /// FUSE entirely. Custom Docker images that need FUSE for other reasons
+    /// are not currently supported — see `TODO.md` for a future `needs_fuse`
+    /// config escape hatch.
     pub async fn create(config: &Config, custom_image: Option<&str>) -> Result<Self, AppError> {
         let client = Docker::connect_with_local_defaults()
             .map_err(|e| AppError::Infra(format!("Cannot connect to Docker: {e}")))?;
@@ -93,26 +93,9 @@ impl DockerSession {
             format!("VNC_PORT={container_vnc_port}"),
         ];
 
-        // Only grant SYS_ADMIN + /dev/fuse for AppImage apps (they need FUSE to mount).
-        // Other app types don't need these elevated privileges.
-        let needs_fuse = config.app_type == crate::config::AppType::Appimage;
-        let mut host_config = HostConfig {
-            cap_add: if needs_fuse {
-                Some(vec!["SYS_ADMIN".into()])
-            } else {
-                None
-            },
-            devices: if needs_fuse {
-                Some(vec![bollard::models::DeviceMapping {
-                    path_on_host: Some("/dev/fuse".into()),
-                    path_in_container: Some("/dev/fuse".into()),
-                    cgroup_permissions: Some("rwm".into()),
-                }])
-            } else {
-                None
-            },
-            ..Default::default()
-        };
+        // No SYS_ADMIN or /dev/fuse needed — AppImages are launched with
+        // --appimage-extract-and-run (see deploy.rs), which bypasses FUSE entirely.
+        let mut host_config = HostConfig::default();
 
         let mut exposed_ports = std::collections::HashMap::new();
 
