@@ -61,7 +61,9 @@ impl DockerSession {
                 Err(bollard::errors::Error::DockerResponseServerError {
                     status_code: 404, ..
                 }) => {
-                    warn!("Custom image '{img}' not found locally — pulling from remote registry. Ensure you trust this image source.");
+                    warn!(
+                        "Custom image '{img}' not found locally — pulling from remote registry. Ensure you trust this image source."
+                    );
                     use bollard::image::CreateImageOptions;
                     let options = CreateImageOptions {
                         from_image: img,

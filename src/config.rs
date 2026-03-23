@@ -417,7 +417,10 @@ mod tests {
             "vnc_bind_addr": "not-an-ip"
         }"#;
         let err = Config::parse_and_validate(json).unwrap_err();
-        assert!(err.to_string().contains("vnc_bind_addr is not a valid IP address"));
+        assert!(
+            err.to_string()
+                .contains("vnc_bind_addr is not a valid IP address")
+        );
     }
 
     #[test]
@@ -428,7 +431,10 @@ mod tests {
             "vnc_bind_addr": ""
         }"#;
         let err = Config::parse_and_validate(json).unwrap_err();
-        assert!(err.to_string().contains("vnc_bind_addr is not a valid IP address"));
+        assert!(
+            err.to_string()
+                .contains("vnc_bind_addr is not a valid IP address")
+        );
     }
 
     #[test]

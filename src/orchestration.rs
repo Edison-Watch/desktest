@@ -485,7 +485,7 @@ async fn run_eval_loop(
 
             // Create trajectory logger so review HTML has something to display
             let mut trajectory_logger =
-                match crate::trajectory::TrajectoryLogger::new(artifacts_dir, verbose) {
+                match crate::trajectory::TrajectoryLogger::new(artifacts_dir, verbose, redactor.cloned()) {
                     Ok(tl) => Some(tl),
                     Err(e) => {
                         tracing::warn!("Failed to create trajectory logger, review HTML may be empty: {e}");
