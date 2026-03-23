@@ -31,6 +31,8 @@ pub async fn start_monitor_server(handle: MonitorHandle, port: u16) -> Option<Jo
             get(move || async move { state_handler(state_handle).await }),
         );
 
+    // Localhost only — no auth on this endpoint. Unlike VNC (which has vnc_bind_addr),
+    // there is no config override for the monitor bind address yet.
     let listener = match tokio::net::TcpListener::bind(format!("127.0.0.1:{port}")).await {
         Ok(l) => l,
         Err(e) => {
