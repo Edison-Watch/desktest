@@ -405,7 +405,7 @@ mod tests {
         let json = r#"{
             "api_key": "sk-test",
             "app_type": "docker_image",
-            "vnc_bind_addr": "locahost"
+            "vnc_bind_addr": "not-an-ip"
         }"#;
         let err = Config::parse_and_validate(json).unwrap_err();
         assert!(err.to_string().contains("vnc_bind_addr is not a valid IP address"));
