@@ -443,6 +443,29 @@ mod tests {
     }
 
     #[test]
+    fn test_vnc_bind_addr_valid_ipv6() {
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image",
+            "vnc_bind_addr": "::1"
+        }"#;
+        let config = Config::parse_and_validate(json).unwrap();
+        assert_eq!(config.vnc_bind_addr, "::1");
+    }
+
+    #[test]
+    fn test_format_host_port_ipv4() {
+        assert_eq!(format_host_port("127.0.0.1", 5900), "127.0.0.1:5900");
+        assert_eq!(format_host_port("0.0.0.0", 8080), "0.0.0.0:8080");
+    }
+
+    #[test]
+    fn test_format_host_port_ipv6() {
+        assert_eq!(format_host_port("::1", 5900), "[::1]:5900");
+        assert_eq!(format_host_port("::0", 7860), "[::0]:7860");
+    }
+
+    #[test]
     fn test_valid_docker_image_config() {
         let json = r#"{
             "api_key": "sk-test",
