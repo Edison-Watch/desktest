@@ -152,7 +152,8 @@ pub async fn run_update(force: bool) -> Result<(), AppError> {
         .iter()
         .find(|a| a.name == "SHA256SUMS.txt");
 
-    let expected_hash = if let Some(sums_asset) = checksums_asset {
+    // sums_available: true if SHA256SUMS.txt exists in the release
+    let (expected_hash, sums_available) = if let Some(sums_asset) = checksums_asset {
         let sums_text = client
             .get(&sums_asset.browser_download_url)
             .send()
@@ -163,9 +164,16 @@ pub async fn run_update(force: bool) -> Result<(), AppError> {
             .text()
             .await
             .map_err(|e| AppError::Infra(format!("failed to read checksums: {e}")))?;
-        find_expected_sha256(&sums_text, &asset.name)
+        let hash = find_expected_sha256(&sums_text, &asset.name);
+        if hash.is_none() {
+            return Err(AppError::Infra(format!(
+                "SHA256SUMS.txt found but has no entry for '{}'; release may be incomplete or tampered",
+                asset.name
+            )));
+        }
+        (hash, true)
     } else {
-        None
+        (None, false)
     };
 
     println!("Downloading {}...", asset.name);
@@ -191,7 +199,7 @@ pub async fn run_update(force: bool) -> Result<(), AppError> {
             )));
         }
         println!(" OK");
-    } else {
+    } else if !sums_available {
         println!("Warning: SHA256SUMS.txt not found in release, skipping integrity check");
     }
 
