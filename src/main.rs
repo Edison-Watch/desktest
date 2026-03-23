@@ -78,14 +78,21 @@ async fn main() {
                     }
                 }
             }
-            Command::Run { task } => {
-                let task_def = match task::TaskDefinition::load(task) {
+            Command::Run { task, replay } => {
+                let mut task_def = match task::TaskDefinition::load(task) {
                     Ok(t) => t,
                     Err(e) => {
                         eprintln!("Task load error: {e}");
                         std::process::exit(e.exit_code());
                     }
                 };
+
+                if *replay {
+                    if let Err(e) = task_def.apply_replay_override() {
+                        eprintln!("Error: {e}");
+                        std::process::exit(e.exit_code());
+                    }
+                }
 
                 let run_config = orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
                 let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
@@ -207,7 +214,7 @@ async fn main() {
                     }
                 }
             }
-            Command::Codify { trajectory, output, steps, with_screenshots, threshold, delay } => {
+            Command::Codify { trajectory, output, overwrite, steps, with_screenshots, threshold, delay } => {
                 let entries = match codify::load_trajectory(trajectory) {
                     Ok(e) => e,
                     Err(e) => {
@@ -256,19 +263,90 @@ async fn main() {
                     screenshots_dir_name.as_deref(),
                 );
 
-                match std::fs::write(output, &script) {
+                // Load task JSON once if --overwrite is provided (used for both path resolution and update)
+                let overwrite_json: Option<(std::path::PathBuf, serde_json::Value)> = if let Some(task_path) = &overwrite {
+                    let raw = match std::fs::read_to_string(task_path) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            eprintln!("Error reading task JSON for --overwrite: {e}");
+                            std::process::exit(2);
+                        }
+                    };
+                    let value: serde_json::Value = match serde_json::from_str(&raw) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            eprintln!("Error parsing task JSON for --overwrite: {e}");
+                            std::process::exit(2);
+                        }
+                    };
+                    Some((task_path.clone(), value))
+                } else {
+                    None
+                };
+
+                // If the task JSON already has a replay_script, overwrite that path instead.
+                // replay_script is CWD-relative (evaluator resolves it from CWD), so use it directly.
+                let effective_output = if let Some((ref _task_path, ref value)) = overwrite_json {
+                    if let Some(existing_script) = value.get("replay_script").and_then(|v| v.as_str()) {
+                        if existing_script != output.to_string_lossy().as_ref() {
+                            eprintln!("Note: --output ignored; writing to existing replay_script path '{}' from task JSON", existing_script);
+                        }
+                        std::borrow::Cow::Owned(std::path::PathBuf::from(existing_script))
+                    } else {
+                        std::borrow::Cow::Borrowed(output.as_path())
+                    }
+                } else {
+                    std::borrow::Cow::Borrowed(output.as_path())
+                };
+
+                match std::fs::write(&*effective_output, &script) {
                     Ok(()) => {
-                        println!("Replay script written to {}", output.display());
+                        println!("Replay script written to {}", effective_output.display());
                         println!("  {} steps included (of {} total)", included_count, entries.len());
-                        std::process::exit(0);
                     }
                     Err(e) => {
                         eprintln!("Error writing script: {e}");
                         std::process::exit(3);
                     }
                 }
+
+                // Patch the task JSON with replay_script/replay_screenshots_dir (preserves unknown fields)
+                if let Some((task_path, mut value)) = overwrite_json {
+                    // Store replay_script as CWD-relative (evaluator resolves from CWD)
+                    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+                    let script_abs = std::fs::canonicalize(&*effective_output).unwrap_or_else(|_| effective_output.to_path_buf());
+                    let cwd_abs = std::fs::canonicalize(&cwd).unwrap_or(cwd);
+                    let script_rel = script_abs.strip_prefix(&cwd_abs)
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|_| effective_output.to_path_buf());
+
+                    let obj = value.as_object_mut().expect("task JSON must be an object");
+                    obj.insert("replay_script".to_string(), serde_json::Value::String(script_rel.to_string_lossy().to_string()));
+
+                    if *with_screenshots {
+                        let dir_name = screenshots_dir_name.as_deref().unwrap_or("desktest_artifacts");
+                        obj.insert("replay_screenshots_dir".to_string(), serde_json::Value::String(dir_name.to_string()));
+                    } else {
+                        obj.remove("replay_screenshots_dir");
+                    }
+
+                    let json = serde_json::to_string_pretty(&value).expect("serialize task JSON");
+                    match std::fs::write(&task_path, json) {
+                        Ok(()) => {
+                            println!("Updated {} with replay_script", task_path.display());
+                        }
+                        Err(e) => {
+                            eprintln!("Error updating task JSON: {e}");
+                            std::process::exit(3);
+                        }
+                    }
+                }
+
+                std::process::exit(0);
             }
             Command::Replay { task, script, screenshots_dir } => {
+                eprintln!("Warning: `desktest replay` is deprecated. Instead, set 'replay_script' in your task JSON and use `desktest run --replay`.");
+
                 let mut task_def = match task::TaskDefinition::load(task) {
                     Ok(t) => t,
                     Err(e) => {
@@ -277,27 +355,13 @@ async fn main() {
                     }
                 };
 
-                // Inject script_replay metric into programmatic mode
-                let script_path = script.to_string_lossy().to_string();
-                let screenshots_dir_str = screenshots_dir.as_ref().map(|p| p.to_string_lossy().to_string());
-                let replay_metric = task::MetricConfig::ScriptReplay {
-                    script_path,
-                    screenshots_dir: screenshots_dir_str,
-                };
+                // Set replay fields from CLI args and delegate to shared method
+                task_def.replay_script = Some(script.to_string_lossy().to_string());
+                task_def.replay_screenshots_dir = screenshots_dir.as_ref().map(|p| p.to_string_lossy().to_string());
 
-                match &mut task_def.evaluator {
-                    Some(evaluator) => {
-                        evaluator.mode = task::EvaluatorMode::Programmatic;
-                        evaluator.metrics.insert(0, replay_metric);
-                    }
-                    None => {
-                        task_def.evaluator = Some(task::EvaluatorConfig {
-                            mode: task::EvaluatorMode::Programmatic,
-                            metrics: vec![replay_metric],
-                            conjunction: task::Conjunction::And,
-                            eval_timeout_secs: None,
-                        });
-                    }
+                if let Err(e) = task_def.apply_replay_override() {
+                    eprintln!("Error: {e}");
+                    std::process::exit(e.exit_code());
                 }
 
                 let run_config = orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);

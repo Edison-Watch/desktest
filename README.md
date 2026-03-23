@@ -32,17 +32,14 @@ Copy-paste the following prompt into Claude Code (or any coding agent) to instal
 Build deterministic regression tests by watching an LLM agent explore your app, then converting the trajectory into a replayable script:
 
 ```
-1. EXPLORE   →  desktest run task.json --monitor  # LLM agent explores your app (watch live!)
-2. REVIEW    →  desktest review desktest_artifacts/  # Inspect trajectory in web viewer
-3. CODIFY    →  desktest codify desktest_artifacts/trajectory.jsonl  # Convert to deterministic script
-4. REPLAY    →  Add script_replay metric to task.json, then: desktest run task.json  # Run codified test (no LLM)
+1. EXPLORE   →  desktest run task.json --monitor     # LLM agent explores your app (watch live!)
+2. REVIEW    →  desktest review desktest_artifacts/   # Inspect trajectory in web viewer
+3. CODIFY    →  desktest codify trajectory.jsonl --overwrite task.json  # Generate script + update task JSON
+4. REPLAY    →  desktest run task.json --replay       # Deterministic replay (no LLM, no API costs)
 5. CI        →  Run codified tests on every commit
 ```
 
-> **Step 4 detail:** `desktest codify` outputs a Python replay script (`desktest_replay.py`), not a task JSON. To replay it, add a `script_replay` metric to your task JSON:
-> ```json
-> { "type": "script_replay", "script_path": "desktest_replay.py" }
-> ```
+> **Step 4 detail:** `--replay` switches to fully deterministic execution — the codified PyAutoGUI script drives the app directly with zero LLM calls and zero API costs. The same evaluator metrics validate the result. Without `--replay`, the LLM agent runs as normal (useful for re-recording).
 
 ### Workflow 2: Live Monitoring + Agent-Assisted Debugging
 

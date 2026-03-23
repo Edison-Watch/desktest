@@ -14,6 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 cargo build                                    # Build
 cargo run -- validate examples/gedit-save.json # Validate task file
 cargo run -- run task.json --config config.json # Run single test
+cargo run -- run task.json --replay            # Deterministic replay (no LLM)
 cargo run -- run task.json --qa                # Run with QA bug reporting
 cargo run -- suite examples/                   # Run test suite
 cargo run -- interactive task.json             # Interactive debugging
