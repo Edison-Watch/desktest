@@ -107,7 +107,7 @@ pub(crate) async fn resolve_image_name<'a>(
 /// This is the new task-based flow: load task → create container → wait for desktop →
 /// run setup steps → deploy & launch app → run agent loop → cleanup.
 pub(crate) async fn run_task(
-    task_def: task::TaskDefinition,
+    mut task_def: task::TaskDefinition,
     mut config: Config,
     debug: bool,
     verbose: bool,
@@ -127,6 +127,11 @@ pub(crate) async fn run_task(
         ));
     }
 
+    // Resolve secrets from environment variables and apply substitution
+    let resolved_secrets = task_def.resolve_secrets()?;
+    task_def.apply_secrets(&resolved_secrets)?;
+    let redactor = crate::redact::Redactor::new(resolved_secrets.values().cloned());
+
     // Populate config app fields from task definition (needed when no --config file)
     config.apply_task_app(&task_def.app);
 
@@ -143,6 +148,12 @@ pub(crate) async fn run_task(
         _ => None,
     };
 
+    let extra_env = if resolved_secrets.is_empty() {
+        None
+    } else {
+        Some(&resolved_secrets)
+    };
+
     // Build electron image + create container (inside select! so Ctrl+C works)
     info!("Creating Docker container...");
     let session = tokio::select! {
@@ -153,7 +164,7 @@ pub(crate) async fn run_task(
         }
         r = async {
             let effective_image = resolve_image_name(&config, custom_image).await?;
-            docker::DockerSession::create(&config, effective_image).await
+            docker::DockerSession::create(&config, effective_image, extra_env).await
         } => r?,
     };
 
@@ -165,7 +176,7 @@ pub(crate) async fn run_task(
             eprintln!("\nInterrupted (Ctrl+C), cleaning up...");
             Err(AppError::Infra("Interrupted by user".into()))
         }
-        r = run_task_inner(&task_def, &config, &session, &artifacts_dir, debug, verbose, bash_enabled, no_recording, monitor.as_ref(), start, qa) => r,
+        r = run_task_inner(&task_def, &config, &session, &artifacts_dir, debug, verbose, bash_enabled, no_recording, monitor.as_ref(), start, qa, Some(&redactor)) => r,
     };
 
     // Always collect artifacts and clean up
@@ -249,6 +260,7 @@ async fn run_task_inner(
     monitor: Option<&monitor::MonitorHandle>,
     start_time: Instant,
     qa: bool,
+    redactor: Option<&crate::redact::Redactor>,
 ) -> Result<TaskRunResult, AppError> {
     use task::EvaluatorMode;
 
@@ -405,6 +417,7 @@ async fn run_task_inner(
         monitor,
         start_time,
         qa,
+        redactor,
     )
     .await
 }
@@ -425,6 +438,7 @@ async fn run_eval_loop(
     monitor: Option<&monitor::MonitorHandle>,
     start_time: Instant,
     qa: bool,
+    redactor: Option<&crate::redact::Redactor>,
 ) -> Result<TaskRunResult, AppError> {
     use task::EvaluatorMode;
 
@@ -493,6 +507,7 @@ async fn run_eval_loop(
                 recording.as_ref(),
                 monitor,
                 qa,
+                redactor,
             )
             .await;
 
@@ -523,6 +538,7 @@ async fn run_eval_loop(
                 recording.as_ref(),
                 monitor,
                 qa,
+                redactor,
             )
             .await;
 
@@ -655,6 +671,7 @@ async fn run_agent_loop(
     recording: Option<&recording::Recording>,
     monitor: Option<&monitor::MonitorHandle>,
     qa: bool,
+    redactor: Option<&crate::redact::Redactor>,
 ) -> Result<AgentOutcome, AppError> {
     let llm_client = provider::create_provider(
         &config.provider,
@@ -678,6 +695,7 @@ async fn run_agent_loop(
         recording,
         monitor.cloned(),
         task_def.id.clone(),
+        redactor.cloned(),
     );
     agent_loop.run().await
 }
@@ -688,7 +706,7 @@ async fn run_agent_loop(
 /// It connects to the given container by ID/name and runs the agent loop
 /// and evaluation against it.
 pub(crate) async fn run_attach(
-    task_def: task::TaskDefinition,
+    mut task_def: task::TaskDefinition,
     mut config: Config,
     container: &str,
     debug: bool,
@@ -700,6 +718,11 @@ pub(crate) async fn run_attach(
     qa: bool,
 ) -> Result<AgentOutcome, AppError> {
     let start = Instant::now();
+
+    // Resolve secrets from environment variables and apply substitution
+    let resolved_secrets = task_def.resolve_secrets()?;
+    task_def.apply_secrets(&resolved_secrets)?;
+    let redactor = crate::redact::Redactor::new(resolved_secrets.values().cloned());
 
     // Warn if the task isn't designed for attach mode
     if !matches!(task_def.app, task::AppConfig::VncAttach { .. }) {
@@ -739,7 +762,7 @@ pub(crate) async fn run_attach(
             eprintln!("\nInterrupted (Ctrl+C)");
             Err(AppError::Infra("Interrupted by user".into()))
         }
-        r = run_attach_inner(&task_def, &config, &session, &artifacts_dir, debug, verbose, bash_enabled, no_recording, monitor.as_ref(), start, qa) => r,
+        r = run_attach_inner(&task_def, &config, &session, &artifacts_dir, debug, verbose, bash_enabled, no_recording, monitor.as_ref(), start, qa, Some(&redactor)) => r,
     };
 
     // Collect artifacts but do NOT clean up the container (we don't own it)
@@ -774,6 +797,7 @@ async fn run_attach_inner(
     monitor: Option<&monitor::MonitorHandle>,
     start_time: Instant,
     qa: bool,
+    redactor: Option<&crate::redact::Redactor>,
 ) -> Result<TaskRunResult, AppError> {
     let eval_mode = task_def
         .evaluator
@@ -821,6 +845,7 @@ async fn run_attach_inner(
         monitor,
         start_time,
         qa,
+        redactor,
     )
     .await
 }

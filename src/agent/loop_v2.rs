@@ -18,6 +18,7 @@ use crate::monitor::{MonitorEvent, MonitorHandle};
 use crate::observation::{self, Observation, ObservationConfig};
 use crate::provider::LlmProvider;
 use crate::recording::Recording;
+use crate::redact::Redactor;
 use crate::trajectory::TrajectoryLogger;
 
 /// Default maximum number of agent steps per test.
@@ -88,6 +89,7 @@ pub struct AgentLoopV2<'a> {
     pub(super) monitor: Option<MonitorHandle>,
     pub(super) test_id: String,
     pub(super) bug_reporter: Option<crate::bug_report::BugReporter>,
+    pub(super) redactor: Option<Redactor>,
 }
 
 impl<'a> AgentLoopV2<'a> {
@@ -103,6 +105,7 @@ impl<'a> AgentLoopV2<'a> {
         recording: Option<&'a Recording>,
         monitor: Option<MonitorHandle>,
         test_id: String,
+        redactor: Option<Redactor>,
     ) -> Self {
         let context = ContextManager::new(
             display_width,
@@ -113,7 +116,7 @@ impl<'a> AgentLoopV2<'a> {
             config.qa,
         );
 
-        let trajectory = match TrajectoryLogger::new(&artifacts_dir, config.verbose) {
+        let trajectory = match TrajectoryLogger::new(&artifacts_dir, config.verbose, redactor.clone()) {
             Ok(logger) => Some(logger),
             Err(e) => {
                 warn!("Failed to create trajectory logger: {e}");
@@ -144,6 +147,7 @@ impl<'a> AgentLoopV2<'a> {
             monitor,
             test_id,
             bug_reporter,
+            redactor,
         }
     }
 
@@ -247,7 +251,11 @@ impl<'a> AgentLoopV2<'a> {
             // Extract text content from the response
             let response_text = extract_text_content(&response);
             if self.config.debug {
-                debug!("LLM response: {response_text}");
+                let display_text = match &self.redactor {
+                    Some(r) => r.redact(&response_text),
+                    None => response_text.clone(),
+                };
+                debug!("LLM response: {display_text}");
             }
             info!("LLM response length: {} chars", response_text.len());
 

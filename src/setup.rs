@@ -199,7 +199,7 @@ mod tests {
             startup_timeout_seconds: 30,
             electron: false,
         };
-        let session = DockerSession::create(&config, None).await.unwrap();
+        let session = DockerSession::create(&config, None, None).await.unwrap();
 
         let steps = vec![SetupStep::Execute {
             command: "echo hello > /tmp/setup_test.txt".into(),
@@ -231,7 +231,7 @@ mod tests {
             startup_timeout_seconds: 30,
             electron: false,
         };
-        let session = DockerSession::create(&config, None).await.unwrap();
+        let session = DockerSession::create(&config, None, None).await.unwrap();
 
         let tmp = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(tmp.path(), b"setup copy test").unwrap();
@@ -271,7 +271,7 @@ mod tests {
             startup_timeout_seconds: 30,
             electron: false,
         };
-        let session = DockerSession::create(&config, None).await.unwrap();
+        let session = DockerSession::create(&config, None, None).await.unwrap();
 
         let start = std::time::Instant::now();
         let steps = vec![SetupStep::Sleep { seconds: 0.5 }];
@@ -304,7 +304,7 @@ mod tests {
             startup_timeout_seconds: 30,
             electron: false,
         };
-        let session = DockerSession::create(&config, None).await.unwrap();
+        let session = DockerSession::create(&config, None, None).await.unwrap();
 
         let steps = vec![SetupStep::Copy {
             src: "/nonexistent/file/that/does/not/exist".into(),
@@ -337,7 +337,7 @@ mod tests {
             startup_timeout_seconds: 30,
             electron: false,
         };
-        let session = DockerSession::create(&config, None).await.unwrap();
+        let session = DockerSession::create(&config, None, None).await.unwrap();
 
         let steps = vec![
             SetupStep::Execute {

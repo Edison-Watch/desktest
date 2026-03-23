@@ -113,7 +113,7 @@ async fn run_interactive_pause(
         }
         r = async {
             let effective_image = resolve_image_name(&config, custom_image).await?;
-            docker::DockerSession::create(&config, effective_image).await
+            docker::DockerSession::create(&config, effective_image, None).await
         } => r?,
     };
 
@@ -245,7 +245,7 @@ async fn run_interactive_step(
         }
         r = async {
             let effective_image = resolve_image_name(&config, custom_image).await?;
-            docker::DockerSession::create(&config, effective_image).await
+            docker::DockerSession::create(&config, effective_image, None).await
         } => r?,
     };
 
@@ -401,6 +401,7 @@ async fn run_interactive_step_inner(
         recording.as_ref(),
         None, // no monitor in interactive step mode
         task_def.id.clone(),
+        None, // no redactor in interactive step mode
     );
 
     let agent_loop_result = agent_loop.run_step_by_step().await;

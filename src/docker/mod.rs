@@ -41,7 +41,11 @@ impl DockerSession {
     /// FUSE entirely. Custom Docker images that need FUSE for other reasons
     /// are not currently supported — see `TODO.md` for a future `needs_fuse`
     /// config escape hatch.
-    pub async fn create(config: &Config, custom_image: Option<&str>) -> Result<Self, AppError> {
+    pub async fn create(
+        config: &Config,
+        custom_image: Option<&str>,
+        extra_env: Option<&std::collections::HashMap<String, String>>,
+    ) -> Result<Self, AppError> {
         let client = Docker::connect_with_local_defaults()
             .map_err(|e| AppError::Infra(format!("Cannot connect to Docker: {e}")))?;
 
@@ -91,11 +95,17 @@ impl DockerSession {
         // If the user specified a host port, we bind it; otherwise VNC runs but isn't exposed.
         let container_vnc_port = "5900";
 
-        let env: Vec<String> = vec![
+        let mut env: Vec<String> = vec![
             format!("DISPLAY_WIDTH={}", config.display_width),
             format!("DISPLAY_HEIGHT={}", config.display_height),
             format!("VNC_PORT={container_vnc_port}"),
         ];
+
+        if let Some(secrets) = extra_env {
+            for (key, value) in secrets {
+                env.push(format!("DESKTEST_SECRET_{key}={value}"));
+            }
+        }
 
         // No SYS_ADMIN or /dev/fuse needed — AppImages are launched with
         // --appimage-extract-and-run (see deploy.rs), which bypasses FUSE entirely.
@@ -310,7 +320,7 @@ mod tests {
     #[ignore] // Requires Docker daemon
     async fn test_container_create_start_stop() {
         let config = test_config();
-        let session = DockerSession::create(&config, None).await.unwrap();
+        let session = DockerSession::create(&config, None, None).await.unwrap();
 
         let inspect = session
             .client
@@ -332,7 +342,7 @@ mod tests {
     #[ignore] // Requires Docker daemon
     async fn test_exec_command() {
         let config = test_config();
-        let session = DockerSession::create(&config, None).await.unwrap();
+        let session = DockerSession::create(&config, None, None).await.unwrap();
 
         let output = session.exec(&["echo", "hello"]).await.unwrap();
         assert!(output.trim().contains("hello"));
@@ -344,7 +354,7 @@ mod tests {
     #[ignore] // Requires Docker daemon
     async fn test_copy_file_into_container() {
         let config = test_config();
-        let session = DockerSession::create(&config, None).await.unwrap();
+        let session = DockerSession::create(&config, None, None).await.unwrap();
 
         let tmp = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(tmp.path(), b"test content").unwrap();
@@ -416,7 +426,7 @@ mod tests {
     async fn test_attach_to_running_container() {
         // Create a container, then attach to it
         let config = test_config();
-        let session = DockerSession::create(&config, None).await.unwrap();
+        let session = DockerSession::create(&config, None, None).await.unwrap();
         let container_id = session.container_id.clone();
 
         // Attach to it by ID

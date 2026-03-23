@@ -11,6 +11,8 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use tracing::warn;
 
+use crate::redact::Redactor;
+
 /// A single entry in the trajectory log.
 #[derive(Debug, Serialize)]
 pub struct TrajectoryEntry {
@@ -50,13 +52,18 @@ pub struct TrajectoryLogger {
     writer: BufWriter<File>,
     artifacts_dir: PathBuf,
     verbose: bool,
+    redactor: Option<Redactor>,
 }
 
 impl TrajectoryLogger {
     /// Create a new trajectory logger writing to `trajectory.jsonl` in the given directory.
     ///
     /// The file is created (or truncated) on construction.
-    pub fn new(artifacts_dir: &Path, verbose: bool) -> Result<Self, std::io::Error> {
+    pub fn new(
+        artifacts_dir: &Path,
+        verbose: bool,
+        redactor: Option<Redactor>,
+    ) -> Result<Self, std::io::Error> {
         let path = artifacts_dir.join("trajectory.jsonl");
         let file = OpenOptions::new()
             .create(true)
@@ -68,11 +75,39 @@ impl TrajectoryLogger {
             writer: BufWriter::new(file),
             artifacts_dir: artifacts_dir.to_path_buf(),
             verbose,
+            redactor,
         })
     }
 
     /// Log a trajectory entry, serializing to JSON and flushing immediately.
+    ///
+    /// If a `Redactor` is configured, sensitive fields are redacted before serialization.
     pub fn log_entry(&mut self, entry: &TrajectoryEntry) {
+        let redacted;
+        let entry = if let Some(ref redactor) = self.redactor {
+            redacted = TrajectoryEntry {
+                step: entry.step,
+                timestamp: entry.timestamp.clone(),
+                action_code: redactor.redact(&entry.action_code),
+                thought: entry.thought.as_ref().map(|t| redactor.redact(t)),
+                screenshot_path: entry.screenshot_path.clone(),
+                a11y_tree_path: entry.a11y_tree_path.clone(),
+                result: entry.result.clone(),
+                llm_raw_response: entry
+                    .llm_raw_response
+                    .as_ref()
+                    .map(|r| redactor.redact(r)),
+                bash_output: entry.bash_output.as_ref().map(|o| redactor.redact(o)),
+                error_feedback: entry
+                    .error_feedback
+                    .as_ref()
+                    .map(|e| redactor.redact(e)),
+            };
+            &redacted
+        } else {
+            entry
+        };
+
         match serde_json::to_string(entry) {
             Ok(json) => {
                 if let Err(e) = writeln!(self.writer, "{json}") {
@@ -388,7 +423,7 @@ mod tests {
     #[test]
     fn test_trajectory_logger_creates_file() {
         let dir = tempfile::tempdir().unwrap();
-        let _logger = TrajectoryLogger::new(dir.path(), false).unwrap();
+        let _logger = TrajectoryLogger::new(dir.path(), false, None).unwrap();
         assert!(dir.path().join("trajectory.jsonl").exists());
     }
 
@@ -396,13 +431,13 @@ mod tests {
     fn test_trajectory_logger_verbose_vs_non_verbose() {
         let dir = tempfile::tempdir().unwrap();
         // Non-verbose: build_entry should NOT include raw response
-        let logger = TrajectoryLogger::new(dir.path(), false).unwrap();
+        let logger = TrajectoryLogger::new(dir.path(), false, None).unwrap();
         let entry = logger.build_entry(1, "text", &[], None, None, "done", Some("raw"), None, None);
         assert!(entry.llm_raw_response.is_none());
 
         // Verbose: build_entry SHOULD include raw response
         let dir2 = tempfile::tempdir().unwrap();
-        let logger2 = TrajectoryLogger::new(dir2.path(), true).unwrap();
+        let logger2 = TrajectoryLogger::new(dir2.path(), true, None).unwrap();
         let entry2 =
             logger2.build_entry(1, "text", &[], None, None, "done", Some("raw"), None, None);
         assert!(entry2.llm_raw_response.is_some());
@@ -411,7 +446,7 @@ mod tests {
     #[test]
     fn test_trajectory_logger_writes_jsonl() {
         let dir = tempfile::tempdir().unwrap();
-        let mut logger = TrajectoryLogger::new(dir.path(), false).unwrap();
+        let mut logger = TrajectoryLogger::new(dir.path(), false, None).unwrap();
 
         let entry1 = TrajectoryEntry {
             step: 1,
@@ -459,7 +494,7 @@ mod tests {
     #[test]
     fn test_trajectory_logger_build_entry_basic() {
         let dir = tempfile::tempdir().unwrap();
-        let logger = TrajectoryLogger::new(dir.path(), false).unwrap();
+        let logger = TrajectoryLogger::new(dir.path(), false, None).unwrap();
 
         let entry = logger.build_entry(
             1,
@@ -485,7 +520,7 @@ mod tests {
     #[test]
     fn test_trajectory_logger_build_entry_verbose() {
         let dir = tempfile::tempdir().unwrap();
-        let logger = TrajectoryLogger::new(dir.path(), true).unwrap();
+        let logger = TrajectoryLogger::new(dir.path(), true, None).unwrap();
 
         let entry = logger.build_entry(
             1,
@@ -506,7 +541,7 @@ mod tests {
     #[test]
     fn test_trajectory_logger_build_entry_saves_a11y() {
         let dir = tempfile::tempdir().unwrap();
-        let logger = TrajectoryLogger::new(dir.path(), false).unwrap();
+        let logger = TrajectoryLogger::new(dir.path(), false, None).unwrap();
 
         let a11y_text = "button\tOK\t\tGtkButton";
         let entry = logger.build_entry(
@@ -557,7 +592,7 @@ mod tests {
     #[test]
     fn test_build_entry_multiple_code_blocks() {
         let dir = tempfile::tempdir().unwrap();
-        let logger = TrajectoryLogger::new(dir.path(), false).unwrap();
+        let logger = TrajectoryLogger::new(dir.path(), false, None).unwrap();
 
         let entry = logger.build_entry(
             1,
