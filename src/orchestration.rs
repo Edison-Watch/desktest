@@ -310,7 +310,7 @@ async fn run_task_inner(
     // 3. Run setup steps from task definition (after deploy, before app launch)
     if !task_def.config.is_empty() {
         info!("Running {} setup steps...", task_def.config.len());
-        setup::run_setup_steps(session, &task_def.config).await?;
+        setup::run_setup_steps(session, &task_def.config, redactor).await?;
     }
 
     // 4. Launch app
@@ -824,7 +824,7 @@ async fn run_attach_inner(
     // Run setup steps if any (execute, copy, sleep are useful in attach mode)
     if !task_def.config.is_empty() {
         info!("Running {} setup steps...", task_def.config.len());
-        setup::run_setup_steps(session, &task_def.config).await?;
+        setup::run_setup_steps(session, &task_def.config, redactor).await?;
     }
 
     // Publish TestStart for live monitoring

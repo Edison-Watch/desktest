@@ -97,6 +97,7 @@ async fn run_interactive_pause(
 ) -> Result<AgentOutcome, AppError> {
     let resolved_secrets = task_def.resolve_secrets()?;
     task_def.apply_secrets(&resolved_secrets)?;
+    let redactor = crate::redact::Redactor::new(resolved_secrets.values().cloned());
     config.apply_task_app(&task_def.app);
     let timeout = Duration::from_secs(config.startup_timeout_seconds);
 
@@ -130,7 +131,7 @@ async fn run_interactive_pause(
             eprintln!("\nInterrupted (Ctrl+C), cleaning up...");
             Err(AppError::Infra("Interrupted by user".into()))
         }
-        r = run_interactive_pause_inner(&task_def, &config, &session, timeout, debug, no_recording) => r,
+        r = run_interactive_pause_inner(&task_def, &config, &session, timeout, debug, no_recording, Some(&redactor)) => r,
     };
 
     // Always clean up
@@ -153,6 +154,7 @@ async fn run_interactive_pause_inner(
     timeout: Duration,
     debug: bool,
     _no_recording: bool,
+    redactor: Option<&crate::redact::Redactor>,
 ) -> Result<AgentOutcome, AppError> {
     // 1. Wait for desktop
     info!("Waiting for desktop to be ready...");
@@ -176,7 +178,7 @@ async fn run_interactive_pause_inner(
     // 3. Run setup steps (after deploy, before app launch)
     if !task_def.config.is_empty() {
         info!("Running {} setup steps...", task_def.config.len());
-        setup::run_setup_steps(session, &task_def.config).await?;
+        setup::run_setup_steps(session, &task_def.config, redactor).await?;
     }
 
     // 4. Launch app
@@ -347,7 +349,7 @@ async fn run_interactive_step_inner(
     // 3. Run setup steps (after deploy, before app launch)
     if !task_def.config.is_empty() {
         info!("Running {} setup steps...", task_def.config.len());
-        setup::run_setup_steps(session, &task_def.config).await?;
+        setup::run_setup_steps(session, &task_def.config, redactor).await?;
     }
 
     // 4. Launch app
