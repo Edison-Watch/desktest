@@ -116,12 +116,10 @@ impl DockerSession {
             port_bindings.insert(exposed_port, Some(vec![host_binding]));
             host_config.port_bindings = Some(port_bindings);
 
-            let addr_display = if config.vnc_bind_addr.contains(':') {
-                format!("[{}]", config.vnc_bind_addr) // IPv6 needs brackets
-            } else {
-                config.vnc_bind_addr.clone()
-            };
-            info!("VNC will be available at {addr_display}:{vnc_port}");
+            info!(
+                "VNC will be available at {}",
+                crate::config::format_host_port(&config.vnc_bind_addr, vnc_port)
+            );
         }
 
         let container_config = ContainerConfig {

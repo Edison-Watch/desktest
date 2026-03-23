@@ -373,7 +373,7 @@ async fn run_task_inner(
 
     // 6. Print VNC info
     let vnc_url = if let Some(port) = config.vnc_port {
-        let url = format!("{}:{}", config.vnc_bind_addr, port);
+        let url = crate::config::format_host_port(&config.vnc_bind_addr, port);
         println!("VNC available at {url}");
         url
     } else {

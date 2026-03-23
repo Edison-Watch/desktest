@@ -222,6 +222,15 @@ impl Config {
     }
 }
 
+/// Format a host:port string, wrapping IPv6 addresses in brackets.
+pub fn format_host_port(addr: &str, port: u16) -> String {
+    if addr.contains(':') {
+        format!("[{addr}]:{port}")
+    } else {
+        format!("{addr}:{port}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

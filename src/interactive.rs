@@ -194,7 +194,7 @@ async fn run_interactive_pause_inner(
 
     // 5. Print VNC info and container info
     if let Some(port) = config.vnc_port {
-        println!("VNC available at {}:{}", config.vnc_bind_addr, port);
+        println!("VNC available at {}", crate::config::format_host_port(&config.vnc_bind_addr, port));
     }
 
     println!(
@@ -359,7 +359,7 @@ async fn run_interactive_step_inner(
 
     // Print VNC info
     if let Some(port) = config.vnc_port {
-        println!("VNC available at {}:{}", config.vnc_bind_addr, port);
+        println!("VNC available at {}", crate::config::format_host_port(&config.vnc_bind_addr, port));
     }
 
     // 4. Start video recording (after app is ready so we skip the boot/setup filler)
