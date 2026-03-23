@@ -284,12 +284,11 @@ async fn main() {
                     None
                 };
 
-                // If the task JSON already has a replay_script, write to that path instead
-                let effective_output = if let Some((ref task_path, ref value)) = overwrite_json {
+                // If the task JSON already has a replay_script, overwrite that path instead.
+                // replay_script is CWD-relative (evaluator resolves it from CWD), so use it directly.
+                let effective_output = if let Some((ref _task_path, ref value)) = overwrite_json {
                     if let Some(existing_script) = value.get("replay_script").and_then(|v| v.as_str()) {
-                        let task_dir = task_path.parent().unwrap_or(std::path::Path::new("."));
-                        let resolved = task_dir.join(existing_script);
-                        std::borrow::Cow::Owned(resolved)
+                        std::borrow::Cow::Owned(std::path::PathBuf::from(existing_script))
                     } else {
                         std::borrow::Cow::Borrowed(output.as_path())
                     }
