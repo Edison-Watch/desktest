@@ -400,10 +400,22 @@ async fn run_task_inner(
 
     // Publish TestStart for live monitoring
     if let Some(m) = monitor {
+        let instruction = match redactor {
+            Some(redactor) => redactor.redact(&task_def.instruction),
+            None => task_def.instruction.clone(),
+        };
+        let completion_condition =
+            task_def
+                .completion_condition
+                .as_ref()
+                .map(|condition| match redactor {
+                    Some(redactor) => redactor.redact(condition),
+                    None => condition.clone(),
+                });
         m.send(monitor::MonitorEvent::TestStart {
             test_id: task_def.id.clone(),
-            instruction: task_def.instruction.clone(),
-            completion_condition: task_def.completion_condition.clone(),
+            instruction,
+            completion_condition,
             vnc_url,
             max_steps: task_def.max_steps as usize,
         });
@@ -829,10 +841,22 @@ async fn run_attach_inner(
 
     // Publish TestStart for live monitoring
     if let Some(m) = monitor {
+        let instruction = match redactor {
+            Some(redactor) => redactor.redact(&task_def.instruction),
+            None => task_def.instruction.clone(),
+        };
+        let completion_condition =
+            task_def
+                .completion_condition
+                .as_ref()
+                .map(|condition| match redactor {
+                    Some(redactor) => redactor.redact(condition),
+                    None => condition.clone(),
+                });
         m.send(monitor::MonitorEvent::TestStart {
             test_id: task_def.id.clone(),
-            instruction: task_def.instruction.clone(),
-            completion_condition: task_def.completion_condition.clone(),
+            instruction,
+            completion_condition,
             vnc_url: String::new(),
             max_steps: task_def.max_steps as usize,
         });

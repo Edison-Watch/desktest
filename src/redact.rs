@@ -28,9 +28,27 @@ impl Redactor {
 
     /// Replace all known secret values in `text` with `[REDACTED]`.
     pub fn redact(&self, text: &str) -> String {
-        let mut result = text.to_string();
-        for secret in &self.secrets {
-            result = result.replace(secret.as_str(), REDACTED);
+        let mut result = String::with_capacity(text.len());
+        let mut idx = 0;
+
+        while idx < text.len() {
+            let remainder = &text[idx..];
+            if let Some(secret) = self
+                .secrets
+                .iter()
+                .find(|secret| remainder.starts_with(secret.as_str()))
+            {
+                result.push_str(REDACTED);
+                idx += secret.len();
+                continue;
+            }
+
+            let ch = remainder
+                .chars()
+                .next()
+                .expect("idx always points to a valid character boundary");
+            result.push(ch);
+            idx += ch.len_utf8();
         }
         result
     }
@@ -48,7 +66,10 @@ mod tests {
     #[test]
     fn test_redact_single_value() {
         let r = Redactor::new(vec!["hunter2".to_string()]);
-        assert_eq!(r.redact("my password is hunter2"), "my password is [REDACTED]");
+        assert_eq!(
+            r.redact("my password is hunter2"),
+            "my password is [REDACTED]"
+        );
     }
 
     #[test]
@@ -87,5 +108,11 @@ mod tests {
             r.redact("first token123 then token123 again"),
             "first [REDACTED] then [REDACTED] again"
         );
+    }
+
+    #[test]
+    fn test_redacted_marker_is_not_reprocessed() {
+        let r = Redactor::new(vec!["supersecret".to_string(), "ACTED".to_string()]);
+        assert_eq!(r.redact("value=supersecret"), "value=[REDACTED]");
     }
 }
