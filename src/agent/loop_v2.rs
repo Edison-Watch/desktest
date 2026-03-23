@@ -544,9 +544,13 @@ impl<'a> AgentLoopV2<'a> {
             println!("  LLM response ({} chars):", response_text.len());
 
             // Show a preview of the response
-            let preview: String = response_text.chars().take(500).collect();
+            let display_text = match &self.redactor {
+                Some(r) => r.redact(&response_text),
+                None => response_text.clone(),
+            };
+            let preview: String = display_text.chars().take(500).collect();
             println!("  {preview}");
-            if response_text.len() > 500 {
+            if display_text.len() > 500 {
                 println!("  ... (truncated)");
             }
 
@@ -949,5 +953,19 @@ mod tests {
 
         assert!(!json.contains("s3cret"));
         assert!(json.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn test_step_preview_redacts_secrets() {
+        let redactor = Redactor::new(["s3cret".to_string()]);
+        let response_text = "Use password s3cret to log in".to_string();
+        let display_text = match Some(&redactor) {
+            Some(r) => r.redact(&response_text),
+            None => response_text.clone(),
+        };
+        let preview: String = display_text.chars().take(500).collect();
+
+        assert!(!preview.contains("s3cret"));
+        assert!(preview.contains("[REDACTED]"));
     }
 }
