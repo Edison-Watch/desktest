@@ -21,7 +21,7 @@ fn default_height() -> u32 {
 }
 
 fn default_vnc_addr() -> String {
-    "0.0.0.0".into()
+    "127.0.0.1".into()
 }
 
 fn default_timeout() -> u64 {
@@ -199,6 +199,13 @@ impl Config {
             }
         }
 
+        if self.vnc_bind_addr.parse::<std::net::IpAddr>().is_err() {
+            return Err(AppError::Config(format!(
+                "vnc_bind_addr is not a valid IP address: {:?}",
+                self.vnc_bind_addr
+            )));
+        }
+
         if let Some(port) = self.vnc_port {
             if port == 0 {
                 return Err(AppError::Config("vnc_port must be > 0".into()));
@@ -212,6 +219,15 @@ impl Config {
         }
 
         Ok(())
+    }
+}
+
+/// Format a host:port string, wrapping IPv6 addresses in brackets.
+pub fn format_host_port(addr: &str, port: u16) -> String {
+    if addr.contains(':') {
+        format!("[{addr}]:{port}")
+    } else {
+        format!("{addr}:{port}")
     }
 }
 
@@ -284,7 +300,7 @@ mod tests {
         assert_eq!(config.model, "claude-sonnet-4-5-20250929");
         assert_eq!(config.display_width, 1920);
         assert_eq!(config.display_height, 1080);
-        assert_eq!(config.vnc_bind_addr, "0.0.0.0");
+        assert_eq!(config.vnc_bind_addr, "127.0.0.1");
         assert!(config.vnc_port.is_none());
         assert_eq!(config.startup_timeout_seconds, 30);
     }
@@ -391,6 +407,62 @@ mod tests {
         );
         let err = Config::parse_and_validate(&json).unwrap_err();
         assert!(err.to_string().contains("vnc_port must be > 0"));
+    }
+
+    #[test]
+    fn test_vnc_bind_addr_invalid() {
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image",
+            "vnc_bind_addr": "not-an-ip"
+        }"#;
+        let err = Config::parse_and_validate(json).unwrap_err();
+        assert!(err.to_string().contains("vnc_bind_addr is not a valid IP address"));
+    }
+
+    #[test]
+    fn test_vnc_bind_addr_empty() {
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image",
+            "vnc_bind_addr": ""
+        }"#;
+        let err = Config::parse_and_validate(json).unwrap_err();
+        assert!(err.to_string().contains("vnc_bind_addr is not a valid IP address"));
+    }
+
+    #[test]
+    fn test_vnc_bind_addr_valid_ipv4() {
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image",
+            "vnc_bind_addr": "0.0.0.0"
+        }"#;
+        let config = Config::parse_and_validate(json).unwrap();
+        assert_eq!(config.vnc_bind_addr, "0.0.0.0");
+    }
+
+    #[test]
+    fn test_vnc_bind_addr_valid_ipv6() {
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image",
+            "vnc_bind_addr": "::1"
+        }"#;
+        let config = Config::parse_and_validate(json).unwrap();
+        assert_eq!(config.vnc_bind_addr, "::1");
+    }
+
+    #[test]
+    fn test_format_host_port_ipv4() {
+        assert_eq!(format_host_port("127.0.0.1", 5900), "127.0.0.1:5900");
+        assert_eq!(format_host_port("0.0.0.0", 8080), "0.0.0.0:8080");
+    }
+
+    #[test]
+    fn test_format_host_port_ipv6() {
+        assert_eq!(format_host_port("::1", 5900), "[::1]:5900");
+        assert_eq!(format_host_port("::0", 7860), "[::0]:7860");
     }
 
     #[test]

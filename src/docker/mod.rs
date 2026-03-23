@@ -11,7 +11,7 @@ use bollard::container::{
 };
 use bollard::models::{HostConfig, PortBinding};
 use futures::StreamExt;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::config::Config;
 use crate::error::AppError;
@@ -35,27 +35,50 @@ impl DockerSession {
     /// When `custom_image` is `Some`, use that pre-built image instead of the
     /// built-in `desktest-desktop` base image. The custom image is NOT built —
     /// it must already exist locally or be pullable by Docker.
+    ///
+    /// **Privileges:** No containers receive `CAP_SYS_ADMIN` or `/dev/fuse`.
+    /// AppImages are launched with `--appimage-extract-and-run`, bypassing
+    /// FUSE entirely. Custom Docker images that need FUSE for other reasons
+    /// are not currently supported — see `TODO.md` for a future `needs_fuse`
+    /// config escape hatch.
     pub async fn create(config: &Config, custom_image: Option<&str>) -> Result<Self, AppError> {
         let client = Docker::connect_with_local_defaults()
             .map_err(|e| AppError::Infra(format!("Cannot connect to Docker: {e}")))?;
 
         let image_name = if let Some(img) = custom_image {
             // For custom images, check if the image exists locally; if not, try to pull it.
-            if client.inspect_image(img).await.is_err() {
-                info!("Custom image '{img}' not found locally, attempting to pull...");
-                use bollard::image::CreateImageOptions;
-                let options = CreateImageOptions {
-                    from_image: img,
-                    ..Default::default()
-                };
-                let mut stream = client.create_image(Some(options), None, None);
-                while let Some(result) = stream.next().await {
-                    let info = result.map_err(|e| {
-                        AppError::Config(format!("Cannot pull custom Docker image '{img}': {e}"))
-                    })?;
-                    if let Some(status) = &info.status {
-                        debug!("Pull: {status}");
+            // Distinguish "not found" from other Docker errors to avoid misleading warnings.
+            // NOTE: This matches bollard's error variant as of bollard 0.18.x.
+            // If bollard changes its error representation, this arm may stop matching
+            // and fall through to the Err(e) branch (safe but blocks pull). Re-verify
+            // after bumping the bollard dependency.
+            match client.inspect_image(img).await {
+                Ok(_) => {}
+                Err(bollard::errors::Error::DockerResponseServerError {
+                    status_code: 404, ..
+                }) => {
+                    warn!("Custom image '{img}' not found locally — pulling from remote registry. Ensure you trust this image source.");
+                    use bollard::image::CreateImageOptions;
+                    let options = CreateImageOptions {
+                        from_image: img,
+                        ..Default::default()
+                    };
+                    let mut stream = client.create_image(Some(options), None, None);
+                    while let Some(result) = stream.next().await {
+                        let info = result.map_err(|e| {
+                            AppError::Config(format!(
+                                "Cannot pull custom Docker image '{img}': {e}"
+                            ))
+                        })?;
+                        if let Some(status) = &info.status {
+                            debug!("Pull: {status}");
+                        }
                     }
+                }
+                Err(e) => {
+                    return Err(AppError::Infra(format!(
+                        "Cannot inspect custom Docker image '{img}': {e}"
+                    )));
                 }
             }
             img.to_string()
@@ -74,15 +97,9 @@ impl DockerSession {
             format!("VNC_PORT={container_vnc_port}"),
         ];
 
-        let mut host_config = HostConfig {
-            cap_add: Some(vec!["SYS_ADMIN".into()]),
-            devices: Some(vec![bollard::models::DeviceMapping {
-                path_on_host: Some("/dev/fuse".into()),
-                path_in_container: Some("/dev/fuse".into()),
-                cgroup_permissions: Some("rwm".into()),
-            }]),
-            ..Default::default()
-        };
+        // No SYS_ADMIN or /dev/fuse needed — AppImages are launched with
+        // --appimage-extract-and-run (see deploy.rs), which bypasses FUSE entirely.
+        let mut host_config = HostConfig::default();
 
         let mut exposed_ports = std::collections::HashMap::new();
 
@@ -100,8 +117,8 @@ impl DockerSession {
             host_config.port_bindings = Some(port_bindings);
 
             info!(
-                "VNC will be available at {}:{}",
-                config.vnc_bind_addr, vnc_port
+                "VNC will be available at {}",
+                crate::config::format_host_port(&config.vnc_bind_addr, vnc_port)
             );
         }
 
