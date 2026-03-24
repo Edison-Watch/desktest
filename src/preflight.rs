@@ -97,9 +97,8 @@ pub async fn run_doctor(config: &Config) -> bool {
                     println!("  Docker Engine {v}");
                 }
                 if let Some(os) = version.os {
-                    if let Some(arch) = version.arch {
-                        println!("  Platform: {os}/{arch}");
-                    }
+                    let arch_str = version.arch.as_deref().unwrap_or("unknown");
+                    println!("  Platform: {os}/{arch_str}");
                 }
             }
         }
@@ -134,14 +133,9 @@ pub async fn run_doctor(config: &Config) -> bool {
             };
             println!("ok (from {source})");
         }
-        Err(_) => {
+        Err(e) => {
             println!("MISSING");
-            let provider_env = match config.provider.as_str() {
-                "openai" => "OPENAI_API_KEY",
-                "anthropic" => "ANTHROPIC_API_KEY",
-                _ => "LLM_API_KEY",
-            };
-            println!("  Set {provider_env} or pass --config with an api_key field");
+            println!("  {e}");
             all_ok = false;
         }
     }
