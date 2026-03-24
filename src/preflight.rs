@@ -2,7 +2,8 @@ use crate::config::Config;
 use crate::error::AppError;
 
 /// Check that the Docker daemon is reachable via the API socket.
-pub async fn check_docker() -> Result<(), AppError> {
+/// Returns the connected client on success for reuse.
+pub async fn check_docker() -> Result<bollard::Docker, AppError> {
     let client = bollard::Docker::connect_with_local_defaults()
         .map_err(|e| AppError::Infra(format!("Cannot connect to Docker: {e}")))?;
 
@@ -19,7 +20,7 @@ pub async fn check_docker() -> Result<(), AppError> {
         ))
     })?;
 
-    Ok(())
+    Ok(client)
 }
 
 /// Check that an API key is available for the configured provider.
@@ -69,7 +70,7 @@ pub fn check_api_key(config: &Config) -> Result<(), AppError> {
 ///
 /// Skips API key check when `needs_llm` is false (e.g., --replay mode).
 pub async fn run_preflight(config: &Config, needs_llm: bool) -> Result<(), AppError> {
-    check_docker().await?;
+    let _client = check_docker().await?;
 
     if needs_llm {
         check_api_key(config)?;
@@ -81,23 +82,23 @@ pub async fn run_preflight(config: &Config, needs_llm: bool) -> Result<(), AppEr
 /// Run preflight checks and print results in a human-friendly format.
 /// Returns true if all checks pass.
 pub async fn run_doctor(config: &Config) -> bool {
+    use std::io::Write;
+
     let mut all_ok = true;
 
     // Docker check
     print!("Docker daemon ... ");
+    let _ = std::io::stdout().flush();
     match check_docker().await {
-        Ok(()) => {
+        Ok(client) => {
             println!("ok");
-            // Try to get version info
-            if let Ok(client) = bollard::Docker::connect_with_local_defaults() {
-                if let Ok(version) = client.version().await {
-                    if let Some(v) = version.version {
-                        println!("  Docker Engine {v}");
-                    }
-                    if let Some(os) = version.os {
-                        if let Some(arch) = version.arch {
-                            println!("  Platform: {os}/{arch}");
-                        }
+            if let Ok(version) = client.version().await {
+                if let Some(v) = version.version {
+                    println!("  Docker Engine {v}");
+                }
+                if let Some(os) = version.os {
+                    if let Some(arch) = version.arch {
+                        println!("  Platform: {os}/{arch}");
                     }
                 }
             }
@@ -111,6 +112,7 @@ pub async fn run_doctor(config: &Config) -> bool {
 
     // API key check
     print!("API key ({}) ... ", config.provider);
+    let _ = std::io::stdout().flush();
     match check_api_key(config) {
         Ok(()) => {
             // Show which source the key came from (without revealing it)
