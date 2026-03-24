@@ -15,6 +15,13 @@ desktest attach task.json --container my-container --config config.json
 desktest attach task.json --container my-container --resolution 1280x720
 ```
 
+## Prerequisites
+
+- **Docker daemon must be accessible.** Desktest uses the Docker API to exec into the target container for screenshots, action execution, and artifact collection.
+- **Docker socket permissions.** The user running desktest needs access to the Docker socket:
+  - **Linux:** Add your user to the `docker` group (`sudo usermod -aG docker $USER`, then log out and back in), or `chmod 666 /var/run/docker.sock` for local development.
+  - **macOS:** Docker Desktop and OrbStack expose the socket automatically — no extra setup needed.
+
 ## Task JSON
 
 Task files for attach mode use the `vnc_attach` app type. The `app` section is otherwise ignored since no app is being deployed:
