@@ -575,11 +575,16 @@ async fn run_eval_loop(
                 rec.collect(session, artifacts_dir).await;
             }
 
-            // For replay runs, derive screenshot_count from the trajectory written by the evaluator
+            // For replay runs, derive screenshot_count from trajectory entries that have screenshots
             if has_replay {
                 let trajectory_path = artifacts_dir.join("trajectory.jsonl");
                 if let Ok(content) = tokio::fs::read_to_string(&trajectory_path).await {
-                    screenshot_count = content.lines().filter(|l| !l.trim().is_empty()).count();
+                    screenshot_count = content
+                        .lines()
+                        .filter(|l| !l.trim().is_empty())
+                        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+                        .filter(|v| v.get("screenshot_path").is_some_and(|p| !p.is_null()))
+                        .count();
                 }
             }
 
