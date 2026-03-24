@@ -19,8 +19,11 @@ struct PhaseState {
     /// Byte offset into the trajectory file — seek here on each poll to avoid
     /// re-reading already-consumed lines.
     byte_offset: u64,
-    /// Whether we've emitted a synthetic TestStart for late-connecting clients.
-    test_start_emitted: bool,
+    /// Whether we've emitted an initial TestStart (possibly with default metadata).
+    initial_test_start_emitted: bool,
+    /// Whether we've emitted the final TestStart with real task.json metadata.
+    /// Once true, no more TestStart events are emitted for this phase.
+    final_test_start_emitted: bool,
 }
 
 /// Watches `watch_dir` for subdirectories containing `trajectory.jsonl` files.
@@ -144,7 +147,8 @@ fn process_phase(
             phase_id.to_string(),
             PhaseState {
                 byte_offset: 0,
-                test_start_emitted: false,
+                initial_test_start_emitted: false,
+                final_test_start_emitted: false,
             },
         );
     }
@@ -171,7 +175,8 @@ fn process_phase(
     // intentionally preserves the timeline, so this divider is the cue).
     if truncated {
         info!("Trajectory truncated for phase {phase_id} (re-run detected), resetting state");
-        state.test_start_emitted = false;
+        state.initial_test_start_emitted = false;
+        state.final_test_start_emitted = false;
         handle.send(MonitorEvent::PhaseStart {
             phase_id: display_name.to_string(),
             phase_name: format!("{display_name} (re-run)"),
@@ -179,29 +184,32 @@ fn process_phase(
         });
     }
 
-    // Emit a synthetic TestStart so the dashboard header populates.
-    // During live monitoring, task.json is written by finalize_run after the agent
-    // loop completes, so it may not exist yet. We emit TestStart with defaults
-    // immediately, then re-emit with real metadata once task.json appears.
-    // The condition fires on new entries OR when task.json becomes available
-    // (decoupled so the metadata upgrade isn't lost if task.json arrives after
-    // the last trajectory entry).
-    let task_path = phase_dir.join("task.json");
-    let task_json_ready = task_path.exists();
-    let should_emit_test_start =
-        !state.test_start_emitted && (!new_entries.is_empty() || task_json_ready);
-    if should_emit_test_start {
-        let (instruction, max_steps) = read_task_metadata(phase_dir);
-        handle.send(MonitorEvent::TestStart {
-            test_id: display_name.to_string(),
-            instruction,
-            completion_condition: None,
-            vnc_url: String::new(),
-            max_steps,
-        });
-        // Only mark as fully emitted once task.json actually existed,
-        // so we re-emit with real metadata when it appears during live runs
-        state.test_start_emitted = task_json_ready;
+    // Emit TestStart so the dashboard header populates. Two-phase approach:
+    // 1. Initial emit: fires once when first trajectory entries appear (may have
+    //    default metadata if task.json doesn't exist yet during live monitoring).
+    // 2. Upgrade emit: fires once more when task.json appears, replacing defaults
+    //    with real instruction/max_steps metadata.
+    // After the upgrade, no more TestStart events are emitted for this phase.
+    if !state.final_test_start_emitted {
+        let task_path = phase_dir.join("task.json");
+        let task_json_ready = task_path.exists();
+        let want_initial = !state.initial_test_start_emitted
+            && (!new_entries.is_empty() || task_json_ready);
+        let want_upgrade = state.initial_test_start_emitted && task_json_ready;
+        if want_initial || want_upgrade {
+            let (instruction, max_steps) = read_task_metadata(phase_dir);
+            handle.send(MonitorEvent::TestStart {
+                test_id: display_name.to_string(),
+                instruction,
+                completion_condition: None,
+                vnc_url: String::new(),
+                max_steps,
+            });
+            state.initial_test_start_emitted = true;
+            if task_json_ready {
+                state.final_test_start_emitted = true;
+            }
+        }
     }
 
     let entry_count = new_entries.len();
