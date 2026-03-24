@@ -190,11 +190,15 @@ fn process_phase(
     // 2. Upgrade emit: fires once more when task.json appears, replacing defaults
     //    with real instruction/max_steps metadata.
     // After the upgrade, no more TestStart events are emitted for this phase.
+    // Note: only finalize (set final flag) when trajectory data has been consumed
+    // (new_byte_offset > 0), to avoid locking in stale task.json from a prior run
+    // before any trajectory entries from the current run have been seen.
     if !state.final_test_start_emitted {
         let task_path = phase_dir.join("task.json");
         let task_json_ready = task_path.exists();
+        let has_trajectory_data = new_byte_offset > 0;
         let want_initial = !state.initial_test_start_emitted
-            && (!new_entries.is_empty() || task_json_ready);
+            && (!new_entries.is_empty() || (task_json_ready && has_trajectory_data));
         let want_upgrade = state.initial_test_start_emitted && task_json_ready;
         if want_initial || want_upgrade {
             let (instruction, max_steps) = read_task_metadata(phase_dir);
@@ -206,7 +210,7 @@ fn process_phase(
                 max_steps,
             });
             state.initial_test_start_emitted = true;
-            if task_json_ready {
+            if task_json_ready && has_trajectory_data {
                 state.final_test_start_emitted = true;
             }
         }
