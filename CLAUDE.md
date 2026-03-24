@@ -33,6 +33,21 @@ cargo test -- --ignored --test-threads=1       # Integration tests (require Dock
 
 **Exit codes:** 0=pass, 1=fail, 2=config error, 3=infra error, 4=agent error.
 
+### Replay pipeline
+
+The replay pipeline converts an LLM-driven run into a deterministic, repeatable test:
+
+1. `desktest run task.json` → generates `trajectory.jsonl` + screenshots in `desktest_artifacts/`
+2. `desktest codify trajectory.jsonl --overwrite task.json` → generates a Python replay script with per-step `scrot` screenshots and `REPLAY_STEP_DONE:N:thought` markers
+3. `desktest run task.json --replay` → runs the replay script (no LLM, no API costs); the evaluator parses step markers from stdout, copies screenshots from the container, and writes a new `trajectory.jsonl` for review
+4. `desktest review desktest_artifacts/` → generates an HTML viewer from the trajectory
+
+Key details:
+- `apply_replay_override()` in `task.rs` injects a `ScriptReplay` metric and sets `Programmatic` mode
+- `evaluate_script_replay` in `evaluator/script.rs` handles trajectory reconstruction from replay output
+- `TrajectoryLogger::new_append()` is used (not `new()`) to avoid truncating when multiple ScriptReplay metrics exist
+- The orchestration layer skips generic pre/post screenshots when a `ScriptReplay` metric is present
+
 ### Non-obvious details
 
 - The agent loop lives in `agent/loop_v2.rs` (`AgentLoopV2`) — the OSWorld-style PyAutoGUI code execution loop

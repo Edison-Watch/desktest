@@ -1,0 +1,56 @@
+# Desktest Project Rules
+
+## Project Overview
+
+Desktest is a CLI tool for automated E2E testing of Linux desktop applications using LLM-powered agents. It runs inside Docker containers with XFCE desktops (Xvfb + x11vnc) and uses PyAutoGUI for interaction.
+
+**Tech stack:** Rust (edition 2024), Tokio async runtime, Docker (Bollard), multi-model LLM support.
+
+## Architecture
+
+### Core Flow
+- `src/main.rs` → CLI parsing, dispatches to orchestration
+- `src/orchestration.rs` → Main task runner: container setup → setup steps → agent loop → evaluation → artifacts → cleanup
+- `src/agent/loop_v2.rs` → OSWorld-style agent loop (LLM ↔ PyAutoGUI code execution)
+- `src/task.rs` → Task definition with serde tagged enums (`#[serde(tag = "type")]`)
+- `src/evaluator/` → Programmatic evaluation (file compare, command output, script replay)
+- `src/trajectory.rs` → JSONL trajectory logger for review/replay pipeline
+
+### Replay Pipeline
+The replay pipeline is: `desktest run` (generates trajectory.jsonl) → `desktest codify` (converts to Python replay script) → `desktest run --replay` (deterministic execution, no LLM). Replay scripts emit `REPLAY_STEP_DONE:N:thought` markers and capture per-step screenshots via `scrot`, which the evaluator parses to reconstruct trajectory.jsonl for `desktest review`.
+
+### Key Patterns
+- `AppError` variants map to exit codes 0–4 — NEVER change the mapping without updating docs
+- `pub(crate)` re-exports in `main.rs` for cross-module access (e.g., `suite.rs` uses `crate::run_task`)
+- `TrajectoryLogger::new()` truncates; `TrajectoryLogger::new_append()` appends — use append when multiple callers may write to the same trajectory file
+- `apply_replay_override()` always places `ScriptReplay` as the first metric and sets `Programmatic` mode
+
+## Rust Conventions
+
+- ALWAYS use Rust edition 2024 features
+- ALWAYS use `tokio` for async — this is a Tokio-based project
+- ALWAYS handle errors via `AppError` variants — NEVER use `.unwrap()` in non-test code
+- ALWAYS use `tracing` (`info!`, `warn!`, `debug!`) for logging — NEVER use `println!` for diagnostic output (only for user-facing CLI output)
+- ALWAYS prefer `pub(crate)` over `pub` for internal APIs
+- NEVER add dependencies without justification — keep the binary lean
+
+## Docker Container
+
+- Runs as non-root user "tester" inside debian:bookworm-slim
+- `~/.Xauthority` MUST exist — PyAutoGUI crashes without it
+- Helper scripts: `get-a11y-tree.py`, `execute-action.py`, `screenshot_compare.py`
+- Default resolution: 1920x1080
+
+## Testing
+
+- Unit tests: `cargo test` (no Docker required)
+- Integration tests: `cargo test -- --ignored --test-threads=1` (require Docker)
+- ALWAYS run `cargo test` before pushing
+- NEVER use `#[ignore]` on unit tests — only on integration tests that need Docker
+
+## File Organization
+
+- Evaluator metrics go in `src/evaluator/` as separate modules
+- Agent logic goes in `src/agent/`
+- Docker interaction goes in `src/docker/`
+- NEVER put business logic in `main.rs` — it should only dispatch to other modules
