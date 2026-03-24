@@ -398,15 +398,22 @@ async fn main() {
                     // when the same file is referenced from different bases.
                     let resolved_canon = std::fs::canonicalize(&resolved).ok();
                     let output_canon = std::fs::canonicalize(output.as_path()).ok();
-                    if resolved_canon != output_canon
-                        && resolved_canon.is_some()
-                    {
+                    if resolved_canon.is_none() {
+                        // Old replay_script path no longer exists — honor --output instead
+                        eprintln!(
+                            "Warning: replay_script path '{}' in task JSON does not exist; using --output instead",
+                            resolved.display()
+                        );
+                        std::borrow::Cow::Borrowed(output.as_path())
+                    } else if resolved_canon != output_canon {
                         eprintln!(
                             "Note: --output ignored; writing to existing replay_script path '{}' from task JSON",
                             resolved.display()
                         );
+                        std::borrow::Cow::Owned(resolved)
+                    } else {
+                        std::borrow::Cow::Owned(resolved)
                     }
-                    std::borrow::Cow::Owned(resolved)
                 } else {
                     std::borrow::Cow::Borrowed(output.as_path())
                 }
@@ -452,9 +459,16 @@ async fn main() {
                     let dir_name = screenshots_dir_name
                         .as_deref()
                         .unwrap_or("desktest_artifacts");
+                    // Relativize screenshots dir the same way as replay_script
+                    let dir_abs = std::fs::canonicalize(dir_name)
+                        .unwrap_or_else(|_| std::path::PathBuf::from(dir_name));
+                    let dir_rel = dir_abs
+                        .strip_prefix(&task_dir)
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|_| dir_abs.clone());
                     obj.insert(
                         "replay_screenshots_dir".to_string(),
-                        serde_json::Value::String(dir_name.to_string()),
+                        serde_json::Value::String(dir_rel.to_string_lossy().to_string()),
                     );
                 } else {
                     obj.remove("replay_screenshots_dir");
