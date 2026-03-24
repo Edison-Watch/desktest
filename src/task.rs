@@ -520,7 +520,10 @@ impl TaskDefinition {
 
         // Resolve relative replay_script / replay_screenshots_dir paths
         // relative to the task JSON file's parent directory.
+        // Canonicalize task_dir so resolved paths are absolute even when
+        // the task file path itself is relative (e.g. ../other-dir/task.json).
         if let Some(task_dir) = path.parent() {
+            let task_dir = std::fs::canonicalize(task_dir).unwrap_or_else(|_| task_dir.to_path_buf());
             if let Some(ref script) = task.replay_script {
                 let p = Path::new(script);
                 if p.is_relative() {

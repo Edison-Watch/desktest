@@ -388,16 +388,25 @@ async fn main() {
                 };
 
             // If the task JSON already has a replay_script, overwrite that path instead.
-            // replay_script is resolved relative to the task JSON's directory by TaskDefinition::load.
-            let effective_output = if let Some((ref _task_path, ref value)) = overwrite_json {
+            // replay_script is stored relative to the task JSON's directory, so resolve
+            // it against the task file's parent before using as a filesystem write target.
+            let effective_output = if let Some((ref task_path, ref value)) = overwrite_json {
                 if let Some(existing_script) = value.get("replay_script").and_then(|v| v.as_str()) {
-                    if existing_script != output.to_string_lossy().as_ref() {
+                    let task_parent = task_path.parent().unwrap_or(std::path::Path::new("."));
+                    let resolved = task_parent.join(existing_script);
+                    // Compare canonicalized paths to avoid spurious "ignored" warnings
+                    // when the same file is referenced from different bases.
+                    let resolved_canon = std::fs::canonicalize(&resolved).ok();
+                    let output_canon = std::fs::canonicalize(output.as_path()).ok();
+                    if resolved_canon != output_canon
+                        && resolved_canon.is_some()
+                    {
                         eprintln!(
                             "Note: --output ignored; writing to existing replay_script path '{}' from task JSON",
-                            existing_script
+                            resolved.display()
                         );
                     }
-                    std::borrow::Cow::Owned(std::path::PathBuf::from(existing_script))
+                    std::borrow::Cow::Owned(resolved)
                 } else {
                     std::borrow::Cow::Borrowed(output.as_path())
                 }
