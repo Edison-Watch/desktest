@@ -46,6 +46,12 @@ pub enum MonitorEvent {
         total: usize,
         current_test_id: String,
     },
+    /// Emitted by the persistent monitor when a new phase directory is detected.
+    PhaseStart {
+        phase_id: String,
+        phase_name: String,
+        timestamp: String,
+    },
 }
 
 /// A cheaply cloneable handle wrapping a broadcast channel for monitor events.

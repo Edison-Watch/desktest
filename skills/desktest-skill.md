@@ -42,6 +42,19 @@ desktest logs desktest_artifacts/ --steps 1,3,5-8  # Mix individual steps and ra
 desktest review desktest_artifacts/             # Open interactive HTML viewer in browser
 ```
 
+### Multi-phase monitoring
+
+```bash
+# Run phases with separate artifact directories (prevents overwrites)
+desktest attach p1.json --artifacts-dir ./artifacts/phase-1 --container $C --replay
+desktest attach p2.json --artifacts-dir ./artifacts/phase-2 --container $C --replay
+desktest attach p3.json --artifacts-dir ./artifacts/phase-3 --container $C
+
+# Start a persistent monitor that watches all phases in one timeline
+desktest monitor --watch ./artifacts/                     # Default port 7860
+desktest monitor --watch ./artifacts/ --monitor-port 8080 # Custom port
+```
+
 ### Other commands
 
 ```bash
@@ -75,6 +88,19 @@ This is the key workflow for coding agents like Claude Code:
 4. Human reruns: `desktest run task.json --monitor` — verify the fix
 
 `--monitor` is for human eyes (real-time web dashboard). `logs` is for agent consumption (structured terminal output). Together they close the loop.
+
+### Workflow 3: Multi-Phase Monitoring
+
+For E2E suites that run multiple `desktest attach` phases against the same container:
+
+1. Start the persistent monitor: `desktest monitor --watch ./artifacts/`
+2. Run each phase with a separate artifacts dir:
+   - `desktest attach p1.json --artifacts-dir ./artifacts/phase-1 --container $C --replay`
+   - `desktest attach p2.json --artifacts-dir ./artifacts/phase-2 --container $C --replay`
+   - `desktest attach p3.json --artifacts-dir ./artifacts/phase-3 --container $C`
+3. Open `http://localhost:7860` — all phases appear in a single timeline with phase dividers
+
+The monitor watches for new subdirectories and tails their `trajectory.jsonl` files in real time. Each phase gets its own artifact directory, preventing overwrites.
 
 ## Using `desktest logs` (Important for Agents)
 
@@ -134,6 +160,7 @@ Shows every step with full detail (thought + action code + result).
 | `--record` | Enable video recording (produces recording.mp4) |
 | `--monitor` | Enable live monitoring web dashboard |
 | `--monitor-port <PORT>` | Port for dashboard (default: 7860) |
+| `--artifacts-dir <DIR>` | Directory for trajectory, screenshots, and a11y trees (default: ./desktest_artifacts/) |
 | `--with-bash` | Allow agent to run bash commands inside the container (disabled by default — agent can "cheat") |
 | `--qa` | Enable QA bug reporting mode — agent reports app bugs as structured markdown in `bugs/` |
 | `--replay` | Use `replay_script` from task JSON for deterministic execution (no LLM, no API costs). Only on `run` subcommand |
@@ -151,7 +178,7 @@ Shows every step with full detail (thought + action code + result).
 
 ## Artifacts
 
-After a test run, artifacts are in `desktest_artifacts/`:
+After a test run, artifacts are in `desktest_artifacts/` (or the directory specified by `--artifacts-dir`):
 
 ```
 desktest_artifacts/

@@ -116,6 +116,7 @@ pub(crate) async fn run_task(
     output_dir: std::path::PathBuf,
     monitor: Option<monitor::MonitorHandle>,
     qa: bool,
+    artifacts_dir_override: Option<std::path::PathBuf>,
 ) -> Result<AgentOutcome, AppError> {
     let start = Instant::now();
 
@@ -136,9 +137,12 @@ pub(crate) async fn run_task(
     config.apply_task_app(&task_def.app);
 
     // Set up artifacts directory
-    let artifacts_dir = std::env::current_dir()
-        .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
-        .join("desktest_artifacts");
+    let artifacts_dir = match artifacts_dir_override {
+        Some(dir) => dir,
+        None => std::env::current_dir()
+            .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
+            .join("desktest_artifacts"),
+    };
     std::fs::create_dir_all(&artifacts_dir)
         .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
 
@@ -798,6 +802,7 @@ pub(crate) async fn run_attach(
     output_dir: std::path::PathBuf,
     monitor: Option<monitor::MonitorHandle>,
     qa: bool,
+    artifacts_dir_override: Option<std::path::PathBuf>,
 ) -> Result<AgentOutcome, AppError> {
     let start = Instant::now();
 
@@ -826,9 +831,12 @@ pub(crate) async fn run_attach(
     config.apply_task_app(&task_def.app);
 
     // Set up artifacts directory
-    let artifacts_dir = std::env::current_dir()
-        .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
-        .join("desktest_artifacts");
+    let artifacts_dir = match artifacts_dir_override {
+        Some(dir) => dir,
+        None => std::env::current_dir()
+            .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
+            .join("desktest_artifacts"),
+    };
     std::fs::create_dir_all(&artifacts_dir)
         .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
 

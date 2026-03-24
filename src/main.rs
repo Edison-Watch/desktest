@@ -11,6 +11,7 @@ mod interactive;
 mod logs;
 mod monitor;
 mod monitor_server;
+mod monitor_watcher;
 mod observation;
 mod orchestration;
 mod provider;
@@ -112,6 +113,7 @@ async fn main() {
                 cli.output.clone(),
                 monitor_handle,
                 cli.qa,
+                cli.artifacts_dir.clone(),
             )
             .await;
             match result {
@@ -126,6 +128,9 @@ async fn main() {
             }
         }
         Command::Suite { dir, filter } => {
+            if cli.artifacts_dir.is_some() {
+                eprintln!("Warning: --artifacts-dir is ignored for suite runs (each test manages its own artifacts directory).");
+            }
             let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
             let bash_enabled = cli.with_bash || cli.qa;
 
@@ -190,6 +195,7 @@ async fn main() {
                 cli.output.clone(),
                 monitor_handle,
                 cli.qa,
+                cli.artifacts_dir.clone(),
             )
             .await;
             match result {
@@ -231,6 +237,7 @@ async fn main() {
                 *step,
                 *validate_only,
                 cli.qa,
+                cli.artifacts_dir.clone(),
             )
             .await;
 
@@ -450,6 +457,7 @@ async fn main() {
                 cli.output.clone(),
                 monitor_handle,
                 cli.qa,
+                cli.artifacts_dir.clone(),
             )
             .await;
             match result {
@@ -494,6 +502,58 @@ async fn main() {
                 Err(e) => {
                     eprintln!("Update failed: {e}");
                     std::process::exit(e.exit_code());
+                }
+            }
+        }
+        Command::Monitor { watch } => {
+            if cli.artifacts_dir.is_some() {
+                eprintln!("Warning: --artifacts-dir is ignored for the monitor command (the monitor reads existing artifacts, it does not write them).");
+            }
+            let watch_dir = watch.clone();
+            let port = cli.monitor_port;
+            if !watch_dir.exists() {
+                if let Err(e) = std::fs::create_dir_all(&watch_dir) {
+                    eprintln!(
+                        "Cannot create watch directory '{}': {e}",
+                        watch_dir.display()
+                    );
+                    std::process::exit(2);
+                }
+            } else if !watch_dir.is_dir() {
+                eprintln!(
+                    "Watch path '{}' is not a directory.",
+                    watch_dir.display()
+                );
+                std::process::exit(2);
+            }
+
+            let handle = monitor::MonitorHandle::new(256);
+            // Keep the server handle alive for the duration of the watcher loop;
+            // dropping it would abort the server task.
+            let _server = match monitor_server::start_monitor_server(handle.clone(), port).await {
+                Some(server) => {
+                    println!("Monitor dashboard: http://localhost:{}", port);
+                    println!(
+                        "Watching {} for phase directories (Ctrl+C to stop)",
+                        watch_dir.display()
+                    );
+                    server
+                }
+                None => {
+                    eprintln!("Failed to start monitor server on port {port}");
+                    std::process::exit(3);
+                }
+            };
+
+            // Run the watcher until Ctrl+C
+            tokio::select! {
+                biased;
+                _ = tokio::signal::ctrl_c() => {
+                    println!("\nShutting down monitor.");
+                    std::process::exit(0);
+                }
+                _ = monitor_watcher::run_watcher(watch_dir, handle) => {
+                    // run_watcher loops forever, so this arm shouldn't complete
                 }
             }
         }
