@@ -61,7 +61,7 @@ desktest monitor --watch ./artifacts/ --monitor-port 8080 # Custom port
 desktest validate task.json                     # Check task JSON schema without running
 desktest interactive task.json                  # Start container + pause for manual VNC debugging
 desktest interactive task.json --step           # Step through agent actions one at a time
-desktest attach task.json --container ID        # Attach to already-running container
+desktest attach task.json --container ID        # Attach to already-running container (requires Docker socket access)
 desktest codify desktest_artifacts/trajectory.jsonl  # Convert trajectory to deterministic replay script
 desktest codify trajectory.jsonl --overwrite task.json  # Generate script + inject replay_script into task JSON
 desktest update                                 # Update desktest to the latest GitHub release
@@ -154,13 +154,13 @@ Shows every step with full detail (thought + action code + result).
 | Flag | Description |
 |------|-------------|
 | `--config <FILE>` | Config JSON file (API key can come from env vars) |
-| `--output <DIR>` | Output directory for results (default: ./test-results/) |
+| `--output <DIR>` | Output directory for test result JSON files (default: ./test-results/) |
 | `--debug` | Enable debug logging |
 | `--verbose` | Include full LLM responses in trajectory logs |
 | `--record` | Enable video recording (produces recording.mp4) |
 | `--monitor` | Enable live monitoring web dashboard |
 | `--monitor-port <PORT>` | Port for dashboard (default: 7860) |
-| `--artifacts-dir <DIR>` | Directory for trajectory, screenshots, and a11y trees (default: ./desktest_artifacts/) |
+| `--artifacts-dir <DIR>` | Directory for trajectory logs, screenshots, and accessibility tree snapshots (default: ./desktest_artifacts/) |
 | `--with-bash` | Allow agent to run bash commands inside the container (disabled by default — agent can "cheat") |
 | `--qa` | Enable QA bug reporting mode — agent reports app bugs as structured markdown in `bugs/` |
 | `--replay` | Use `replay_script` from task JSON for deterministic execution (no LLM, no API costs). Only on `run` subcommand |
