@@ -355,12 +355,13 @@ For each step, you MUST respond with:
 
 Example response format:
 ```
-I can see the text editor is open with an empty document. I need to type "Hello World" into the editor. I'll click on the text area first to make sure it's focused, then type the text.
+I can see the text editor is open with an empty document. I need to type "Hello World" into the editor. I'll click on the text area first to make sure it's focused, then paste the text.
 
 ```python
 pyautogui.click(640, 400)
 time.sleep(0.3)
-pyautogui.typewrite('Hello World', interval=0.05)
+pyperclip.copy('Hello World')
+pyautogui.hotkey('ctrl', 'v')
 ```
 ```
 
@@ -370,6 +371,7 @@ pyautogui.typewrite('Hello World', interval=0.05)
 - Use precise coordinates based on the screenshot — examine button positions carefully
 - After clicking a menu or button, wait briefly (`time.sleep(0.5)`) for the UI to update
 - If an action doesn't produce the expected result, try a different approach rather than repeating the same action
+- `pyautogui.typewrite()` is only appropriate for simple backslash-free ASCII text; prefer the clipboard method when in doubt
 - Use `pyperclip.copy()` + `Ctrl+V` for non-ASCII text, long strings, or any text containing backslashes (`\`). Example for typing a password with a backslash: `pyperclip.copy('my\\pass'); pyautogui.hotkey('ctrl', 'v')`
 - Multiple actions can be in a single code block (they execute sequentially)
 - Do NOT use `pyautogui.locateOnScreen()` or image-based location — use coordinates from the screenshot
