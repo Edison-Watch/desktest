@@ -78,25 +78,8 @@ pub async fn run_doctor(config: &Config) -> bool {
     // API key check
     print!("API key ({}) ... ", config.provider);
     let _ = std::io::stdout().flush();
-    match check_api_key(config) {
-        Ok(()) => {
-            // Show which source the key came from (without revealing it)
-            let source = if !config.api_key.is_empty() {
-                "config file"
-            } else {
-                let provider_env = match config.provider.as_str() {
-                    "openai" => "OPENAI_API_KEY",
-                    "anthropic" => "ANTHROPIC_API_KEY",
-                    _ => "",
-                };
-                if !provider_env.is_empty()
-                    && std::env::var(provider_env).map_or(false, |k| !k.is_empty())
-                {
-                    provider_env
-                } else {
-                    "LLM_API_KEY"
-                }
-            };
+    match provider::resolve_api_key_with_source(&config.api_key, &config.provider) {
+        Ok((_key, source)) => {
             println!("ok (from {source})");
         }
         Err(e) => {
