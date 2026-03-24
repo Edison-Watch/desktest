@@ -63,6 +63,10 @@ pub struct Cli {
     #[arg(long, default_value_t = 7860, global = true)]
     pub monitor_port: u16,
 
+    /// Directory for trajectory, screenshots, and a11y tree artifacts (default: ./desktest_artifacts/)
+    #[arg(long, global = true)]
+    pub artifacts_dir: Option<std::path::PathBuf>,
+
     /// Allow the agent to run bash commands inside the container for debugging (disabled by default — the agent can "cheat" by using bash instead of the GUI)
     #[arg(long = "with-bash", default_value_t = false, global = true)]
     pub with_bash: bool,
@@ -250,6 +254,20 @@ EXAMPLES:
         /// Force update even if already on the latest version
         #[arg(long, default_value_t = false)]
         force: bool,
+    },
+
+    /// Start a persistent monitor server that watches artifact directories for multi-phase runs
+    #[command(after_help = "\
+Watches an artifacts directory tree for trajectory files from multiple \
+desktest attach/run phases. Each subdirectory with a trajectory.jsonl \
+is treated as a separate phase, displayed in a single timeline.\n\n\
+EXAMPLES:
+  desktest monitor --watch ./artifacts/
+  desktest monitor --watch ./artifacts/ --monitor-port 8080")]
+    Monitor {
+        /// Directory tree to watch for phase subdirectories
+        #[arg(long)]
+        watch: std::path::PathBuf,
     },
 
     /// Generate an interactive HTML trajectory viewer (best for human review in a browser)

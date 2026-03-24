@@ -107,7 +107,7 @@ pub(crate) async fn resolve_image_name<'a>(
 /// This is the new task-based flow: load task → create container → wait for desktop →
 /// run setup steps → deploy & launch app → run agent loop → cleanup.
 pub(crate) async fn run_task(
-    task_def: task::TaskDefinition,
+    mut task_def: task::TaskDefinition,
     mut config: Config,
     debug: bool,
     verbose: bool,
@@ -116,6 +116,7 @@ pub(crate) async fn run_task(
     output_dir: std::path::PathBuf,
     monitor: Option<monitor::MonitorHandle>,
     qa: bool,
+    artifacts_dir_override: Option<std::path::PathBuf>,
 ) -> Result<AgentOutcome, AppError> {
     let start = Instant::now();
 
@@ -127,13 +128,21 @@ pub(crate) async fn run_task(
         ));
     }
 
+    // Resolve secrets from environment variables and apply substitution
+    let resolved_secrets = task_def.resolve_secrets()?;
+    task_def.apply_secrets(&resolved_secrets)?;
+    let redactor = crate::redact::Redactor::new(resolved_secrets.values().cloned());
+
     // Populate config app fields from task definition (needed when no --config file)
     config.apply_task_app(&task_def.app);
 
     // Set up artifacts directory
-    let artifacts_dir = std::env::current_dir()
-        .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
-        .join("desktest_artifacts");
+    let artifacts_dir = match artifacts_dir_override {
+        Some(dir) => dir,
+        None => std::env::current_dir()
+            .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
+            .join("desktest_artifacts"),
+    };
     std::fs::create_dir_all(&artifacts_dir)
         .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
 
@@ -141,6 +150,12 @@ pub(crate) async fn run_task(
     let custom_image = match &task_def.app {
         task::AppConfig::DockerImage { image, .. } => Some(image.as_str()),
         _ => None,
+    };
+
+    let extra_env = if resolved_secrets.is_empty() {
+        None
+    } else {
+        Some(&resolved_secrets)
     };
 
     // Build electron image + create container (inside select! so Ctrl+C works)
@@ -153,7 +168,7 @@ pub(crate) async fn run_task(
         }
         r = async {
             let effective_image = resolve_image_name(&config, custom_image).await?;
-            docker::DockerSession::create(&config, effective_image).await
+            docker::DockerSession::create(&config, effective_image, extra_env).await
         } => r?,
     };
 
@@ -165,7 +180,7 @@ pub(crate) async fn run_task(
             eprintln!("\nInterrupted (Ctrl+C), cleaning up...");
             Err(AppError::Infra("Interrupted by user".into()))
         }
-        r = run_task_inner(&task_def, &config, &session, &artifacts_dir, debug, verbose, bash_enabled, no_recording, monitor.as_ref(), start, qa) => r,
+        r = run_task_inner(&task_def, &config, &session, &artifacts_dir, debug, verbose, bash_enabled, no_recording, monitor.as_ref(), start, qa, Some(&redactor)) => r,
     };
 
     // Always collect artifacts and clean up
@@ -183,6 +198,7 @@ pub(crate) async fn run_task(
         &output_dir,
         start,
         qa,
+        Some(&redactor),
     )
 }
 
@@ -197,18 +213,27 @@ fn finalize_run(
     output_dir: &std::path::Path,
     start: Instant,
     qa: bool,
+    redactor: Option<&crate::redact::Redactor>,
 ) -> Result<AgentOutcome, AppError> {
     let duration_ms = start.elapsed().as_millis() as u64;
 
     // Save task definition to artifacts for review HTML
     let task_json_path = artifacts_dir.join("task.json");
-    match serde_json::to_string_pretty(task_def) {
-        Ok(json) => {
-            if let Err(e) = std::fs::write(&task_json_path, &json) {
-                tracing::warn!("Failed to write task.json to artifacts: {e}");
+    match serde_json::to_value(task_def) {
+        Ok(mut value) => {
+            if let Some(redactor) = redactor {
+                crate::redact::redact_json_value(&mut value, redactor);
+            }
+            match serde_json::to_string_pretty(&value) {
+                Ok(json) => {
+                    if let Err(e) = std::fs::write(&task_json_path, &json) {
+                        tracing::warn!("Failed to write task.json to artifacts: {e}");
+                    }
+                }
+                Err(e) => tracing::warn!("Failed to serialize task definition: {e}"),
             }
         }
-        Err(e) => tracing::warn!("Failed to serialize task definition: {e}"),
+        Err(e) => tracing::warn!("Failed to convert task definition to JSON value: {e}"),
     }
 
     // Write results.json
@@ -230,7 +255,7 @@ fn finalize_run(
         ),
         Err(e) => results::from_error(test_id, e, duration_ms),
     };
-    if let Err(e) = results::write_results(&test_result, output_dir) {
+    if let Err(e) = results::write_results(&test_result, output_dir, redactor) {
         tracing::warn!("Failed to write results.json: {e}");
     }
 
@@ -249,6 +274,7 @@ async fn run_task_inner(
     monitor: Option<&monitor::MonitorHandle>,
     start_time: Instant,
     qa: bool,
+    redactor: Option<&crate::redact::Redactor>,
 ) -> Result<TaskRunResult, AppError> {
     use task::EvaluatorMode;
 
@@ -292,7 +318,7 @@ async fn run_task_inner(
     // 3. Run setup steps from task definition (after deploy, before app launch)
     if !task_def.config.is_empty() {
         info!("Running {} setup steps...", task_def.config.len());
-        setup::run_setup_steps(session, &task_def.config).await?;
+        setup::run_setup_steps(session, &task_def.config, redactor).await?;
     }
 
     // 4. Launch app
@@ -382,10 +408,22 @@ async fn run_task_inner(
 
     // Publish TestStart for live monitoring
     if let Some(m) = monitor {
+        let instruction = match redactor {
+            Some(redactor) => redactor.redact(&task_def.instruction),
+            None => task_def.instruction.clone(),
+        };
+        let completion_condition =
+            task_def
+                .completion_condition
+                .as_ref()
+                .map(|condition| match redactor {
+                    Some(redactor) => redactor.redact(condition),
+                    None => condition.clone(),
+                });
         m.send(monitor::MonitorEvent::TestStart {
             test_id: task_def.id.clone(),
-            instruction: task_def.instruction.clone(),
-            completion_condition: task_def.completion_condition.clone(),
+            instruction,
+            completion_condition,
             vnc_url,
             max_steps: task_def.max_steps as usize,
         });
@@ -405,6 +443,7 @@ async fn run_task_inner(
         monitor,
         start_time,
         qa,
+        redactor,
     )
     .await
 }
@@ -425,6 +464,7 @@ async fn run_eval_loop(
     monitor: Option<&monitor::MonitorHandle>,
     start_time: Instant,
     qa: bool,
+    redactor: Option<&crate::redact::Redactor>,
 ) -> Result<TaskRunResult, AppError> {
     use task::EvaluatorMode;
 
@@ -449,7 +489,7 @@ async fn run_eval_loop(
 
             // Create trajectory logger so review HTML has something to display
             let mut trajectory_logger =
-                match crate::trajectory::TrajectoryLogger::new(artifacts_dir, verbose) {
+                match crate::trajectory::TrajectoryLogger::new(artifacts_dir, verbose, redactor.cloned()) {
                     Ok(tl) => Some(tl),
                     Err(e) => {
                         tracing::warn!("Failed to create trajectory logger, review HTML may be empty: {e}");
@@ -553,6 +593,7 @@ async fn run_eval_loop(
                 recording.as_ref(),
                 monitor,
                 qa,
+                redactor,
             )
             .await;
 
@@ -583,6 +624,7 @@ async fn run_eval_loop(
                 recording.as_ref(),
                 monitor,
                 qa,
+                redactor,
             )
             .await;
 
@@ -715,6 +757,7 @@ async fn run_agent_loop(
     recording: Option<&recording::Recording>,
     monitor: Option<&monitor::MonitorHandle>,
     qa: bool,
+    redactor: Option<&crate::redact::Redactor>,
 ) -> Result<AgentOutcome, AppError> {
     let llm_client = provider::create_provider(
         &config.provider,
@@ -738,6 +781,7 @@ async fn run_agent_loop(
         recording,
         monitor.cloned(),
         task_def.id.clone(),
+        redactor.cloned(),
     );
     agent_loop.run().await
 }
@@ -748,7 +792,7 @@ async fn run_agent_loop(
 /// It connects to the given container by ID/name and runs the agent loop
 /// and evaluation against it.
 pub(crate) async fn run_attach(
-    task_def: task::TaskDefinition,
+    mut task_def: task::TaskDefinition,
     mut config: Config,
     container: &str,
     debug: bool,
@@ -758,8 +802,14 @@ pub(crate) async fn run_attach(
     output_dir: std::path::PathBuf,
     monitor: Option<monitor::MonitorHandle>,
     qa: bool,
+    artifacts_dir_override: Option<std::path::PathBuf>,
 ) -> Result<AgentOutcome, AppError> {
     let start = Instant::now();
+
+    // Resolve secrets from environment variables and apply substitution
+    let resolved_secrets = task_def.resolve_secrets()?;
+    task_def.apply_secrets(&resolved_secrets)?;
+    let redactor = crate::redact::Redactor::new(resolved_secrets.values().cloned());
 
     // Warn if the task isn't designed for attach mode
     if !matches!(task_def.app, task::AppConfig::VncAttach { .. }) {
@@ -781,9 +831,12 @@ pub(crate) async fn run_attach(
     config.apply_task_app(&task_def.app);
 
     // Set up artifacts directory
-    let artifacts_dir = std::env::current_dir()
-        .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
-        .join("desktest_artifacts");
+    let artifacts_dir = match artifacts_dir_override {
+        Some(dir) => dir,
+        None => std::env::current_dir()
+            .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
+            .join("desktest_artifacts"),
+    };
     std::fs::create_dir_all(&artifacts_dir)
         .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
 
@@ -799,7 +852,7 @@ pub(crate) async fn run_attach(
             eprintln!("\nInterrupted (Ctrl+C)");
             Err(AppError::Infra("Interrupted by user".into()))
         }
-        r = run_attach_inner(&task_def, &config, &session, &artifacts_dir, debug, verbose, bash_enabled, no_recording, monitor.as_ref(), start, qa) => r,
+        r = run_attach_inner(&task_def, &config, &session, &artifacts_dir, debug, verbose, bash_enabled, no_recording, monitor.as_ref(), start, qa, Some(&redactor)) => r,
     };
 
     // Collect artifacts but do NOT clean up the container (we don't own it)
@@ -814,6 +867,7 @@ pub(crate) async fn run_attach(
         &output_dir,
         start,
         qa,
+        Some(&redactor),
     )
 }
 
@@ -834,6 +888,7 @@ async fn run_attach_inner(
     monitor: Option<&monitor::MonitorHandle>,
     start_time: Instant,
     qa: bool,
+    redactor: Option<&crate::redact::Redactor>,
 ) -> Result<TaskRunResult, AppError> {
     let eval_mode = task_def
         .evaluator
@@ -853,15 +908,27 @@ async fn run_attach_inner(
     // Run setup steps if any (execute, copy, sleep are useful in attach mode)
     if !task_def.config.is_empty() {
         info!("Running {} setup steps...", task_def.config.len());
-        setup::run_setup_steps(session, &task_def.config).await?;
+        setup::run_setup_steps(session, &task_def.config, redactor).await?;
     }
 
     // Publish TestStart for live monitoring
     if let Some(m) = monitor {
+        let instruction = match redactor {
+            Some(redactor) => redactor.redact(&task_def.instruction),
+            None => task_def.instruction.clone(),
+        };
+        let completion_condition =
+            task_def
+                .completion_condition
+                .as_ref()
+                .map(|condition| match redactor {
+                    Some(redactor) => redactor.redact(condition),
+                    None => condition.clone(),
+                });
         m.send(monitor::MonitorEvent::TestStart {
             test_id: task_def.id.clone(),
-            instruction: task_def.instruction.clone(),
-            completion_condition: task_def.completion_condition.clone(),
+            instruction,
+            completion_condition,
             vnc_url: String::new(),
             max_steps: task_def.max_steps as usize,
         });
@@ -881,6 +948,7 @@ async fn run_attach_inner(
         monitor,
         start_time,
         qa,
+        redactor,
     )
     .await
 }

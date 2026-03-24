@@ -316,6 +316,7 @@ pub async fn run_suite(
             test_output_dir.clone(),
             monitor.clone(),
             qa,
+            None,
         )
         .await;
 

@@ -154,7 +154,11 @@ pub fn from_error(test_id: &str, error: &AppError, duration_ms: u64) -> TestResu
 }
 
 /// Write a TestResult as results.json to the specified output directory.
-pub fn write_results(result: &TestResult, output_dir: &Path) -> Result<(), AppError> {
+pub fn write_results(
+    result: &TestResult,
+    output_dir: &Path,
+    redactor: Option<&crate::redact::Redactor>,
+) -> Result<(), AppError> {
     std::fs::create_dir_all(output_dir).map_err(|e| {
         AppError::Infra(format!(
             "Cannot create output directory '{}': {e}",
@@ -163,7 +167,12 @@ pub fn write_results(result: &TestResult, output_dir: &Path) -> Result<(), AppEr
     })?;
 
     let results_path = output_dir.join("results.json");
-    let json = serde_json::to_string_pretty(result)
+    let mut value = serde_json::to_value(result)
+        .map_err(|e| AppError::Infra(format!("Failed to serialize results: {e}")))?;
+    if let Some(redactor) = redactor {
+        crate::redact::redact_json_value(&mut value, redactor);
+    }
+    let json = serde_json::to_string_pretty(&value)
         .map_err(|e| AppError::Infra(format!("Failed to serialize results: {e}")))?;
 
     std::fs::write(&results_path, &json).map_err(|e| {
@@ -387,7 +396,7 @@ mod tests {
         let outcome = make_outcome(true, "OK");
         let result = from_outcome("test-write", &outcome, None, 100, false);
 
-        write_results(&result, tmp.path()).unwrap();
+        write_results(&result, tmp.path(), None).unwrap();
 
         let path = tmp.path().join("results.json");
         assert!(path.exists());
@@ -405,10 +414,24 @@ mod tests {
         let outcome = make_outcome(true, "OK");
         let result = from_outcome("test-nested", &outcome, None, 200, false);
 
-        write_results(&result, &nested).unwrap();
+        write_results(&result, &nested, None).unwrap();
 
         let path = nested.join("results.json");
         assert!(path.exists());
+    }
+
+    #[test]
+    fn test_write_results_redacts_sensitive_fields() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outcome = make_outcome(false, "Use token hunter2");
+        let result = from_outcome("test-redact", &outcome, None, 100, false);
+        let redactor = crate::redact::Redactor::new(vec!["hunter2".to_string()]);
+
+        write_results(&result, tmp.path(), Some(&redactor)).unwrap();
+
+        let contents = std::fs::read_to_string(tmp.path().join("results.json")).unwrap();
+        assert!(contents.contains("[REDACTED]"));
+        assert!(!contents.contains("hunter2"));
     }
 
     // --- Exit code alignment ---

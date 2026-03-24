@@ -424,7 +424,7 @@ dependencies = [
 
 [[package]]
 name = "desktest"
-version = "0.9.3"
+version = "0.11.0"
 dependencies = [
  "assert_cmd",
  "axum",

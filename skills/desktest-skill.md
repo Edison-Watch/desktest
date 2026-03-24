@@ -42,6 +42,19 @@ desktest logs desktest_artifacts/ --steps 1,3,5-8  # Mix individual steps and ra
 desktest review desktest_artifacts/             # Open interactive HTML viewer in browser
 ```
 
+### Multi-phase monitoring
+
+```bash
+# Run phases with separate artifact directories (prevents overwrites)
+desktest attach p1.json --artifacts-dir ./artifacts/phase-1 --container $C --replay
+desktest attach p2.json --artifacts-dir ./artifacts/phase-2 --container $C --replay
+desktest attach p3.json --artifacts-dir ./artifacts/phase-3 --container $C
+
+# Start a persistent monitor that watches all phases in one timeline
+desktest monitor --watch ./artifacts/                     # Default port 7860
+desktest monitor --watch ./artifacts/ --monitor-port 8080 # Custom port
+```
+
 ### Other commands
 
 ```bash
@@ -51,6 +64,8 @@ desktest interactive task.json --step           # Step through agent actions one
 desktest attach task.json --container ID        # Attach to already-running container
 desktest codify desktest_artifacts/trajectory.jsonl  # Convert trajectory to deterministic replay script
 desktest codify trajectory.jsonl --overwrite task.json  # Generate script + inject replay_script into task JSON
+desktest update                                 # Update desktest to the latest GitHub release
+desktest update --force                         # Force reinstall even if already on latest
 ```
 
 ## Developer Workflows
@@ -73,6 +88,19 @@ This is the key workflow for coding agents like Claude Code:
 4. Human reruns: `desktest run task.json --monitor` — verify the fix
 
 `--monitor` is for human eyes (real-time web dashboard). `logs` is for agent consumption (structured terminal output). Together they close the loop.
+
+### Workflow 3: Multi-Phase Monitoring
+
+For E2E suites that run multiple `desktest attach` phases against the same container:
+
+1. Start the persistent monitor: `desktest monitor --watch ./artifacts/`
+2. Run each phase with a separate artifacts dir:
+   - `desktest attach p1.json --artifacts-dir ./artifacts/phase-1 --container $C --replay`
+   - `desktest attach p2.json --artifacts-dir ./artifacts/phase-2 --container $C --replay`
+   - `desktest attach p3.json --artifacts-dir ./artifacts/phase-3 --container $C`
+3. Open `http://localhost:7860` — all phases appear in a single timeline with phase dividers
+
+The monitor watches for new subdirectories and tails their `trajectory.jsonl` files in real time. Each phase gets its own artifact directory, preventing overwrites.
 
 ## Using `desktest logs` (Important for Agents)
 
@@ -132,6 +160,7 @@ Shows every step with full detail (thought + action code + result).
 | `--record` | Enable video recording (produces recording.mp4) |
 | `--monitor` | Enable live monitoring web dashboard |
 | `--monitor-port <PORT>` | Port for dashboard (default: 7860) |
+| `--artifacts-dir <DIR>` | Directory for trajectory, screenshots, and a11y trees (default: ./desktest_artifacts/) |
 | `--with-bash` | Allow agent to run bash commands inside the container (disabled by default — agent can "cheat") |
 | `--qa` | Enable QA bug reporting mode — agent reports app bugs as structured markdown in `bugs/` |
 | `--replay` | Use `replay_script` from task JSON for deterministic execution (no LLM, no API costs). Only on `run` subcommand |
@@ -149,22 +178,22 @@ Shows every step with full detail (thought + action code + result).
 
 ## Artifacts
 
-After a test run, artifacts are in `desktest_artifacts/`:
+After a test run, artifacts are in `desktest_artifacts/` (or the directory specified by `--artifacts-dir`):
 
 ```
 desktest_artifacts/
-  trajectory.jsonl          # Step-by-step agent log (used by `logs` and `codify`)
-  agent_conversation.json   # Full LLM conversation
-  step_001.png              # Screenshot per step
-  step_001_a11y.txt         # Accessibility tree per step
+  trajectory.jsonl          # Step-by-step agent log (used by `logs` and `codify`; secrets redacted)
+  agent_conversation.json   # Full LLM conversation (secrets redacted)
+  step_001.png              # Screenshot per step (NOT redacted — may contain on-screen secret values)
+  step_001_a11y.txt         # Accessibility tree per step (NOT redacted — may contain on-screen secret values)
   recording.mp4             # Video (only with --record)
-  task.json                 # Copy of the task definition
+  task.json                 # Copy of the task definition (secrets redacted)
   bugs/                     # Bug reports (only with --qa)
     BUG-001.md              #   Structured markdown bug report
     BUG-002.md
 
 test-results/
-  results.json              # Structured pass/fail results
+  results.json              # Structured pass/fail results (secrets redacted)
 ```
 
 ## Task JSON Schema
@@ -180,8 +209,12 @@ test-results/
     "path": "./app.AppImage",
     "electron": true
   },
+  "secrets": {
+    "username": { "env": "APP_USERNAME", "default": "testuser" },
+    "password": { "env": "APP_PASSWORD" }
+  },
   "config": [
-    { "type": "execute", "command": "npm install" },
+    { "type": "execute", "command": "./setup.sh --token '{{password}}'" },
     { "type": "copy", "src": "./file", "dest": "/home/tester/file" },
     { "type": "sleep", "seconds": 2 }
   ],
@@ -204,6 +237,29 @@ test-results/
 **`replay_script`** (optional): Path to a codified replay script (generated by `desktest codify --overwrite`). When present, `desktest run --replay` uses this script for fully deterministic execution — no LLM, no API costs.
 
 **`completion_condition`** (optional): Lets you define the success criteria separately from the task instruction. When present, it's appended to the instruction sent to the agent and shown as a collapsible section in the review/live dashboards. Useful for long task descriptions where mixing the goal and success criteria makes the prompt hard to read.
+
+## Task Secrets (Environment Variable Credentials)
+
+The `secrets` field lets you pass credentials without hardcoding them in the task JSON. Secrets are:
+
+- **Sourced from environment variables** — each secret declares an `env` key (required) and an optional `default`
+- **Substituted** via `{{key}}` syntax in `instruction`, `completion_condition`, app config fields, all setup step string fields, and evaluator metric fields
+- **Redacted** from all output — trajectory logs, conversation logs, results.json, task.json artifacts, tracing, and step previews all show `[REDACTED]` instead of the actual value
+- **Injected** into the container as `DESKTEST_SECRET_{key}` environment variables, where `{key}` is the literal secret name from the JSON (e.g. `password` → `DESKTEST_SECRET_password`)
+
+```json
+{
+  "secrets": {
+    "username": { "env": "APP_USERNAME", "default": "testuser" },
+    "password": { "env": "APP_PASSWORD" }
+  },
+  "instruction": "Log in as {{username}} with password {{password}}"
+}
+```
+
+- Missing env var without default → `Config` error at load time
+- `{{key}}` referencing an undefined secret name → `Config` error at load time
+- Values shorter than 3 characters are not redacted (to avoid over-redacting common substrings)
 
 ## --with-bash Philosophy
 

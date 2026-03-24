@@ -317,14 +317,40 @@ if (MODE === 'live') {
   // Connect to SSE
   var evtSource = new EventSource('/events');
 
-  evtSource.addEventListener('test_start', function(e) {
+  var MULTI_PHASE = false;
+
+  evtSource.addEventListener('phase_start', function(e) {
     var data = JSON.parse(e.data);
-    // Clear previous test's steps and final-status div
-    STEPS = [];
-    stepList.innerHTML = '';
-    mainPanel.innerHTML = '<div class="empty">Waiting for first step...</div>';
+    MULTI_PHASE = true;
+    // Insert a phase divider in the step list (do NOT clear steps)
+    var divider = document.createElement('div');
+    divider.className = 'phase-divider';
+    divider.id = 'phase-' + encodeURIComponent(data.phase_id);
+    divider.innerHTML = '<span class="phase-label">' + escapeHtml(data.phase_name) + '</span>';
+    divider.style.cssText = 'padding:8px 16px;background:#1c2128;border-bottom:1px solid #30363d;font-size:12px;font-weight:600;color:#d2a8ff;text-transform:uppercase;letter-spacing:0.5px;cursor:pointer;';
+    divider.addEventListener('click', function() {
+      var target = divider.nextElementSibling || divider;
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    stepList.appendChild(divider);
+    // Remove "awaiting next phase" indicator if present
+    var awaiting = document.getElementById('awaiting-phase');
+    if (awaiting) awaiting.remove();
+    // Remove old final-status bar for this transition
     var oldStatus = document.getElementById('final-status-bar');
     if (oldStatus) oldStatus.remove();
+  });
+
+  evtSource.addEventListener('test_start', function(e) {
+    var data = JSON.parse(e.data);
+    if (!MULTI_PHASE) {
+      // Single-phase mode: clear previous test's steps and final-status div
+      STEPS = [];
+      stepList.innerHTML = '';
+      mainPanel.innerHTML = '<div class="empty">Waiting for first step...</div>';
+      var oldStatus = document.getElementById('final-status-bar');
+      if (oldStatus) oldStatus.remove();
+    }
     liveHeader.innerHTML = buildLiveHeaderHtml(data);
   });
 
@@ -343,6 +369,13 @@ if (MODE === 'live') {
     var index = STEPS.length;
     STEPS.push(step);
     addStepToSidebar(step, index);
+    // In multi-phase mode, release base64 screenshot data from older steps
+    // to prevent browser memory exhaustion during long runs.
+    // Keep the last 50 screenshots; older steps retain metadata but not image data.
+    if (MULTI_PHASE && STEPS.length > 50) {
+      var evictIdx = STEPS.length - 51;
+      if (STEPS[evictIdx]) STEPS[evictIdx].screenshot = null;
+    }
     // Auto-select the latest step
     selectStep(index);
     // Auto-scroll sidebar to bottom
@@ -357,8 +390,23 @@ if (MODE === 'live') {
     var statusDiv = document.createElement('div');
     statusDiv.id = 'final-status-bar';
     statusDiv.className = 'final-status';
-    statusDiv.innerHTML = '<span class="badge ' + (data.passed ? 'pass' : 'fail') + '">' + (data.passed ? 'PASS' : 'FAIL') + '</span><div style="margin-top:8px;font-size:13px;color:#8b949e">' + escapeHtml(data.reasoning) + '</div><div style="margin-top:4px;font-size:12px;color:#484f58">' + (data.duration_ms / 1000).toFixed(1) + 's</div>';
+    statusDiv.innerHTML = '<span class="badge ' + (data.passed ? 'pass' : 'fail') + '">' + (data.passed ? 'PASS' : 'FAIL') + '</span><div style="margin-top:8px;font-size:13px;color:#8b949e">' + escapeHtml(data.reasoning) + '</div><div style="margin-top:4px;font-size:12px;color:#484f58">' + (data.duration_ms > 0 ? (data.duration_ms / 1000).toFixed(1) + 's' : '') + '</div>';
     liveHeader.parentNode.insertBefore(statusDiv, stepList);
+
+    if (MULTI_PHASE) {
+      // Show "awaiting next phase" indicator in the step list
+      var awaiting = document.createElement('div');
+      awaiting.id = 'awaiting-phase';
+      awaiting.style.cssText = 'padding:12px 16px;text-align:center;font-size:12px;color:#8b949e;font-style:italic;border-bottom:1px solid #21262d;';
+      awaiting.innerHTML = '<span class="live-dot" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#8b949e;animation:pulse 1.5s ease-in-out infinite;margin-right:6px;vertical-align:middle;"></span>Awaiting next phase...';
+      stepList.appendChild(awaiting);
+      stepList.parentElement.scrollTop = stepList.parentElement.scrollHeight;
+      // Auto-hide after 60s if no new phase arrives
+      setTimeout(function() {
+        var el = document.getElementById('awaiting-phase');
+        if (el) el.remove();
+      }, 60000);
+    }
   });
 
   evtSource.addEventListener('suite_progress', function(e) {

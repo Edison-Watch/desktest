@@ -31,6 +31,7 @@ pub(crate) async fn run_interactive(
     step: bool,
     validate_only: bool,
     qa: bool,
+    artifacts_dir_override: Option<std::path::PathBuf>,
 ) -> Result<AgentOutcome, AppError> {
     // Guard: vnc_attach tasks must use `desktest attach`, not `desktest interactive`
     if matches!(task_def.app, task::AppConfig::VncAttach { .. }) {
@@ -65,6 +66,7 @@ pub(crate) async fn run_interactive(
             output_dir,
             None,
             qa,
+            artifacts_dir_override,
         )
         .await;
     }
@@ -80,21 +82,26 @@ pub(crate) async fn run_interactive(
             no_recording,
             output_dir,
             qa,
+            artifacts_dir_override,
         )
         .await;
     }
 
     // Default interactive: start container, run setup, print VNC info, pause
-    run_interactive_pause(task_def, config, debug, no_recording).await
+    run_interactive_pause(task_def, config, debug, no_recording, artifacts_dir_override).await
 }
 
 /// Interactive mode: start container, run setup steps, print VNC info, pause.
 async fn run_interactive_pause(
-    task_def: task::TaskDefinition,
+    mut task_def: task::TaskDefinition,
     mut config: Config,
     debug: bool,
     no_recording: bool,
+    artifacts_dir_override: Option<std::path::PathBuf>,
 ) -> Result<AgentOutcome, AppError> {
+    let resolved_secrets = task_def.resolve_secrets()?;
+    task_def.apply_secrets(&resolved_secrets)?;
+    let redactor = crate::redact::Redactor::new(resolved_secrets.values().cloned());
     config.apply_task_app(&task_def.app);
     let timeout = Duration::from_secs(config.startup_timeout_seconds);
 
@@ -102,6 +109,11 @@ async fn run_interactive_pause(
     let custom_image = match &task_def.app {
         task::AppConfig::DockerImage { image, .. } => Some(image.as_str()),
         _ => None,
+    };
+    let extra_env = if resolved_secrets.is_empty() {
+        None
+    } else {
+        Some(&resolved_secrets)
     };
 
     info!("Creating Docker container...");
@@ -113,7 +125,7 @@ async fn run_interactive_pause(
         }
         r = async {
             let effective_image = resolve_image_name(&config, custom_image).await?;
-            docker::DockerSession::create(&config, effective_image).await
+            docker::DockerSession::create(&config, effective_image, extra_env).await
         } => r?,
     };
 
@@ -123,14 +135,17 @@ async fn run_interactive_pause(
             eprintln!("\nInterrupted (Ctrl+C), cleaning up...");
             Err(AppError::Infra("Interrupted by user".into()))
         }
-        r = run_interactive_pause_inner(&task_def, &config, &session, timeout, debug, no_recording) => r,
+        r = run_interactive_pause_inner(&task_def, &config, &session, timeout, debug, no_recording, Some(&redactor)) => r,
     };
 
     // Always clean up
     info!("Collecting artifacts...");
-    let artifacts_dir = std::env::current_dir()
-        .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
-        .join("desktest_artifacts");
+    let artifacts_dir = match artifacts_dir_override {
+        Some(dir) => dir,
+        None => std::env::current_dir()
+            .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
+            .join("desktest_artifacts"),
+    };
     let _ = artifacts::collect_artifacts(&session, &artifacts_dir).await;
 
     info!("Cleaning up container...");
@@ -146,6 +161,7 @@ async fn run_interactive_pause_inner(
     timeout: Duration,
     debug: bool,
     _no_recording: bool,
+    redactor: Option<&crate::redact::Redactor>,
 ) -> Result<AgentOutcome, AppError> {
     // 1. Wait for desktop
     info!("Waiting for desktop to be ready...");
@@ -169,7 +185,7 @@ async fn run_interactive_pause_inner(
     // 3. Run setup steps (after deploy, before app launch)
     if !task_def.config.is_empty() {
         info!("Running {} setup steps...", task_def.config.len());
-        setup::run_setup_steps(session, &task_def.config).await?;
+        setup::run_setup_steps(session, &task_def.config, redactor).await?;
     }
 
     // 4. Launch app
@@ -194,7 +210,10 @@ async fn run_interactive_pause_inner(
 
     // 5. Print VNC info and container info
     if let Some(port) = config.vnc_port {
-        println!("VNC available at {}", crate::config::format_host_port(&config.vnc_bind_addr, port));
+        println!(
+            "VNC available at {}",
+            crate::config::format_host_port(&config.vnc_bind_addr, port)
+        );
     }
 
     println!(
@@ -213,7 +232,7 @@ async fn run_interactive_pause_inner(
 
 /// Interactive step mode: run agent one step at a time, pausing after each.
 async fn run_interactive_step(
-    task_def: task::TaskDefinition,
+    mut task_def: task::TaskDefinition,
     mut config: Config,
     debug: bool,
     verbose: bool,
@@ -221,19 +240,31 @@ async fn run_interactive_step(
     no_recording: bool,
     output_dir: std::path::PathBuf,
     qa: bool,
+    artifacts_dir_override: Option<std::path::PathBuf>,
 ) -> Result<AgentOutcome, AppError> {
     let start = Instant::now();
+    let resolved_secrets = task_def.resolve_secrets()?;
+    task_def.apply_secrets(&resolved_secrets)?;
+    let redactor = crate::redact::Redactor::new(resolved_secrets.values().cloned());
     config.apply_task_app(&task_def.app);
 
-    let artifacts_dir = std::env::current_dir()
-        .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
-        .join("desktest_artifacts");
+    let artifacts_dir = match artifacts_dir_override {
+        Some(dir) => dir,
+        None => std::env::current_dir()
+            .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
+            .join("desktest_artifacts"),
+    };
     std::fs::create_dir_all(&artifacts_dir)
         .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
 
     let custom_image = match &task_def.app {
         task::AppConfig::DockerImage { image, .. } => Some(image.as_str()),
         _ => None,
+    };
+    let extra_env = if resolved_secrets.is_empty() {
+        None
+    } else {
+        Some(&resolved_secrets)
     };
 
     info!("Creating Docker container...");
@@ -245,7 +276,7 @@ async fn run_interactive_step(
         }
         r = async {
             let effective_image = resolve_image_name(&config, custom_image).await?;
-            docker::DockerSession::create(&config, effective_image).await
+            docker::DockerSession::create(&config, effective_image, extra_env).await
         } => r?,
     };
 
@@ -258,7 +289,7 @@ async fn run_interactive_step(
             eprintln!("\nInterrupted (Ctrl+C), cleaning up...");
             Err(AppError::Infra("Interrupted by user".into()))
         }
-        r = run_interactive_step_inner(&task_def, &config, &session, &artifacts_dir, timeout, debug, verbose, bash_enabled, no_recording, qa) => r,
+        r = run_interactive_step_inner(&task_def, &config, &session, &artifacts_dir, timeout, debug, verbose, bash_enabled, no_recording, qa, Some(&redactor)) => r,
     };
 
     // Collect artifacts and clean up
@@ -285,7 +316,7 @@ async fn run_interactive_step(
         ),
         Err(e) => results::from_error(&test_id, e, duration_ms),
     };
-    if let Err(e) = results::write_results(&test_result, &output_dir) {
+    if let Err(e) = results::write_results(&test_result, &output_dir, Some(&redactor)) {
         tracing::warn!("Failed to write results.json: {e}");
     }
 
@@ -303,6 +334,7 @@ async fn run_interactive_step_inner(
     bash_enabled: bool,
     no_recording: bool,
     qa: bool,
+    redactor: Option<&crate::redact::Redactor>,
 ) -> Result<TaskRunResult, AppError> {
     use task::EvaluatorMode;
 
@@ -328,7 +360,7 @@ async fn run_interactive_step_inner(
     // 3. Run setup steps (after deploy, before app launch)
     if !task_def.config.is_empty() {
         info!("Running {} setup steps...", task_def.config.len());
-        setup::run_setup_steps(session, &task_def.config).await?;
+        setup::run_setup_steps(session, &task_def.config, redactor).await?;
     }
 
     // 4. Launch app
@@ -359,7 +391,10 @@ async fn run_interactive_step_inner(
 
     // Print VNC info
     if let Some(port) = config.vnc_port {
-        println!("VNC available at {}", crate::config::format_host_port(&config.vnc_bind_addr, port));
+        println!(
+            "VNC available at {}",
+            crate::config::format_host_port(&config.vnc_bind_addr, port)
+        );
     }
 
     // 4. Start video recording (after app is ready so we skip the boot/setup filler)
@@ -401,6 +436,7 @@ async fn run_interactive_step_inner(
         recording.as_ref(),
         None, // no monitor in interactive step mode
         task_def.id.clone(),
+        redactor.cloned(),
     );
 
     let agent_loop_result = agent_loop.run_step_by_step().await;
