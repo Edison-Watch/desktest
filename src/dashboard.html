@@ -325,7 +325,7 @@ if (MODE === 'live') {
     // Insert a phase divider in the step list (do NOT clear steps)
     var divider = document.createElement('div');
     divider.className = 'phase-divider';
-    divider.id = 'phase-' + data.phase_id;
+    divider.id = 'phase-' + encodeURIComponent(data.phase_id);
     divider.innerHTML = '<span class="phase-label">' + escapeHtml(data.phase_name) + '</span>';
     divider.style.cssText = 'padding:8px 16px;background:#1c2128;border-bottom:1px solid #30363d;font-size:12px;font-weight:600;color:#d2a8ff;text-transform:uppercase;letter-spacing:0.5px;cursor:pointer;';
     divider.addEventListener('click', function() {

@@ -183,7 +183,14 @@ fn process_phase(
     // During live monitoring, task.json is written by finalize_run after the agent
     // loop completes, so it may not exist yet. We emit TestStart with defaults
     // immediately, then re-emit with real metadata once task.json appears.
-    if !state.test_start_emitted && !new_entries.is_empty() {
+    // The condition fires on new entries OR when task.json becomes available
+    // (decoupled so the metadata upgrade isn't lost if task.json arrives after
+    // the last trajectory entry).
+    let task_path = phase_dir.join("task.json");
+    let task_json_ready = task_path.exists();
+    let should_emit_test_start =
+        !state.test_start_emitted && (!new_entries.is_empty() || task_json_ready);
+    if should_emit_test_start {
         let (instruction, max_steps) = read_task_metadata(phase_dir);
         handle.send(MonitorEvent::TestStart {
             test_id: display_name.to_string(),
@@ -194,8 +201,7 @@ fn process_phase(
         });
         // Only mark as fully emitted once task.json actually existed,
         // so we re-emit with real metadata when it appears during live runs
-        let task_path = phase_dir.join("task.json");
-        state.test_start_emitted = task_path.exists();
+        state.test_start_emitted = task_json_ready;
     }
 
     for entry in &new_entries {
