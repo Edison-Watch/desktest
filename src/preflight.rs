@@ -105,7 +105,7 @@ pub async fn run_doctor(config: &Config) -> bool {
         }
         Err(e) => {
             println!("FAILED");
-            eprintln!("  {e}");
+            println!("  {e}");
             all_ok = false;
         }
     }
@@ -141,7 +141,7 @@ pub async fn run_doctor(config: &Config) -> bool {
                 "anthropic" => "ANTHROPIC_API_KEY",
                 _ => "LLM_API_KEY",
             };
-            eprintln!("  Set {provider_env} or pass --config with an api_key field");
+            println!("  Set {provider_env} or pass --config with an api_key field");
             all_ok = false;
         }
     }

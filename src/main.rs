@@ -254,7 +254,7 @@ async fn main() {
             let run_config =
                 orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
 
-            let needs_llm = *step && !task_def.is_programmatic_only();
+            let needs_llm = *step && !*validate_only && !task_def.is_programmatic_only();
             if let Err(e) = preflight::run_preflight(&run_config, needs_llm).await {
                 eprintln!("Preflight check failed: {e}");
                 eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
