@@ -487,74 +487,105 @@ async fn run_eval_loop(
         EvaluatorMode::Programmatic => {
             info!("Programmatic mode: skipping agent loop, running evaluation...");
 
-            // Create trajectory logger so review HTML has something to display
-            let mut trajectory_logger =
+            let evaluator = task_def.evaluator.as_ref().expect(
+                "Programmatic mode requires evaluator config (validated at task load time)",
+            );
+
+            // ScriptReplay metrics write their own trajectory with per-step screenshots,
+            // so skip the generic pre/post trajectory for replay runs.
+            // NOTE: uses `.any()` so mixed evaluators (ScriptReplay + other metrics)
+            // also skip the generic trajectory. This is acceptable because
+            // apply_replay_override always places ScriptReplay first and replay mode
+            // doesn't normally mix with other metric types.
+            let has_replay = evaluator
+                .metrics
+                .iter()
+                .any(|m| matches!(m, task::MetricConfig::ScriptReplay { .. }));
+
+            let mut screenshot_count = 0usize;
+            let mut trajectory_logger: Option<crate::trajectory::TrajectoryLogger> = if !has_replay {
                 match crate::trajectory::TrajectoryLogger::new(artifacts_dir, verbose, redactor.cloned()) {
                     Ok(tl) => Some(tl),
                     Err(e) => {
                         tracing::warn!("Failed to create trajectory logger, review HTML may be empty: {e}");
                         None
                     }
-                };
+                }
+            } else {
+                None
+            };
 
-            // Capture pre-evaluation screenshot
-            let mut screenshot_count = 0usize;
-            if let Ok((path, _)) =
-                observation::capture_screenshot_with_retry(session, artifacts_dir, 1).await
-            {
-                screenshot_count += 1;
-                if let Some(ref mut tl) = trajectory_logger {
-                    let entry = crate::trajectory::TrajectoryEntry {
-                        step: 1,
-                        timestamp: crate::trajectory::chrono_iso8601_now(),
-                        action_code: String::new(),
-                        thought: Some("Pre-evaluation screenshot".into()),
-                        screenshot_path: path.file_name().map(|n| n.to_string_lossy().to_string()),
-                        a11y_tree_path: None,
-                        result: "success".into(),
-                        llm_raw_response: None,
-                        bash_output: None,
-                        error_feedback: None,
-                    };
-                    tl.log_entry(&entry);
+            // Capture pre-evaluation screenshot (non-replay only)
+            if !has_replay {
+                if let Ok((path, _)) =
+                    observation::capture_screenshot_with_retry(session, artifacts_dir, 1).await
+                {
+                    screenshot_count += 1;
+                    if let Some(ref mut tl) = trajectory_logger {
+                        let entry = crate::trajectory::TrajectoryEntry {
+                            step: 1,
+                            timestamp: crate::trajectory::chrono_iso8601_now(),
+                            action_code: String::new(),
+                            thought: Some("Pre-evaluation screenshot".into()),
+                            screenshot_path: path.file_name().map(|n| n.to_string_lossy().to_string()),
+                            a11y_tree_path: None,
+                            result: "success".into(),
+                            llm_raw_response: None,
+                            bash_output: None,
+                            error_feedback: None,
+                        };
+                        tl.log_entry(&entry);
+                    }
                 }
             }
 
-            let evaluator = task_def.evaluator.as_ref().expect(
-                "Programmatic mode requires evaluator config (validated at task load time)",
-            );
             let eval_result = evaluator::run_evaluation(session, evaluator, artifacts_dir).await;
 
-            // Capture post-evaluation screenshot
-            if let Ok((path, _)) =
-                observation::capture_screenshot_with_retry(session, artifacts_dir, 2).await
-            {
-                screenshot_count += 1;
-                if let Some(ref mut tl) = trajectory_logger {
-                    let result_str = match &eval_result {
-                        Ok(r) if r.passed => "evaluation_passed",
-                        Ok(_) => "evaluation_failed",
-                        Err(_) => "evaluation_error",
-                    };
-                    let entry = crate::trajectory::TrajectoryEntry {
-                        step: 2,
-                        timestamp: crate::trajectory::chrono_iso8601_now(),
-                        action_code: String::new(),
-                        thought: Some("Post-evaluation screenshot".into()),
-                        screenshot_path: path.file_name().map(|n| n.to_string_lossy().to_string()),
-                        a11y_tree_path: None,
-                        result: result_str.into(),
-                        llm_raw_response: None,
-                        bash_output: None,
-                        error_feedback: None,
-                    };
-                    tl.log_entry(&entry);
+            // Capture post-evaluation screenshot (non-replay only)
+            if !has_replay {
+                if let Ok((path, _)) =
+                    observation::capture_screenshot_with_retry(session, artifacts_dir, 2).await
+                {
+                    screenshot_count += 1;
+                    if let Some(ref mut tl) = trajectory_logger {
+                        let result_str = match &eval_result {
+                            Ok(r) if r.passed => "evaluation_passed",
+                            Ok(_) => "evaluation_failed",
+                            Err(_) => "evaluation_error",
+                        };
+                        let entry = crate::trajectory::TrajectoryEntry {
+                            step: 2,
+                            timestamp: crate::trajectory::chrono_iso8601_now(),
+                            action_code: String::new(),
+                            thought: Some("Post-evaluation screenshot".into()),
+                            screenshot_path: path.file_name().map(|n| n.to_string_lossy().to_string()),
+                            a11y_tree_path: None,
+                            result: result_str.into(),
+                            llm_raw_response: None,
+                            bash_output: None,
+                            error_feedback: None,
+                        };
+                        tl.log_entry(&entry);
+                    }
                 }
             }
 
             if let Some(rec) = &recording {
                 rec.stop(session).await;
                 rec.collect(session, artifacts_dir).await;
+            }
+
+            // For replay runs, derive screenshot_count from trajectory entries that have screenshots
+            if has_replay {
+                let trajectory_path = artifacts_dir.join("trajectory.jsonl");
+                if let Ok(content) = tokio::fs::read_to_string(&trajectory_path).await {
+                    screenshot_count = content
+                        .lines()
+                        .filter(|l| !l.trim().is_empty())
+                        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+                        .filter(|v| v.get("screenshot_path").is_some_and(|p| !p.is_null()))
+                        .count();
+                }
             }
 
             let eval_result = eval_result?;
