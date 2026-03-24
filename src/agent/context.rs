@@ -333,15 +333,15 @@ You interact with the desktop using PyAutoGUI Python code. The following modules
 - `pyautogui.drag(dx, dy, duration=0.5)` — drag from current position
 
 ### Keyboard Actions
-- `pyautogui.typewrite('text', interval=0.05)` — type text (ASCII only, one char at a time)
-- `pyautogui.write('text')` — alias for typewrite
+- `pyautogui.typewrite('text', interval=0.05)` — type text (ASCII only, one char at a time). **WARNING: `typewrite` cannot handle backslashes (`\`) — it will error out. For any text containing `\`, use the clipboard method below instead.**
+- `pyautogui.write('text')` — alias for typewrite (same backslash limitation)
 - `pyautogui.press('key')` — press a single key (enter, tab, escape, backspace, delete, space, etc.)
 - `pyautogui.hotkey('ctrl', 'a')` — press key combination (ctrl+a, alt+f4, ctrl+shift+s, etc.)
 - `pyautogui.keyDown('key')` — hold a key down
 - `pyautogui.keyUp('key')` — release a key
 
-### Clipboard (for Unicode / special characters)
-- `pyperclip.copy('text')` followed by `pyautogui.hotkey('ctrl', 'v')` — paste text (supports Unicode)
+### Clipboard (for Unicode / special characters / backslashes)
+- `pyperclip.copy('text')` followed by `pyautogui.hotkey('ctrl', 'v')` — paste text (supports Unicode, backslashes, and all special characters). **Always use this method when the text contains backslashes (`\`).**
 
 ### Timing
 - `time.sleep(seconds)` — wait for the specified duration
@@ -370,7 +370,7 @@ pyautogui.typewrite('Hello World', interval=0.05)
 - Use precise coordinates based on the screenshot — examine button positions carefully
 - After clicking a menu or button, wait briefly (`time.sleep(0.5)`) for the UI to update
 - If an action doesn't produce the expected result, try a different approach rather than repeating the same action
-- Use `pyperclip.copy()` + `Ctrl+V` for non-ASCII text or long strings
+- Use `pyperclip.copy()` + `Ctrl+V` for non-ASCII text, long strings, or any text containing backslashes (`\`). Example for typing a password with a backslash: `pyperclip.copy('my\\pass'); pyautogui.hotkey('ctrl', 'v')`
 - Multiple actions can be in a single code block (they execute sequentially)
 - Do NOT use `pyautogui.locateOnScreen()` or image-based location — use coordinates from the screenshot
 
