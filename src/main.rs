@@ -92,7 +92,7 @@ async fn main() {
                 }
             };
 
-            if !*replay && task_def.has_replay_script() {
+            if !*replay && task_def.has_replay_script() && !task_def.is_programmatic_only() {
                 eprintln!(
                     "Warning: Task has 'replay_script' but running in LLM mode — did you mean --replay?"
                 );
@@ -199,7 +199,7 @@ async fn main() {
                 }
             };
 
-            if !*replay && task_def.has_replay_script() {
+            if !*replay && task_def.has_replay_script() && !task_def.is_programmatic_only() {
                 eprintln!(
                     "Warning: Task has 'replay_script' but running in LLM mode — did you mean --replay?"
                 );
@@ -459,9 +459,17 @@ async fn main() {
                     let dir_name = screenshots_dir_name
                         .as_deref()
                         .unwrap_or("desktest_artifacts");
-                    // Relativize screenshots dir the same way as replay_script
-                    let dir_abs = std::fs::canonicalize(dir_name)
-                        .unwrap_or_else(|_| std::path::PathBuf::from(dir_name));
+                    // Resolve dir_name against CWD first to get a reliable absolute path,
+                    // then make it relative to task_dir for portability.
+                    let dir_cwd = std::env::current_dir()
+                        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+                    let dir_abs_raw = if std::path::Path::new(dir_name).is_absolute() {
+                        std::path::PathBuf::from(dir_name)
+                    } else {
+                        dir_cwd.join(dir_name)
+                    };
+                    let dir_abs = std::fs::canonicalize(&dir_abs_raw)
+                        .unwrap_or(dir_abs_raw);
                     let dir_rel = dir_abs
                         .strip_prefix(&task_dir)
                         .map(|p| p.to_path_buf())

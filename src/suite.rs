@@ -302,7 +302,7 @@ pub async fn run_suite(
             });
         }
 
-        if entry.task_def.has_replay_script() {
+        if entry.task_def.has_replay_script() && !entry.task_def.is_programmatic_only() {
             eprintln!(
                 "Warning: Task '{}' has 'replay_script' but suite runs in LLM mode — consider using `desktest run --replay` for this task",
                 entry.task_def.id
