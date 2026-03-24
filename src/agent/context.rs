@@ -375,6 +375,7 @@ pyautogui.hotkey('ctrl', 'v')
 - Use `pyperclip.copy()` + `Ctrl+V` for non-ASCII text, long strings, or any text containing backslashes (`\`). Example for typing a password with a backslash: `pyperclip.copy('my\\pass'); pyautogui.hotkey('ctrl', 'v')`
 - Multiple actions can be in a single code block (they execute sequentially)
 - Do NOT use `pyautogui.locateOnScreen()` or image-based location — use coordinates from the screenshot
+- When using xdotool, prefer `windowfocus` over `windowactivate` if the target container has no window manager (`windowactivate` requires `_NET_ACTIVE_WINDOW` support and will silently fail without a WM).
 
 ## Special Commands
 
@@ -475,6 +476,14 @@ mod tests {
         assert!(prompt.contains("pyautogui.hotkey"));
         assert!(prompt.contains("pyautogui.scroll"));
         assert!(prompt.contains("pyperclip.copy"));
+    }
+
+    #[test]
+    fn test_system_prompt_warns_about_windowactivate() {
+        let prompt = build_system_prompt(1280, 800, false, false);
+        assert!(prompt.contains("windowfocus"));
+        assert!(prompt.contains("windowactivate"));
+        assert!(prompt.contains("no window manager"));
     }
 
     #[test]

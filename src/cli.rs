@@ -21,7 +21,7 @@ WORKFLOWS:
                                               #    e.g. \"Claude, look at desktest logs and diagnose\"
 
 EXAMPLES:
-  desktest run task.json --config config.json --output ./results
+  desktest run task.json --config config.json --artifacts-dir ./artifacts
   desktest run task.json --monitor --with-bash
   desktest suite ./tests --filter gedit
   desktest interactive task.json
@@ -35,7 +35,7 @@ pub struct Cli {
     #[arg(long = "config", global = true)]
     pub config_flag: Option<std::path::PathBuf>,
 
-    /// Output directory for results (default: ./test-results/)
+    /// Output directory for test result JSON files (default: ./test-results/)
     #[arg(long, global = true, default_value = results::DEFAULT_OUTPUT_DIR)]
     pub output: std::path::PathBuf,
 
@@ -63,7 +63,7 @@ pub struct Cli {
     #[arg(long, default_value_t = 7860, global = true)]
     pub monitor_port: u16,
 
-    /// Directory for trajectory, screenshots, and a11y tree artifacts (default: ./desktest_artifacts/)
+    /// Directory for trajectory logs, screenshots, and accessibility tree snapshots (default: ./desktest_artifacts/)
     #[arg(long, global = true)]
     pub artifacts_dir: Option<std::path::PathBuf>,
 
@@ -179,6 +179,12 @@ EXAMPLES:
 
     /// Attach to an existing running container and run a task against it
     #[command(after_help = "\
+PREREQUISITES:
+  Docker daemon must be accessible. Desktest uses the Docker API (via the \
+socket) to exec into the target container. The user running desktest needs \
+Docker socket permissions — typically membership in the `docker` group, or \
+`sudo chmod 660 /var/run/docker.sock && sudo chown root:docker /var/run/docker.sock` \
+for temporary local dev access.\n\n\
 EXAMPLES:
   desktest attach task.json --container my-container
   desktest attach task.json --container abc123 --config config.json
