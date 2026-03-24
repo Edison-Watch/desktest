@@ -333,15 +333,15 @@ You interact with the desktop using PyAutoGUI Python code. The following modules
 - `pyautogui.drag(dx, dy, duration=0.5)` — drag from current position
 
 ### Keyboard Actions
-- `pyautogui.typewrite('text', interval=0.05)` — type text (ASCII only, one char at a time)
-- `pyautogui.write('text')` — alias for typewrite
+- `pyautogui.typewrite('text', interval=0.05)` — type text (ASCII only, one char at a time). **WARNING: `typewrite` cannot handle backslashes (`\`) — it will error out. For any text containing `\`, use the clipboard method below instead.**
+- `pyautogui.write('text')` — alias for typewrite (same backslash limitation)
 - `pyautogui.press('key')` — press a single key (enter, tab, escape, backspace, delete, space, etc.)
 - `pyautogui.hotkey('ctrl', 'a')` — press key combination (ctrl+a, alt+f4, ctrl+shift+s, etc.)
 - `pyautogui.keyDown('key')` — hold a key down
 - `pyautogui.keyUp('key')` — release a key
 
-### Clipboard (for Unicode / special characters)
-- `pyperclip.copy('text')` followed by `pyautogui.hotkey('ctrl', 'v')` — paste text (supports Unicode)
+### Clipboard (for Unicode / special characters / backslashes)
+- `pyperclip.copy('text')` followed by `pyautogui.hotkey('ctrl', 'v')` — paste text (supports Unicode, backslashes, and all special characters). **Always use this method when the text contains backslashes (`\`).**
 
 ### Timing
 - `time.sleep(seconds)` — wait for the specified duration
@@ -355,12 +355,13 @@ For each step, you MUST respond with:
 
 Example response format:
 ```
-I can see the text editor is open with an empty document. I need to type "Hello World" into the editor. I'll click on the text area first to make sure it's focused, then type the text.
+I can see the text editor is open with an empty document. I need to type "Hello World" into the editor. I'll click on the text area first to make sure it's focused, then paste the text.
 
 ```python
 pyautogui.click(640, 400)
 time.sleep(0.3)
-pyautogui.typewrite('Hello World', interval=0.05)
+pyperclip.copy('Hello World')
+pyautogui.hotkey('ctrl', 'v')
 ```
 ```
 
@@ -370,7 +371,8 @@ pyautogui.typewrite('Hello World', interval=0.05)
 - Use precise coordinates based on the screenshot — examine button positions carefully
 - After clicking a menu or button, wait briefly (`time.sleep(0.5)`) for the UI to update
 - If an action doesn't produce the expected result, try a different approach rather than repeating the same action
-- Use `pyperclip.copy()` + `Ctrl+V` for non-ASCII text or long strings
+- `pyautogui.typewrite()` is only appropriate for simple backslash-free ASCII text; prefer the clipboard method when in doubt
+- Use `pyperclip.copy()` + `Ctrl+V` for non-ASCII text, long strings, or any text containing backslashes (`\`). Example for typing a password with a backslash: `pyperclip.copy('my\\pass'); pyautogui.hotkey('ctrl', 'v')`
 - Multiple actions can be in a single code block (they execute sequentially)
 - Do NOT use `pyautogui.locateOnScreen()` or image-based location — use coordinates from the screenshot
 
