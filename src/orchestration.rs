@@ -575,6 +575,14 @@ async fn run_eval_loop(
                 rec.collect(session, artifacts_dir).await;
             }
 
+            // For replay runs, derive screenshot_count from the trajectory written by the evaluator
+            if has_replay {
+                let trajectory_path = artifacts_dir.join("trajectory.jsonl");
+                if let Ok(content) = std::fs::read_to_string(&trajectory_path) {
+                    screenshot_count = content.lines().filter(|l| !l.trim().is_empty()).count();
+                }
+            }
+
             let eval_result = eval_result?;
             print_validation_results(None, Some(&eval_result));
 
