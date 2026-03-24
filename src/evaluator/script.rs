@@ -190,7 +190,7 @@ async fn write_replay_trajectory(
         let entry = TrajectoryEntry {
             step: step.step,
             timestamp: chrono_iso8601_now(),
-            action_code: format!("# replay step {}", step.step),
+            action_code: String::new(),
             thought: Some(step.thought.clone()),
             screenshot_path,
             a11y_tree_path: None,

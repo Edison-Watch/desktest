@@ -578,7 +578,7 @@ async fn run_eval_loop(
             // For replay runs, derive screenshot_count from the trajectory written by the evaluator
             if has_replay {
                 let trajectory_path = artifacts_dir.join("trajectory.jsonl");
-                if let Ok(content) = std::fs::read_to_string(&trajectory_path) {
+                if let Ok(content) = tokio::fs::read_to_string(&trajectory_path).await {
                     screenshot_count = content.lines().filter(|l| !l.trim().is_empty()).count();
                 }
             }
