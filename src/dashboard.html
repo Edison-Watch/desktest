@@ -180,13 +180,17 @@ function badgeClass(result) {
   return 'fail';
 }
 
+var VALID_ACTION_TYPES = {'python': true, 'bash': true, 'python + bash': true, 'python+bash': true};
+
 function getActionType(step) {
   // Prefer explicit action_type field (set by backend); fall back to
   // heuristic for old trajectory files that lack the field.
   if (step.action_type) {
     // Normalize "python+bash" to display form
     if (step.action_type === 'python+bash') return 'python + bash';
-    return step.action_type;
+    // Allowlist to prevent XSS via crafted trajectory files
+    if (VALID_ACTION_TYPES[step.action_type]) return step.action_type;
+    return null;
   }
   // Heuristic fallback: check for "# [bash]" marker in action_code
   var code = step.action_code;
@@ -235,7 +239,7 @@ function selectStep(index) {
   var detailActionType = getActionType(s);
   var detailActionBadge = '';
   if (detailActionType) {
-    var detailActionCls = detailActionType === 'python + bash' ? 'action-both' : 'action-' + detailActionType;
+    var detailActionCls = {'python': 'action-python', 'bash': 'action-bash', 'python + bash': 'action-both'}[detailActionType] || 'action-python';
     detailActionBadge = '<span class="badge ' + detailActionCls + '">' + escapeHtml(detailActionType) + '</span>';
   }
   html += '<div class="detail-header"><h2>Step ' + s.step + '</h2><span class="badge ' + badgeClass(s.result) + '">' + escapeHtml(s.result) + '</span>' + detailActionBadge + '<span style="color:#484f58;font-size:13px">' + escapeHtml(s.timestamp || '') + '</span></div>';
@@ -274,7 +278,7 @@ function addStepToSidebar(s, index) {
   var actionType = getActionType(s);
   var actionBadge = '';
   if (actionType) {
-    var actionCls = actionType === 'python + bash' ? 'action-both' : 'action-' + actionType;
+    var actionCls = {'python': 'action-python', 'bash': 'action-bash', 'python + bash': 'action-both'}[actionType] || 'action-python';
     actionBadge = '<span class="badge ' + actionCls + '">' + escapeHtml(actionType) + '</span>';
   }
   div.innerHTML = '<span class="step-num">Step ' + s.step + '</span><span class="badge ' + badgeClass(s.result) + '">' + escapeHtml(s.result) + '</span>' + actionBadge + '<div class="step-thought">' + escapeHtml(s.thought || '(no thought)') + '</div>';
