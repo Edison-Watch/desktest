@@ -302,6 +302,13 @@ pub async fn run_suite(
             });
         }
 
+        if entry.task_def.has_replay_script() {
+            eprintln!(
+                "Warning: Task '{}' has 'replay_script' but suite runs in LLM mode — consider using `desktest run --replay` for this task",
+                entry.task_def.id
+            );
+        }
+
         let test_output_dir = output_dir.join(&entry.task_def.id);
         let test_start = Instant::now();
 

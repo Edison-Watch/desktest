@@ -92,6 +92,12 @@ async fn main() {
                 }
             };
 
+            if !*replay && task_def.has_replay_script() {
+                eprintln!(
+                    "Warning: Task has 'replay_script' but running in LLM mode — did you mean --replay?"
+                );
+            }
+
             if *replay {
                 if let Err(e) = task_def.apply_replay_override() {
                     eprintln!("Error: {e}");
@@ -192,6 +198,12 @@ async fn main() {
                     std::process::exit(e.exit_code());
                 }
             };
+
+            if !*replay && task_def.has_replay_script() {
+                eprintln!(
+                    "Warning: Task has 'replay_script' but running in LLM mode — did you mean --replay?"
+                );
+            }
 
             if *replay {
                 if let Err(e) = task_def.apply_replay_override() {
@@ -376,7 +388,7 @@ async fn main() {
                 };
 
             // If the task JSON already has a replay_script, overwrite that path instead.
-            // replay_script is CWD-relative (evaluator resolves it from CWD), so use it directly.
+            // replay_script is resolved relative to the task JSON's directory by TaskDefinition::load.
             let effective_output = if let Some((ref _task_path, ref value)) = overwrite_json {
                 if let Some(existing_script) = value.get("replay_script").and_then(|v| v.as_str()) {
                     if existing_script != output.to_string_lossy().as_ref() {
@@ -410,13 +422,14 @@ async fn main() {
 
             // Patch the task JSON with replay_script/replay_screenshots_dir (preserves unknown fields)
             if let Some((task_path, mut value)) = overwrite_json {
-                // Store replay_script as CWD-relative (evaluator resolves from CWD)
-                let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+                // Store replay_script relative to the task JSON's directory so that
+                // TaskDefinition::load resolves it correctly regardless of CWD.
+                let task_dir = task_path.parent().and_then(|d| std::fs::canonicalize(d).ok())
+                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")));
                 let script_abs = std::fs::canonicalize(&*effective_output)
                     .unwrap_or_else(|_| effective_output.to_path_buf());
-                let cwd_abs = std::fs::canonicalize(&cwd).unwrap_or(cwd);
                 let script_rel = script_abs
-                    .strip_prefix(&cwd_abs)
+                    .strip_prefix(&task_dir)
                     .map(|p| p.to_path_buf())
                     .unwrap_or_else(|_| effective_output.to_path_buf());
 

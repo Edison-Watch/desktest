@@ -387,6 +387,11 @@ fn apply_secrets_to_app(
 }
 
 impl TaskDefinition {
+    /// Returns `true` if the task JSON contains a `replay_script` field.
+    pub fn has_replay_script(&self) -> bool {
+        self.replay_script.is_some()
+    }
+
     /// Switch this task to replay mode: inject a `script_replay` metric and set programmatic mode.
     ///
     /// Returns `Err` if `replay_script` is `None`.
@@ -511,7 +516,28 @@ impl TaskDefinition {
             AppError::Config(format!("Cannot read task file '{}': {e}", path.display()))
         })?;
 
-        Self::parse_and_validate(&contents)
+        let mut task = Self::parse_and_validate(&contents)?;
+
+        // Resolve relative replay_script / replay_screenshots_dir paths
+        // relative to the task JSON file's parent directory.
+        if let Some(task_dir) = path.parent() {
+            if let Some(ref script) = task.replay_script {
+                let p = Path::new(script);
+                if p.is_relative() {
+                    let resolved = task_dir.join(p);
+                    task.replay_script = Some(resolved.to_string_lossy().into_owned());
+                }
+            }
+            if let Some(ref dir) = task.replay_screenshots_dir {
+                let p = Path::new(dir);
+                if p.is_relative() {
+                    let resolved = task_dir.join(p);
+                    task.replay_screenshots_dir = Some(resolved.to_string_lossy().into_owned());
+                }
+            }
+        }
+
+        Ok(task)
     }
 
     /// Parse JSON string and validate the task definition.
