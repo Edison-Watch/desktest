@@ -490,6 +490,13 @@ impl TaskDefinition {
         Ok(())
     }
 
+    /// Returns true if this task uses programmatic-only evaluation (no LLM agent loop).
+    pub fn is_programmatic_only(&self) -> bool {
+        self.evaluator
+            .as_ref()
+            .is_some_and(|e| matches!(e.mode, EvaluatorMode::Programmatic))
+    }
+
     /// Build the full instruction string, appending the completion condition if present.
     pub fn full_instruction(&self) -> String {
         match &self.completion_condition {

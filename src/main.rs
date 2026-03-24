@@ -14,6 +14,7 @@ mod monitor_server;
 mod monitor_watcher;
 mod observation;
 mod orchestration;
+mod preflight;
 mod provider;
 mod readiness;
 mod recording;
@@ -100,6 +101,14 @@ async fn main() {
 
             let run_config =
                 orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
+
+            let needs_llm = !*replay && !task_def.is_programmatic_only();
+            if let Err(e) = preflight::run_preflight(&run_config, needs_llm).await {
+                eprintln!("Preflight check failed: {e}");
+                eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
+                std::process::exit(e.exit_code());
+            }
+
             let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
             let bash_enabled = cli.with_bash || cli.qa;
 
@@ -131,6 +140,18 @@ async fn main() {
             if cli.artifacts_dir.is_some() {
                 eprintln!("Warning: --artifacts-dir is ignored for suite runs (each test manages its own artifacts directory).");
             }
+
+            let run_config =
+                orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
+            // Skip API key check for suites: tasks are discovered dynamically and
+            // some may be programmatic-only. Each individual run_task call will
+            // check for its own API key requirement.
+            if let Err(e) = preflight::run_preflight(&run_config, false).await {
+                eprintln!("Preflight check failed: {e}");
+                eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
+                std::process::exit(e.exit_code());
+            }
+
             let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
             let bash_enabled = cli.with_bash || cli.qa;
 
@@ -181,6 +202,14 @@ async fn main() {
 
             let run_config =
                 orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
+
+            let needs_llm = !*replay && !task_def.is_programmatic_only();
+            if let Err(e) = preflight::run_preflight(&run_config, needs_llm).await {
+                eprintln!("Preflight check failed: {e}");
+                eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
+                std::process::exit(e.exit_code());
+            }
+
             let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
             let bash_enabled = cli.with_bash || cli.qa;
 
@@ -224,6 +253,15 @@ async fn main() {
 
             let run_config =
                 orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
+
+            // run_interactive_step unconditionally creates an LLM provider,
+            // so any --step invocation needs an API key regardless of evaluator mode.
+            let needs_llm = *step && !*validate_only;
+            if let Err(e) = preflight::run_preflight(&run_config, needs_llm).await {
+                eprintln!("Preflight check failed: {e}");
+                eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
+                std::process::exit(e.exit_code());
+            }
 
             let bash_enabled = cli.with_bash || cli.qa;
             let result = interactive::run_interactive(
@@ -444,6 +482,14 @@ async fn main() {
 
             let run_config =
                 orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
+
+            // Replay mode doesn't need LLM
+            if let Err(e) = preflight::run_preflight(&run_config, false).await {
+                eprintln!("Preflight check failed: {e}");
+                eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
+                std::process::exit(e.exit_code());
+            }
+
             let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
             let bash_enabled = cli.with_bash || cli.qa;
 
@@ -495,6 +541,12 @@ async fn main() {
                     std::process::exit(e.exit_code());
                 }
             }
+        }
+        Command::Doctor => {
+            let run_config =
+                orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
+            let all_ok = preflight::run_doctor(&run_config).await;
+            std::process::exit(if all_ok { 0 } else { 1 });
         }
         Command::Update { force } => {
             match update::run_update(*force).await {

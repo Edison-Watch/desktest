@@ -169,9 +169,19 @@ fn validate_image_support(provider_name: &str, model: &str) -> Result<(), AppErr
 /// 1. Explicit key (if non-empty)
 /// 2. Provider-specific env var
 /// 3. LLM_API_KEY env var
-fn resolve_api_key(explicit_key: &str, provider_name: &str) -> Result<String, AppError> {
+pub fn resolve_api_key(explicit_key: &str, provider_name: &str) -> Result<String, AppError> {
+    resolve_api_key_with_source(explicit_key, provider_name).map(|(key, _source)| key)
+}
+
+/// Like `resolve_api_key`, but also returns a label indicating where the key
+/// came from (e.g. "config file", "ANTHROPIC_API_KEY", "LLM_API_KEY").
+/// Used by the `doctor` command to show the key source without revealing the key.
+pub fn resolve_api_key_with_source(
+    explicit_key: &str,
+    provider_name: &str,
+) -> Result<(String, &'static str), AppError> {
     if !explicit_key.is_empty() {
-        return Ok(explicit_key.to_string());
+        return Ok((explicit_key.to_string(), "config file"));
     }
 
     let provider_env = match provider_name {
@@ -183,14 +193,14 @@ fn resolve_api_key(explicit_key: &str, provider_name: &str) -> Result<String, Ap
     if !provider_env.is_empty() {
         if let Ok(key) = std::env::var(provider_env) {
             if !key.is_empty() {
-                return Ok(key);
+                return Ok((key, provider_env));
             }
         }
     }
 
     if let Ok(key) = std::env::var("LLM_API_KEY") {
         if !key.is_empty() {
-            return Ok(key);
+            return Ok((key, "LLM_API_KEY"));
         }
     }
 
