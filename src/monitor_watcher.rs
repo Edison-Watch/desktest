@@ -136,7 +136,7 @@ fn process_phase(
     if is_new {
         info!("Discovered new phase: {phase_id}");
         handle.send(MonitorEvent::PhaseStart {
-            phase_id: phase_id.to_string(),
+            phase_id: display_name.to_string(),
             phase_name: display_name.to_string(),
             timestamp: chrono_iso8601_now(),
         });
@@ -173,15 +173,17 @@ fn process_phase(
         info!("Trajectory truncated for phase {phase_id} (re-run detected), resetting state");
         state.test_start_emitted = false;
         handle.send(MonitorEvent::PhaseStart {
-            phase_id: phase_id.to_string(),
+            phase_id: display_name.to_string(),
             phase_name: format!("{display_name} (re-run)"),
             timestamp: chrono_iso8601_now(),
         });
     }
 
-    // Emit a synthetic TestStart for the first valid entry so the dashboard header populates
+    // Emit a synthetic TestStart so the dashboard header populates.
+    // During live monitoring, task.json is written by finalize_run after the agent
+    // loop completes, so it may not exist yet. We emit TestStart with defaults
+    // immediately, then re-emit with real metadata once task.json appears.
     if !state.test_start_emitted && !new_entries.is_empty() {
-        // Try to read task.json from the phase directory for metadata
         let (instruction, max_steps) = read_task_metadata(phase_dir);
         handle.send(MonitorEvent::TestStart {
             test_id: display_name.to_string(),
@@ -190,7 +192,10 @@ fn process_phase(
             vnc_url: String::new(),
             max_steps,
         });
-        state.test_start_emitted = true;
+        // Only mark as fully emitted once task.json actually existed,
+        // so we re-emit with real metadata when it appears during live runs
+        let task_path = phase_dir.join("task.json");
+        state.test_start_emitted = task_path.exists();
     }
 
     for entry in &new_entries {
