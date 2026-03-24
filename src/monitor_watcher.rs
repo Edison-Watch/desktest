@@ -204,8 +204,10 @@ fn process_phase(
         state.test_start_emitted = task_json_ready;
     }
 
-    for entry in &new_entries {
-        emit_trajectory_event(entry, display_name, handle, &trajectory_path);
+    let entry_count = new_entries.len();
+    for (i, entry) in new_entries.iter().enumerate() {
+        let is_last = i + 1 == entry_count;
+        emit_trajectory_event(entry, display_name, is_last, handle, &trajectory_path);
     }
 
     // Only advance past lines that were blank or successfully parsed;
@@ -299,9 +301,13 @@ fn read_task_metadata(phase_dir: &Path) -> (String, usize) {
 
 /// Convert a trajectory JSONL entry into a MonitorEvent and send it.
 /// `display_name` is the clean label (without internal prefixes) for user-visible fields.
+/// `load_screenshot`: only load screenshot data for the last entry in a batch to avoid
+/// MB-scale I/O during initial replay scans (the dashboard evicts screenshots older than
+/// 50 steps anyway).
 fn emit_trajectory_event(
     entry: &serde_json::Value,
     display_name: &str,
+    load_screenshot: bool,
     handle: &MonitorHandle,
     trajectory_path: &Path,
 ) {
@@ -325,20 +331,26 @@ fn emit_trajectory_event(
     let bash_output = entry.get("bash_output").and_then(|v| v.as_str()).map(String::from);
     let error_feedback = entry.get("error_feedback").and_then(|v| v.as_str()).map(String::from);
 
-    // Load screenshot from the phase's artifact directory
-    let screenshot_base64 = entry
-        .get("screenshot_path")
-        .and_then(|v| v.as_str())
-        .and_then(|rel_path| {
-            let screenshot_file = trajectory_path.parent()?.join(rel_path);
-            match std::fs::read(&screenshot_file) {
-                Ok(bytes) => {
-                    use base64::Engine;
-                    Some(base64::engine::general_purpose::STANDARD.encode(&bytes))
+    // Load screenshot from the phase's artifact directory.
+    // Only load for the last entry in a batch to avoid reading hundreds of files
+    // during initial replay scans — the dashboard evicts older screenshots anyway.
+    let screenshot_base64 = if load_screenshot {
+        entry
+            .get("screenshot_path")
+            .and_then(|v| v.as_str())
+            .and_then(|rel_path| {
+                let screenshot_file = trajectory_path.parent()?.join(rel_path);
+                match std::fs::read(&screenshot_file) {
+                    Ok(bytes) => {
+                        use base64::Engine;
+                        Some(base64::engine::general_purpose::STANDARD.encode(&bytes))
+                    }
+                    Err(_) => None,
                 }
-                Err(_) => None,
-            }
-        });
+            })
+    } else {
+        None
+    };
 
     handle.send(MonitorEvent::StepComplete {
         step,
