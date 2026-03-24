@@ -177,7 +177,7 @@ fn process_phase(
         // Try to read task.json from the phase directory for metadata
         let (instruction, max_steps) = read_task_metadata(phase_dir);
         handle.send(MonitorEvent::TestStart {
-            test_id: phase_id.to_string(),
+            test_id: display_name.to_string(),
             instruction,
             completion_condition: None,
             vnc_url: String::new(),
@@ -187,7 +187,7 @@ fn process_phase(
     }
 
     for entry in &new_entries {
-        emit_trajectory_event(entry, phase_id, handle, &trajectory_path);
+        emit_trajectory_event(entry, phase_id, display_name, handle, &trajectory_path);
     }
 
     // Only advance past lines that were blank or successfully parsed;
@@ -280,9 +280,11 @@ fn read_task_metadata(phase_dir: &Path) -> (String, usize) {
 }
 
 /// Convert a trajectory JSONL entry into a MonitorEvent and send it.
+/// `display_name` is the clean label (without internal prefixes) for user-visible fields.
 fn emit_trajectory_event(
     entry: &serde_json::Value,
     phase_id: &str,
+    display_name: &str,
     handle: &MonitorHandle,
     trajectory_path: &Path,
 ) {
@@ -340,7 +342,7 @@ fn emit_trajectory_event(
         handle.send(MonitorEvent::TestComplete {
             test_id: phase_id.to_string(),
             passed,
-            reasoning: format!("Phase '{phase_id}' ended with result: {result}"),
+            reasoning: format!("Phase '{display_name}' ended with result: {result}"),
             duration_ms: 0, // Duration not available from trajectory alone
         });
     }
