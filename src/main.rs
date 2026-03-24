@@ -440,7 +440,7 @@ async fn main() {
                 let script_rel = script_abs
                     .strip_prefix(&task_dir)
                     .map(|p| p.to_path_buf())
-                    .unwrap_or_else(|_| effective_output.to_path_buf());
+                    .unwrap_or_else(|_| script_abs.clone());
 
                 let obj = value.as_object_mut().expect("task JSON must be an object");
                 obj.insert(
