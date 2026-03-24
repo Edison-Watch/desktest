@@ -19,7 +19,7 @@ desktest attach task.json --container my-container --resolution 1280x720
 
 - **Docker daemon must be accessible.** Desktest uses the Docker API to exec into the target container for screenshots, action execution, and artifact collection.
 - **Docker socket permissions.** The user running desktest needs access to the Docker socket:
-  - **Linux:** Add your user to the `docker` group (`sudo usermod -aG docker $USER`, then log out and back in), or `chmod 666 /var/run/docker.sock` for local development.
+  - **Linux:** Add your user to the `docker` group (`sudo usermod -aG docker $USER`, then log out and back in), or `sudo chmod 660 /var/run/docker.sock && sudo chown root:docker /var/run/docker.sock` for temporary local dev access.
   - **macOS:** Docker Desktop and OrbStack expose the socket automatically — no extra setup needed.
 
 ## Task JSON

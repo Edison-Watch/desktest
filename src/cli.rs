@@ -183,7 +183,8 @@ PREREQUISITES:
   Docker daemon must be accessible. Desktest uses the Docker API (via the \
 socket) to exec into the target container. The user running desktest needs \
 Docker socket permissions — typically membership in the `docker` group, or \
-`chmod 666 /var/run/docker.sock` for local development.\n\n\
+`sudo chmod 660 /var/run/docker.sock && sudo chown root:docker /var/run/docker.sock` \
+for temporary local dev access.\n\n\
 EXAMPLES:
   desktest attach task.json --container my-container
   desktest attach task.json --container abc123 --config config.json
