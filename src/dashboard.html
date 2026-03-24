@@ -329,7 +329,8 @@ if (MODE === 'live') {
     divider.innerHTML = '<span class="phase-label">' + escapeHtml(data.phase_name) + '</span>';
     divider.style.cssText = 'padding:8px 16px;background:#1c2128;border-bottom:1px solid #30363d;font-size:12px;font-weight:600;color:#d2a8ff;text-transform:uppercase;letter-spacing:0.5px;cursor:pointer;';
     divider.addEventListener('click', function() {
-      divider.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      var target = divider.nextElementSibling || divider;
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
     stepList.appendChild(divider);
     // Remove "awaiting next phase" indicator if present

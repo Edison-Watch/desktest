@@ -528,19 +528,22 @@ async fn main() {
             }
 
             let handle = monitor::MonitorHandle::new(256);
-            match monitor_server::start_monitor_server(handle.clone(), port).await {
-                Some(_server) => {
+            // Keep the server handle alive for the duration of the watcher loop;
+            // dropping it would abort the server task.
+            let _server = match monitor_server::start_monitor_server(handle.clone(), port).await {
+                Some(server) => {
                     println!("Monitor dashboard: http://localhost:{}", port);
                     println!(
                         "Watching {} for phase directories (Ctrl+C to stop)",
                         watch_dir.display()
                     );
+                    server
                 }
                 None => {
                     eprintln!("Failed to start monitor server on port {port}");
                     std::process::exit(3);
                 }
-            }
+            };
 
             // Run the watcher until Ctrl+C
             tokio::select! {
