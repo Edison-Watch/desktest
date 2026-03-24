@@ -755,7 +755,7 @@ impl<'a> AgentLoopV2<'a> {
     ) {
         if let Some(ref m) = self.monitor {
             let thought = crate::trajectory::extract_thought(response_text, code_blocks);
-            let action_code = code_blocks.join("\n");
+            let action_code = code_blocks.join("\n\n");
             let screenshot_base64 = observation.screenshot_data_url.as_ref().and_then(|url| {
                 url.strip_prefix("data:image/png;base64,")
                     .map(|s| s.to_string())
