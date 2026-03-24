@@ -92,6 +92,12 @@ async fn main() {
                 }
             };
 
+            if !*replay && task_def.has_replay_script() && !task_def.is_programmatic_only() {
+                eprintln!(
+                    "Warning: Task has 'replay_script' but running in LLM mode — did you mean --replay?"
+                );
+            }
+
             if *replay {
                 if let Err(e) = task_def.apply_replay_override() {
                     eprintln!("Error: {e}");
@@ -192,6 +198,12 @@ async fn main() {
                     std::process::exit(e.exit_code());
                 }
             };
+
+            if !*replay && task_def.has_replay_script() && !task_def.is_programmatic_only() {
+                eprintln!(
+                    "Warning: Task has 'replay_script' but running in LLM mode — did you mean --replay?"
+                );
+            }
 
             if *replay {
                 if let Err(e) = task_def.apply_replay_override() {
@@ -376,16 +388,32 @@ async fn main() {
                 };
 
             // If the task JSON already has a replay_script, overwrite that path instead.
-            // replay_script is CWD-relative (evaluator resolves it from CWD), so use it directly.
-            let effective_output = if let Some((ref _task_path, ref value)) = overwrite_json {
+            // replay_script is stored relative to the task JSON's directory, so resolve
+            // it against the task file's parent before using as a filesystem write target.
+            let effective_output = if let Some((ref task_path, ref value)) = overwrite_json {
                 if let Some(existing_script) = value.get("replay_script").and_then(|v| v.as_str()) {
-                    if existing_script != output.to_string_lossy().as_ref() {
+                    let task_parent = task_path.parent().unwrap_or(std::path::Path::new("."));
+                    let resolved = task_parent.join(existing_script);
+                    // Compare canonicalized paths to avoid spurious "ignored" warnings
+                    // when the same file is referenced from different bases.
+                    let resolved_canon = std::fs::canonicalize(&resolved).ok();
+                    let output_canon = std::fs::canonicalize(output.as_path()).ok();
+                    if resolved_canon.is_none() {
+                        // Old replay_script path no longer exists — honor --output instead
+                        eprintln!(
+                            "Warning: replay_script path '{}' in task JSON does not exist; using --output instead",
+                            resolved.display()
+                        );
+                        std::borrow::Cow::Borrowed(output.as_path())
+                    } else if resolved_canon != output_canon {
                         eprintln!(
                             "Note: --output ignored; writing to existing replay_script path '{}' from task JSON",
-                            existing_script
+                            resolved.display()
                         );
+                        std::borrow::Cow::Owned(resolved)
+                    } else {
+                        std::borrow::Cow::Owned(resolved)
                     }
-                    std::borrow::Cow::Owned(std::path::PathBuf::from(existing_script))
                 } else {
                     std::borrow::Cow::Borrowed(output.as_path())
                 }
@@ -410,15 +438,22 @@ async fn main() {
 
             // Patch the task JSON with replay_script/replay_screenshots_dir (preserves unknown fields)
             if let Some((task_path, mut value)) = overwrite_json {
-                // Store replay_script as CWD-relative (evaluator resolves from CWD)
-                let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+                // Store replay_script relative to the task JSON's directory so that
+                // TaskDefinition::load resolves it correctly regardless of CWD.
+                let task_dir = task_path.parent().and_then(|d| std::fs::canonicalize(d).ok())
+                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")));
                 let script_abs = std::fs::canonicalize(&*effective_output)
                     .unwrap_or_else(|_| effective_output.to_path_buf());
-                let cwd_abs = std::fs::canonicalize(&cwd).unwrap_or(cwd);
                 let script_rel = script_abs
-                    .strip_prefix(&cwd_abs)
+                    .strip_prefix(&task_dir)
                     .map(|p| p.to_path_buf())
-                    .unwrap_or_else(|_| effective_output.to_path_buf());
+                    .unwrap_or_else(|_| {
+                        eprintln!(
+                            "Note: replay_script '{}' is outside the task directory; storing as absolute path (not portable across machines)",
+                            script_abs.display()
+                        );
+                        script_abs.clone()
+                    });
 
                 let obj = value.as_object_mut().expect("task JSON must be an object");
                 obj.insert(
@@ -430,9 +465,32 @@ async fn main() {
                     let dir_name = screenshots_dir_name
                         .as_deref()
                         .unwrap_or("desktest_artifacts");
+                    // Resolve dir_name against CWD first to get a reliable absolute path,
+                    // then make it relative to task_dir for portability.
+                    let dir_cwd_raw = std::env::current_dir()
+                        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+                    let dir_cwd = std::fs::canonicalize(&dir_cwd_raw)
+                        .unwrap_or(dir_cwd_raw);
+                    let dir_abs_raw = if std::path::Path::new(dir_name).is_absolute() {
+                        std::path::PathBuf::from(dir_name)
+                    } else {
+                        dir_cwd.join(dir_name)
+                    };
+                    let dir_abs = std::fs::canonicalize(&dir_abs_raw)
+                        .unwrap_or(dir_abs_raw);
+                    let dir_rel = dir_abs
+                        .strip_prefix(&task_dir)
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|_| {
+                            eprintln!(
+                                "Note: replay_screenshots_dir '{}' is outside the task directory; storing as absolute path (not portable across machines)",
+                                dir_abs.display()
+                            );
+                            dir_abs.clone()
+                        });
                     obj.insert(
                         "replay_screenshots_dir".to_string(),
-                        serde_json::Value::String(dir_name.to_string()),
+                        serde_json::Value::String(dir_rel.to_string_lossy().to_string()),
                     );
                 } else {
                     obj.remove("replay_screenshots_dir");
