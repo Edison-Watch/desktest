@@ -8,6 +8,10 @@ use crate::docker::DockerSession;
 use crate::error::AppError;
 use crate::trajectory::{TrajectoryEntry, TrajectoryLogger, chrono_iso8601_now};
 
+/// Maximum character length for thought text embedded in REPLAY_STEP_DONE markers.
+/// Full thought is preserved in the original trajectory; this cap keeps generated scripts readable.
+const REPLAY_THOUGHT_MAX_CHARS: usize = 200;
+
 /// script_replay: Copy a Python script into the container, run it, check for REPLAY_COMPLETE.
 /// If `screenshots_dir` is provided, copies that directory into the container so that
 /// screenshot comparison assertions can find their expected files.
@@ -138,14 +142,17 @@ fn parse_replay_steps(output: &str) -> Vec<ReplayStep> {
     steps
 }
 
-/// Copy per-step screenshots from the container and write trajectory.jsonl.
+/// Copy per-step screenshots from the container and append to trajectory.jsonl.
+///
+/// Uses `TrajectoryLogger::new_append` so that multiple `ScriptReplay` metrics
+/// in the same evaluator accumulate entries rather than truncating previous ones.
 async fn write_replay_trajectory(
     session: &DockerSession,
     artifacts_dir: &Path,
     steps: &[ReplayStep],
     replay_passed: bool,
 ) {
-    let mut trajectory_logger = match TrajectoryLogger::new(artifacts_dir, false, None) {
+    let mut trajectory_logger = match TrajectoryLogger::new_append(artifacts_dir, false, None) {
         Ok(tl) => tl,
         Err(e) => {
             warn!("Failed to create trajectory logger for replay: {e}");
@@ -172,13 +179,14 @@ async fn write_replay_trajectory(
             }
         };
 
+        // All completed steps succeeded. If the replay failed overall, the crash
+        // happened *after* the last REPLAY_STEP_DONE marker, so mark it "interrupted"
+        // rather than "fail" (which would wrongly blame a step that actually passed).
         let is_last = i == steps.len() - 1;
-        let result = if is_last {
-            if replay_passed {
-                "done"
-            } else {
-                "fail"
-            }
+        let result = if is_last && replay_passed {
+            "done"
+        } else if is_last && !replay_passed {
+            "interrupted"
         } else {
             "success"
         };

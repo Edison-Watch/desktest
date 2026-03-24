@@ -214,13 +214,15 @@ pub fn generate_replay_script(
             "    subprocess.run(['scrot', '/tmp/replay_step_{:03}.png'], check=False)\n",
             entry.step
         ));
-        // Emit structured marker for trajectory reconstruction
+        // Emit structured marker for trajectory reconstruction (capped at 200 chars
+        // to keep generated scripts readable; full thought lives in the original trajectory)
         let thought_escaped = entry
             .thought
             .as_deref()
             .unwrap_or("action")
             .chars()
             .filter(|c| *c != '\n' && *c != '\r')
+            .take(200)
             .collect::<String>()
             .replace('\\', "\\\\")
             .replace('\'', "\\'");

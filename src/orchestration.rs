@@ -493,6 +493,10 @@ async fn run_eval_loop(
 
             // ScriptReplay metrics write their own trajectory with per-step screenshots,
             // so skip the generic pre/post trajectory for replay runs.
+            // NOTE: uses `.any()` so mixed evaluators (ScriptReplay + other metrics)
+            // also skip the generic trajectory. This is acceptable because
+            // apply_replay_override always places ScriptReplay first and replay mode
+            // doesn't normally mix with other metric types.
             let has_replay = evaluator
                 .metrics
                 .iter()

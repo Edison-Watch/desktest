@@ -79,6 +79,29 @@ impl TrajectoryLogger {
         })
     }
 
+    /// Create a trajectory logger that appends to an existing `trajectory.jsonl`.
+    ///
+    /// Unlike `new`, this does not truncate the file, so multiple callers
+    /// can accumulate entries (e.g. multiple ScriptReplay metrics in one evaluator run).
+    pub fn new_append(
+        artifacts_dir: &Path,
+        verbose: bool,
+        redactor: Option<Redactor>,
+    ) -> Result<Self, std::io::Error> {
+        let path = artifacts_dir.join("trajectory.jsonl");
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)?;
+
+        Ok(Self {
+            writer: BufWriter::new(file),
+            artifacts_dir: artifacts_dir.to_path_buf(),
+            verbose,
+            redactor,
+        })
+    }
+
     /// Log a trajectory entry, serializing to JSON and flushing immediately.
     ///
     /// If a `Redactor` is configured, sensitive fields are redacted before serialization.
