@@ -165,11 +165,18 @@ fn process_phase(
         }
     };
 
-    // On file truncation (phase re-run), reset state so we re-emit TestStart
-    // and the dashboard gets a fresh test_start event to clear stale steps
+    // On file truncation (phase re-run), reset state so we re-emit TestStart.
+    // Also re-emit PhaseStart so the dashboard inserts a new phase divider,
+    // visually separating stale steps from the re-run (multi-phase mode
+    // intentionally preserves the timeline, so this divider is the cue).
     if truncated {
         info!("Trajectory truncated for phase {phase_id} (re-run detected), resetting state");
         state.test_start_emitted = false;
+        handle.send(MonitorEvent::PhaseStart {
+            phase_id: phase_id.to_string(),
+            phase_name: format!("{display_name} (re-run)"),
+            timestamp: chrono_iso8601_now(),
+        });
     }
 
     // Emit a synthetic TestStart for the first valid entry so the dashboard header populates
