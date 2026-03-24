@@ -447,7 +447,13 @@ async fn main() {
                 let script_rel = script_abs
                     .strip_prefix(&task_dir)
                     .map(|p| p.to_path_buf())
-                    .unwrap_or_else(|_| script_abs.clone());
+                    .unwrap_or_else(|_| {
+                        eprintln!(
+                            "Note: replay_script '{}' is outside the task directory; storing as absolute path (not portable across machines)",
+                            script_abs.display()
+                        );
+                        script_abs.clone()
+                    });
 
                 let obj = value.as_object_mut().expect("task JSON must be an object");
                 obj.insert(
@@ -473,7 +479,13 @@ async fn main() {
                     let dir_rel = dir_abs
                         .strip_prefix(&task_dir)
                         .map(|p| p.to_path_buf())
-                        .unwrap_or_else(|_| dir_abs.clone());
+                        .unwrap_or_else(|_| {
+                            eprintln!(
+                                "Note: replay_screenshots_dir '{}' is outside the task directory; storing as absolute path (not portable across machines)",
+                                dir_abs.display()
+                            );
+                            dir_abs.clone()
+                        });
                     obj.insert(
                         "replay_screenshots_dir".to_string(),
                         serde_json::Value::String(dir_rel.to_string_lossy().to_string()),
