@@ -169,7 +169,7 @@ fn validate_image_support(provider_name: &str, model: &str) -> Result<(), AppErr
 /// 1. Explicit key (if non-empty)
 /// 2. Provider-specific env var
 /// 3. LLM_API_KEY env var
-fn resolve_api_key(explicit_key: &str, provider_name: &str) -> Result<String, AppError> {
+pub fn resolve_api_key(explicit_key: &str, provider_name: &str) -> Result<String, AppError> {
     if !explicit_key.is_empty() {
         return Ok(explicit_key.to_string());
     }

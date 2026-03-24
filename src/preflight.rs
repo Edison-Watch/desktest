@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::error::AppError;
+use crate::provider;
 
 /// Check that the Docker daemon is reachable via the API socket.
 /// Returns the connected client on success for reuse.
@@ -25,45 +26,10 @@ pub async fn check_docker() -> Result<bollard::Docker, AppError> {
 
 /// Check that an API key is available for the configured provider.
 ///
-/// This mirrors the resolution logic in `provider::resolve_api_key` but runs
-/// before any Docker work so the user gets immediate feedback.
+/// Delegates to `provider::resolve_api_key` so the resolution logic lives
+/// in one place and can't drift between preflight and runtime.
 pub fn check_api_key(config: &Config) -> Result<(), AppError> {
-    if !config.api_key.is_empty() {
-        return Ok(());
-    }
-
-    let provider_env = match config.provider.as_str() {
-        "openai" => "OPENAI_API_KEY",
-        "anthropic" => "ANTHROPIC_API_KEY",
-        _ => "",
-    };
-
-    if !provider_env.is_empty() {
-        if let Ok(key) = std::env::var(provider_env) {
-            if !key.is_empty() {
-                return Ok(());
-            }
-        }
-    }
-
-    if let Ok(key) = std::env::var("LLM_API_KEY") {
-        if !key.is_empty() {
-            return Ok(());
-        }
-    }
-
-    let hint = if provider_env.is_empty() {
-        "Set an API key in your config file or the LLM_API_KEY environment variable.".to_string()
-    } else {
-        format!(
-            "Set one of:\n\
-             - {provider_env} environment variable\n\
-             - LLM_API_KEY environment variable\n\
-             - \"api_key\" in your config JSON (--config)"
-        )
-    };
-
-    Err(AppError::Config(format!("No API key found for provider '{}'.\n\n{hint}", config.provider)))
+    provider::resolve_api_key(&config.api_key, &config.provider).map(|_| ())
 }
 
 /// Run all preflight checks for commands that need Docker + LLM.
