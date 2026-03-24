@@ -511,9 +511,17 @@ async fn main() {
             }
             let watch_dir = watch.clone();
             let port = cli.monitor_port;
-            if !watch_dir.is_dir() {
+            if !watch_dir.exists() {
+                if let Err(e) = std::fs::create_dir_all(&watch_dir) {
+                    eprintln!(
+                        "Cannot create watch directory '{}': {e}",
+                        watch_dir.display()
+                    );
+                    std::process::exit(2);
+                }
+            } else if !watch_dir.is_dir() {
                 eprintln!(
-                    "Watch directory '{}' does not exist or is not a directory.",
+                    "Watch path '{}' is not a directory.",
                     watch_dir.display()
                 );
                 std::process::exit(2);
