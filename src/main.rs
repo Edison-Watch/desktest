@@ -467,8 +467,10 @@ async fn main() {
                         .unwrap_or("desktest_artifacts");
                     // Resolve dir_name against CWD first to get a reliable absolute path,
                     // then make it relative to task_dir for portability.
-                    let dir_cwd = std::env::current_dir()
+                    let dir_cwd_raw = std::env::current_dir()
                         .unwrap_or_else(|_| std::path::PathBuf::from("."));
+                    let dir_cwd = std::fs::canonicalize(&dir_cwd_raw)
+                        .unwrap_or(dir_cwd_raw);
                     let dir_abs_raw = if std::path::Path::new(dir_name).is_absolute() {
                         std::path::PathBuf::from(dir_name)
                     } else {
