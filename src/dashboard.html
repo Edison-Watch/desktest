@@ -180,22 +180,20 @@ function badgeClass(result) {
   return 'fail';
 }
 
-function detectActionType(actionCode) {
-  if (!actionCode) return null;
-  var hasBash = false;
-  var hasPython = false;
-  // Blocks are joined with "\n\n" in trajectory; split on that boundary
-  // and check each block for the "# [bash]" prefix.
-  var blocks = actionCode.split('\n\n');
-  for (var i = 0; i < blocks.length; i++) {
-    var block = blocks[i].trim();
-    if (!block) continue;
-    if (block === '# [bash]' || block.startsWith('# [bash]\n')) {
-      hasBash = true;
-    } else {
-      hasPython = true;
-    }
+function getActionType(step) {
+  // Prefer explicit action_type field (set by backend); fall back to
+  // heuristic for old trajectory files that lack the field.
+  if (step.action_type) {
+    // Normalize "python+bash" to display form
+    if (step.action_type === 'python+bash') return 'python + bash';
+    return step.action_type;
   }
+  // Heuristic fallback: check for "# [bash]" marker in action_code
+  var code = step.action_code;
+  if (!code) return null;
+  var hasBash = /(^|\n)# \[bash\](\n|$)/.test(code);
+  var stripped = code.replace(/(^|\n\n)# \[bash\]\n[^\0]*?(?=\n\n|$)/g, '');
+  var hasPython = stripped.trim().length > 0;
   if (hasBash && hasPython) return 'python + bash';
   if (hasBash) return 'bash';
   if (hasPython) return 'python';
@@ -234,7 +232,7 @@ function selectStep(index) {
 
   var s = STEPS[index];
   var html = '';
-  var detailActionType = detectActionType(s.action_code);
+  var detailActionType = getActionType(s);
   var detailActionBadge = '';
   if (detailActionType) {
     var detailActionCls = detailActionType === 'python + bash' ? 'action-both' : 'action-' + detailActionType;
@@ -273,7 +271,7 @@ function addStepToSidebar(s, index) {
   var div = document.createElement('div');
   div.className = 'step-item';
   div.dataset.index = index;
-  var actionType = detectActionType(s.action_code);
+  var actionType = getActionType(s);
   var actionBadge = '';
   if (actionType) {
     var actionCls = actionType === 'python + bash' ? 'action-both' : 'action-' + actionType;
@@ -401,7 +399,8 @@ if (MODE === 'live') {
       screenshot: data.screenshot_base64,
       timestamp: data.timestamp,
       bash_output: data.bash_output,
-      error_feedback: data.error_feedback
+      error_feedback: data.error_feedback,
+      action_type: data.action_type
     };
     var index = STEPS.length;
     STEPS.push(step);

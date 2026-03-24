@@ -198,6 +198,7 @@ async fn write_replay_trajectory(
             llm_raw_response: None,
             bash_output: None,
             error_feedback: None,
+            action_type: None,
         };
         trajectory_logger.log_entry(&entry);
     }

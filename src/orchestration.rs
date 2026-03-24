@@ -533,6 +533,7 @@ async fn run_eval_loop(
                             llm_raw_response: None,
                             bash_output: None,
                             error_feedback: None,
+                            action_type: None,
                         };
                         tl.log_entry(&entry);
                     }
@@ -564,6 +565,7 @@ async fn run_eval_loop(
                             llm_raw_response: None,
                             bash_output: None,
                             error_feedback: None,
+                            action_type: None,
                         };
                         tl.log_entry(&entry);
                     }
