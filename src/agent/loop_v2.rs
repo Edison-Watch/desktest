@@ -186,6 +186,7 @@ impl<'a> AgentLoopV2<'a> {
                     None,
                     None,
                     None,
+                    None,
                 );
                 self.save_conversation_log();
                 let reasoning = format!(
@@ -211,6 +212,7 @@ impl<'a> AgentLoopV2<'a> {
                     &[],
                     &current_observation,
                     "max_steps",
+                    None,
                     None,
                     None,
                     None,
@@ -270,6 +272,8 @@ impl<'a> AgentLoopV2<'a> {
                 .map(|b| format!("# [bash]\n{b}"))
                 .chain(code_blocks.iter().cloned())
                 .collect();
+            let action_type =
+                crate::trajectory::compute_action_type(&code_blocks, &bash_blocks);
 
             // Update video caption with agent's thought before executing
             self.update_caption(step_index, &response_text, &all_blocks)
@@ -305,6 +309,7 @@ impl<'a> AgentLoopV2<'a> {
                             Some(&response_text),
                             turn_result.bash_output.as_deref(),
                             turn_result.error_feedback.as_deref(),
+                            action_type.as_deref(),
                         );
                         self.publish_step_event(
                             step_index,
@@ -314,6 +319,7 @@ impl<'a> AgentLoopV2<'a> {
                             "done",
                             turn_result.bash_output.as_deref(),
                             turn_result.error_feedback.as_deref(),
+                            action_type.as_deref(),
                         );
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
@@ -342,6 +348,7 @@ impl<'a> AgentLoopV2<'a> {
                             Some(&response_text),
                             turn_result.bash_output.as_deref(),
                             turn_result.error_feedback.as_deref(),
+                            action_type.as_deref(),
                         );
                         self.publish_step_event(
                             step_index,
@@ -351,6 +358,7 @@ impl<'a> AgentLoopV2<'a> {
                             "fail",
                             turn_result.bash_output.as_deref(),
                             turn_result.error_feedback.as_deref(),
+                            action_type.as_deref(),
                         );
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
@@ -379,6 +387,7 @@ impl<'a> AgentLoopV2<'a> {
                             Some(&response_text),
                             turn_result.bash_output.as_deref(),
                             turn_result.error_feedback.as_deref(),
+                            action_type.as_deref(),
                         );
                         self.publish_step_event(
                             step_index,
@@ -388,6 +397,7 @@ impl<'a> AgentLoopV2<'a> {
                             "wait",
                             turn_result.bash_output.as_deref(),
                             turn_result.error_feedback.as_deref(),
+                            action_type.as_deref(),
                         );
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
@@ -425,6 +435,7 @@ impl<'a> AgentLoopV2<'a> {
                 Some(&response_text),
                 turn_result.bash_output.as_deref(),
                 turn_result.error_feedback.as_deref(),
+                action_type.as_deref(),
             );
             self.publish_step_event(
                 step_index,
@@ -434,6 +445,7 @@ impl<'a> AgentLoopV2<'a> {
                 &result_str,
                 turn_result.bash_output.as_deref(),
                 turn_result.error_feedback.as_deref(),
+                action_type.as_deref(),
             );
 
             // Record the turn in trajectory
@@ -562,6 +574,8 @@ impl<'a> AgentLoopV2<'a> {
                 .map(|b| format!("# [bash]\n{b}"))
                 .chain(code_blocks.iter().cloned())
                 .collect();
+            let action_type =
+                crate::trajectory::compute_action_type(&code_blocks, &bash_blocks);
 
             // Update video caption with agent's thought before executing
             self.update_caption(step_index, &response_text, &all_blocks)
@@ -597,6 +611,7 @@ impl<'a> AgentLoopV2<'a> {
                             Some(&response_text),
                             turn_result.bash_output.as_deref(),
                             turn_result.error_feedback.as_deref(),
+                            action_type.as_deref(),
                         );
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
@@ -623,6 +638,7 @@ impl<'a> AgentLoopV2<'a> {
                             Some(&response_text),
                             turn_result.bash_output.as_deref(),
                             turn_result.error_feedback.as_deref(),
+                            action_type.as_deref(),
                         );
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
@@ -649,6 +665,7 @@ impl<'a> AgentLoopV2<'a> {
                             Some(&response_text),
                             turn_result.bash_output.as_deref(),
                             turn_result.error_feedback.as_deref(),
+                            action_type.as_deref(),
                         );
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
@@ -688,6 +705,7 @@ impl<'a> AgentLoopV2<'a> {
                 Some(&response_text),
                 turn_result.bash_output.as_deref(),
                 turn_result.error_feedback.as_deref(),
+                action_type.as_deref(),
             );
             self.context.push_turn(TrajectoryTurn {
                 observation: current_observation,
@@ -752,10 +770,11 @@ impl<'a> AgentLoopV2<'a> {
         result: &str,
         bash_output: Option<&str>,
         error_feedback: Option<&str>,
+        action_type: Option<&str>,
     ) {
         if let Some(ref m) = self.monitor {
             let thought = crate::trajectory::extract_thought(response_text, code_blocks);
-            let action_code = code_blocks.join("\n");
+            let action_code = code_blocks.join("\n\n");
             let screenshot_base64 = observation.screenshot_data_url.as_ref().and_then(|url| {
                 url.strip_prefix("data:image/png;base64,")
                     .map(|s| s.to_string())
@@ -770,6 +789,7 @@ impl<'a> AgentLoopV2<'a> {
                 timestamp,
                 bash_output: bash_output.map(|s| s.to_string()),
                 error_feedback: error_feedback.map(|s| s.to_string()),
+                action_type: action_type.map(|s| s.to_string()),
             });
         }
     }
@@ -797,6 +817,7 @@ impl<'a> AgentLoopV2<'a> {
         raw_response: Option<&str>,
         bash_output: Option<&str>,
         error_feedback: Option<&str>,
+        action_type: Option<&str>,
     ) {
         if let Some(ref mut trajectory) = self.trajectory {
             let entry = trajectory.build_entry(
@@ -809,6 +830,7 @@ impl<'a> AgentLoopV2<'a> {
                 raw_response,
                 bash_output,
                 error_feedback,
+                action_type,
             );
             trajectory.log_entry(&entry);
         }

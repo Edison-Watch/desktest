@@ -20,6 +20,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .badge.error { background: #f8514944; color: #f85149; }
 .badge.fail { background: #f8514944; color: #f85149; }
 .badge.pass { background: #23882344; color: #3fb950; }
+.badge.action-python { background: #1f6feb22; color: #79c0ff; }
+.badge.action-bash { background: #d2a8ff22; color: #d2a8ff; }
+.badge.action-both { background: #f0883e22; color: #f0883e; }
 .main { flex: 1; overflow-y: auto; padding: 24px; }
 .detail-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
 .detail-header h2 { font-size: 20px; }
@@ -177,6 +180,30 @@ function badgeClass(result) {
   return 'fail';
 }
 
+var VALID_ACTION_TYPES = {'python': true, 'bash': true, 'python + bash': true, 'python+bash': true};
+
+function getActionType(step) {
+  // Prefer explicit action_type field (set by backend); fall back to
+  // heuristic for old trajectory files that lack the field.
+  if (step.action_type) {
+    // Normalize "python+bash" to display form
+    if (step.action_type === 'python+bash') return 'python + bash';
+    // Allowlist to prevent XSS via crafted trajectory files
+    if (VALID_ACTION_TYPES[step.action_type]) return step.action_type;
+    return null;
+  }
+  // Heuristic fallback: check for "# [bash]" marker in action_code
+  var code = step.action_code;
+  if (!code) return null;
+  var hasBash = /(^|\n)# \[bash\](\n|$)/.test(code);
+  var stripped = code.replace(/(^|\n\n)# \[bash\]\n[^\0]*?(?=\n\n|$)/g, '');
+  var hasPython = stripped.trim().length > 0;
+  if (hasBash && hasPython) return 'python + bash';
+  if (hasBash) return 'bash';
+  if (hasPython) return 'python';
+  return null;
+}
+
 function escapeHtml(text) {
   var div = document.createElement('div');
   div.textContent = text;
@@ -209,7 +236,13 @@ function selectStep(index) {
 
   var s = STEPS[index];
   var html = '';
-  html += '<div class="detail-header"><h2>Step ' + s.step + '</h2><span class="badge ' + badgeClass(s.result) + '">' + escapeHtml(s.result) + '</span><span style="color:#484f58;font-size:13px">' + escapeHtml(s.timestamp || '') + '</span></div>';
+  var detailActionType = getActionType(s);
+  var detailActionBadge = '';
+  if (detailActionType) {
+    var detailActionCls = {'python': 'action-python', 'bash': 'action-bash', 'python + bash': 'action-both'}[detailActionType] || 'action-python';
+    detailActionBadge = '<span class="badge ' + detailActionCls + '">' + escapeHtml(detailActionType) + '</span>';
+  }
+  html += '<div class="detail-header"><h2>Step ' + s.step + '</h2><span class="badge ' + badgeClass(s.result) + '">' + escapeHtml(s.result) + '</span>' + detailActionBadge + '<span style="color:#484f58;font-size:13px">' + escapeHtml(s.timestamp || '') + '</span></div>';
 
   if (s.screenshot) {
     html += '<img class="screenshot" src="data:image/png;base64,' + s.screenshot + '" alt="Step ' + s.step + ' screenshot">';
@@ -242,7 +275,13 @@ function addStepToSidebar(s, index) {
   var div = document.createElement('div');
   div.className = 'step-item';
   div.dataset.index = index;
-  div.innerHTML = '<span class="step-num">Step ' + s.step + '</span><span class="badge ' + badgeClass(s.result) + '">' + escapeHtml(s.result) + '</span><div class="step-thought">' + escapeHtml(s.thought || '(no thought)') + '</div>';
+  var actionType = getActionType(s);
+  var actionBadge = '';
+  if (actionType) {
+    var actionCls = {'python': 'action-python', 'bash': 'action-bash', 'python + bash': 'action-both'}[actionType] || 'action-python';
+    actionBadge = '<span class="badge ' + actionCls + '">' + escapeHtml(actionType) + '</span>';
+  }
+  div.innerHTML = '<span class="step-num">Step ' + s.step + '</span><span class="badge ' + badgeClass(s.result) + '">' + escapeHtml(s.result) + '</span>' + actionBadge + '<div class="step-thought">' + escapeHtml(s.thought || '(no thought)') + '</div>';
   div.addEventListener('click', function() { selectStep(index); });
   stepList.appendChild(div);
 }
@@ -364,7 +403,8 @@ if (MODE === 'live') {
       screenshot: data.screenshot_base64,
       timestamp: data.timestamp,
       bash_output: data.bash_output,
-      error_feedback: data.error_feedback
+      error_feedback: data.error_feedback,
+      action_type: data.action_type
     };
     var index = STEPS.length;
     STEPS.push(step);

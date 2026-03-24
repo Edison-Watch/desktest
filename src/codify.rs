@@ -24,6 +24,8 @@ pub struct TrajectoryRecord {
     pub bash_output: Option<String>,
     #[serde(default)]
     pub error_feedback: Option<String>,
+    #[serde(default)]
+    pub action_type: Option<String>,
 }
 
 /// Load trajectory entries from a JSONL file.
@@ -291,6 +293,7 @@ mod tests {
                 result: "success".into(),
                 bash_output: None,
                 error_feedback: None,
+                action_type: None,
             },
             TrajectoryRecord {
                 step: 2,
@@ -301,6 +304,7 @@ mod tests {
                 result: "success".into(),
                 bash_output: None,
                 error_feedback: None,
+                action_type: None,
             },
             TrajectoryRecord {
                 step: 3,
@@ -311,6 +315,7 @@ mod tests {
                 result: "done".into(),
                 bash_output: None,
                 error_feedback: None,
+                action_type: None,
             },
         ]
     }

@@ -342,6 +342,7 @@ fn emit_trajectory_event(
         .to_string();
     let bash_output = entry.get("bash_output").and_then(|v| v.as_str()).map(String::from);
     let error_feedback = entry.get("error_feedback").and_then(|v| v.as_str()).map(String::from);
+    let action_type = entry.get("action_type").and_then(|v| v.as_str()).map(String::from);
 
     // Load screenshot from the phase's artifact directory.
     // Only load for the last entry in a batch to avoid reading hundreds of files
@@ -373,6 +374,7 @@ fn emit_trajectory_event(
         timestamp,
         bash_output,
         error_feedback,
+        action_type,
     });
 
     // If this is a terminal result, emit TestComplete.

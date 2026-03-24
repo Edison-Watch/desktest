@@ -43,6 +43,9 @@ pub struct TrajectoryEntry {
     /// Error feedback from execution failures (bash or Python).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_feedback: Option<String>,
+    /// Action type: "python", "bash", "python+bash", or None if no code blocks.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_type: Option<String>,
 }
 
 /// Incremental trajectory logger that writes JSONL (one JSON object per line).
@@ -119,6 +122,7 @@ impl TrajectoryLogger {
                 llm_raw_response: entry.llm_raw_response.as_ref().map(|r| redactor.redact(r)),
                 bash_output: entry.bash_output.as_ref().map(|o| redactor.redact(o)),
                 error_feedback: entry.error_feedback.as_ref().map(|e| redactor.redact(e)),
+                action_type: entry.action_type.clone(),
             };
             &redacted
         } else {
@@ -156,6 +160,7 @@ impl TrajectoryLogger {
         raw_response: Option<&str>,
         bash_output: Option<&str>,
         error_feedback: Option<&str>,
+        action_type: Option<&str>,
     ) -> TrajectoryEntry {
         let action_code = code_blocks.join("\n\n");
         let thought = extract_thought(response_text, code_blocks);
@@ -202,7 +207,22 @@ impl TrajectoryLogger {
             llm_raw_response,
             bash_output: bash_output.map(|s| s.to_string()),
             error_feedback: error_feedback.map(|s| s.to_string()),
+            action_type: action_type.map(|s| s.to_string()),
         }
+    }
+}
+
+/// Compute the action type from separate code block lists.
+///
+/// Returns "python", "bash", "python+bash", or None if no code blocks.
+pub fn compute_action_type(python_blocks: &[String], bash_blocks: &[String]) -> Option<String> {
+    let has_python = !python_blocks.is_empty();
+    let has_bash = !bash_blocks.is_empty();
+    match (has_python, has_bash) {
+        (true, true) => Some("python+bash".to_string()),
+        (true, false) => Some("python".to_string()),
+        (false, true) => Some("bash".to_string()),
+        (false, false) => None,
     }
 }
 
@@ -384,6 +404,7 @@ mod tests {
             llm_raw_response: None,
             bash_output: None,
             error_feedback: None,
+            action_type: Some("python".to_string()),
         };
 
         let json = serde_json::to_string(&entry).unwrap();
@@ -408,6 +429,7 @@ mod tests {
             llm_raw_response: Some("Full LLM response here".to_string()),
             bash_output: None,
             error_feedback: None,
+            action_type: None,
         };
 
         let json = serde_json::to_string(&entry).unwrap();
@@ -431,6 +453,7 @@ mod tests {
                 llm_raw_response: None,
                 bash_output: None,
                 error_feedback: None,
+                action_type: None,
             };
             let json = serde_json::to_string(&entry).unwrap();
             assert!(json.contains(&format!("\"result\":\"{result_str}\"")));
@@ -449,14 +472,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // Non-verbose: build_entry should NOT include raw response
         let logger = TrajectoryLogger::new(dir.path(), false, None).unwrap();
-        let entry = logger.build_entry(1, "text", &[], None, None, "done", Some("raw"), None, None);
+        let entry = logger.build_entry(1, "text", &[], None, None, "done", Some("raw"), None, None, None);
         assert!(entry.llm_raw_response.is_none());
 
         // Verbose: build_entry SHOULD include raw response
         let dir2 = tempfile::tempdir().unwrap();
         let logger2 = TrajectoryLogger::new(dir2.path(), true, None).unwrap();
         let entry2 =
-            logger2.build_entry(1, "text", &[], None, None, "done", Some("raw"), None, None);
+            logger2.build_entry(1, "text", &[], None, None, "done", Some("raw"), None, None, None);
         assert!(entry2.llm_raw_response.is_some());
     }
 
@@ -476,6 +499,7 @@ mod tests {
             llm_raw_response: None,
             bash_output: None,
             error_feedback: None,
+            action_type: None,
         };
 
         let entry2 = TrajectoryEntry {
@@ -489,6 +513,7 @@ mod tests {
             llm_raw_response: None,
             bash_output: None,
             error_feedback: None,
+            action_type: None,
         };
 
         logger.log_entry(&entry1);
@@ -523,6 +548,7 @@ mod tests {
             Some("full response"),
             None,
             None,
+            Some("python"),
         );
 
         assert_eq!(entry.step, 1);
@@ -549,6 +575,7 @@ mod tests {
             Some("full LLM response"),
             None,
             None,
+            None,
         );
 
         assert!(entry.llm_raw_response.is_some());
@@ -568,6 +595,7 @@ mod tests {
             None,
             Some(a11y_text),
             "success",
+            None,
             None,
             None,
             None,
@@ -621,6 +649,7 @@ mod tests {
             None,
             None,
             "success",
+            None,
             None,
             None,
             None,

@@ -32,6 +32,9 @@ pub enum MonitorEvent {
         /// Error feedback from execution failures (bash or Python).
         #[serde(skip_serializing_if = "Option::is_none")]
         error_feedback: Option<String>,
+        /// Action type: "python", "bash", "python+bash", or None.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        action_type: Option<String>,
     },
     /// Emitted when a test finishes.
     TestComplete {
