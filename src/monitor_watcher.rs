@@ -187,7 +187,7 @@ fn process_phase(
     }
 
     for entry in &new_entries {
-        emit_trajectory_event(entry, phase_id, display_name, handle, &trajectory_path);
+        emit_trajectory_event(entry, display_name, handle, &trajectory_path);
     }
 
     // Only advance past lines that were blank or successfully parsed;
@@ -283,7 +283,6 @@ fn read_task_metadata(phase_dir: &Path) -> (String, usize) {
 /// `display_name` is the clean label (without internal prefixes) for user-visible fields.
 fn emit_trajectory_event(
     entry: &serde_json::Value,
-    phase_id: &str,
     display_name: &str,
     handle: &MonitorHandle,
     trajectory_path: &Path,
@@ -340,7 +339,7 @@ fn emit_trajectory_event(
     if result == "done" || result == "fail" || result == "timeout" || result == "max_steps" {
         let passed = result == "done";
         handle.send(MonitorEvent::TestComplete {
-            test_id: phase_id.to_string(),
+            test_id: display_name.to_string(),
             passed,
             reasoning: format!("Phase '{display_name}' ended with result: {result}"),
             duration_ms: 0, // Duration not available from trajectory alone
