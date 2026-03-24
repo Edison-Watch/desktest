@@ -8,10 +8,6 @@ use crate::docker::DockerSession;
 use crate::error::AppError;
 use crate::trajectory::{TrajectoryEntry, TrajectoryLogger, chrono_iso8601_now};
 
-/// Maximum character length for thought text embedded in REPLAY_STEP_DONE markers.
-/// Full thought is preserved in the original trajectory; this cap keeps generated scripts readable.
-const REPLAY_THOUGHT_MAX_CHARS: usize = 200;
-
 /// script_replay: Copy a Python script into the container, run it, check for REPLAY_COMPLETE.
 /// If `screenshots_dir` is provided, copies that directory into the container so that
 /// screenshot comparison assertions can find their expected files.
