@@ -143,7 +143,10 @@ async fn main() {
 
             let run_config =
                 orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
-            if let Err(e) = preflight::run_preflight(&run_config, true).await {
+            // Skip API key check for suites: tasks are discovered dynamically and
+            // some may be programmatic-only. Each individual run_task call will
+            // check for its own API key requirement.
+            if let Err(e) = preflight::run_preflight(&run_config, false).await {
                 eprintln!("Preflight check failed: {e}");
                 eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
                 std::process::exit(e.exit_code());
