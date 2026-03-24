@@ -184,13 +184,17 @@ function detectActionType(actionCode) {
   if (!actionCode) return null;
   var hasBash = false;
   var hasPython = false;
-  var lines = actionCode.split('\n');
-  var inBashBlock = false;
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i];
-    if (line === '# [bash]') { inBashBlock = true; hasBash = true; continue; }
-    if (line === '' && inBashBlock) { inBashBlock = false; continue; }
-    if (!inBashBlock && line.trim() !== '') { hasPython = true; }
+  // Blocks are joined with "\n\n" in trajectory; split on that boundary
+  // and check each block for the "# [bash]" prefix.
+  var blocks = actionCode.split('\n\n');
+  for (var i = 0; i < blocks.length; i++) {
+    var block = blocks[i].trim();
+    if (!block) continue;
+    if (block === '# [bash]' || block.startsWith('# [bash]\n')) {
+      hasBash = true;
+    } else {
+      hasPython = true;
+    }
   }
   if (hasBash && hasPython) return 'python + bash';
   if (hasBash) return 'bash';
