@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::time::Duration;
 
 use tracing::{info, warn};
@@ -5,14 +6,19 @@ use tracing::{info, warn};
 use super::MetricResult;
 use crate::docker::DockerSession;
 use crate::error::AppError;
+use crate::trajectory::{TrajectoryEntry, TrajectoryLogger, chrono_iso8601_now};
 
 /// script_replay: Copy a Python script into the container, run it, check for REPLAY_COMPLETE.
 /// If `screenshots_dir` is provided, copies that directory into the container so that
 /// screenshot comparison assertions can find their expected files.
+///
+/// Also reconstructs a trajectory from per-step markers emitted by the replay script,
+/// copying screenshots from the container and writing `trajectory.jsonl` to `artifacts_dir`.
 pub(super) async fn evaluate_script_replay(
     session: &DockerSession,
     script_path: &str,
     screenshots_dir: Option<&str>,
+    artifacts_dir: &Path,
     eval_timeout: Duration,
 ) -> Result<MetricResult, AppError> {
     let host_path = std::path::Path::new(script_path);
@@ -84,6 +90,12 @@ pub(super) async fn evaluate_script_replay(
     let has_complete = output.contains("REPLAY_COMPLETE");
     let passed = exit_code == 0 && has_complete;
 
+    // Reconstruct trajectory from step markers in script output
+    let steps = parse_replay_steps(&output);
+    if !steps.is_empty() {
+        write_replay_trajectory(session, artifacts_dir, &steps, passed).await;
+    }
+
     let detail = if passed {
         "Replay script completed successfully".to_string()
     } else if exit_code != 0 {
@@ -99,4 +111,95 @@ pub(super) async fn evaluate_script_replay(
         actual: format!("exit_code={exit_code}, complete={has_complete}"),
         detail,
     })
+}
+
+/// A parsed replay step from the script output.
+struct ReplayStep {
+    step: usize,
+    thought: String,
+}
+
+/// Parse `REPLAY_STEP_DONE:N:thought` markers from script output.
+fn parse_replay_steps(output: &str) -> Vec<ReplayStep> {
+    let mut steps = Vec::new();
+    for line in output.lines() {
+        let line = line.trim();
+        if let Some(rest) = line.strip_prefix("REPLAY_STEP_DONE:") {
+            if let Some((num_str, thought)) = rest.split_once(':') {
+                if let Ok(step) = num_str.parse::<usize>() {
+                    steps.push(ReplayStep {
+                        step,
+                        thought: thought.to_string(),
+                    });
+                }
+            }
+        }
+    }
+    steps
+}
+
+/// Copy per-step screenshots from the container and write trajectory.jsonl.
+async fn write_replay_trajectory(
+    session: &DockerSession,
+    artifacts_dir: &Path,
+    steps: &[ReplayStep],
+    replay_passed: bool,
+) {
+    let mut trajectory_logger = match TrajectoryLogger::new(artifacts_dir, false, None) {
+        Ok(tl) => tl,
+        Err(e) => {
+            warn!("Failed to create trajectory logger for replay: {e}");
+            return;
+        }
+    };
+
+    for (i, step) in steps.iter().enumerate() {
+        let container_screenshot = format!("/tmp/replay_step_{:03}.png", step.step);
+        let local_screenshot = artifacts_dir.join(format!("step_{:03}.png", step.step));
+
+        // Copy screenshot from container
+        let screenshot_path = match session
+            .copy_from(&container_screenshot, &local_screenshot)
+            .await
+        {
+            Ok(()) => Some(format!("step_{:03}.png", step.step)),
+            Err(e) => {
+                warn!(
+                    "Failed to copy replay screenshot for step {}: {e}",
+                    step.step
+                );
+                None
+            }
+        };
+
+        let is_last = i == steps.len() - 1;
+        let result = if is_last {
+            if replay_passed {
+                "done"
+            } else {
+                "fail"
+            }
+        } else {
+            "success"
+        };
+
+        let entry = TrajectoryEntry {
+            step: step.step,
+            timestamp: chrono_iso8601_now(),
+            action_code: format!("# replay step {}", step.step),
+            thought: Some(step.thought.clone()),
+            screenshot_path,
+            a11y_tree_path: None,
+            result: result.to_string(),
+            llm_raw_response: None,
+            bash_output: None,
+            error_feedback: None,
+        };
+        trajectory_logger.log_entry(&entry);
+    }
+
+    info!(
+        "Wrote replay trajectory with {} steps",
+        steps.len()
+    );
 }

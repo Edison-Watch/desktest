@@ -168,6 +168,7 @@ async fn evaluate_metric(
                 session,
                 script_path,
                 screenshots_dir.as_deref(),
+                artifacts_dir,
                 eval_timeout,
             )
             .await
