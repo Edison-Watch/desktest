@@ -94,9 +94,16 @@ Developer writes task.json
 
 ## Requirements
 
-- Linux or macOS host with Docker installed
+**To run tests:**
+- Linux or macOS host
+- Docker daemon running (Docker Desktop, OrbStack, Colima, etc.)
+- An LLM API key (OpenAI, Anthropic, or compatible) — not needed for `--replay` mode
+
+**To build from source (optional):**
 - Rust toolchain (`cargo`)
-- An LLM API key (OpenAI, Anthropic, or compatible)
+- Git
+
+Run `desktest doctor` to verify your setup.
 
 ## Installation
 
@@ -146,6 +153,7 @@ Commands:
   codify        Convert trajectory to deterministic Python replay script
   review        Generate web-based trajectory review viewer
   logs          View trajectory logs in the terminal (supports --steps N, N-M, or N,M,X-Y)
+  doctor        Check that all prerequisites are installed and configured
 
 Options:
   --config <FILE>        Config JSON file (optional; API key can come from env vars)

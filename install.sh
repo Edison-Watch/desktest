@@ -137,6 +137,13 @@ verify_installation() {
   export PATH=\"${INSTALL_DIR}:\$PATH\""
         fi
     fi
+
+    log ""
+    log "Prerequisites:"
+    log "  - Docker daemon must be running (Docker Desktop, OrbStack, Colima, etc.)"
+    log "  - Set an LLM API key: export ANTHROPIC_API_KEY=sk-... (or OPENAI_API_KEY)"
+    log ""
+    log "Run 'desktest doctor' to verify your setup."
 }
 
 log() {

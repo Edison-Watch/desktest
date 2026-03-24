@@ -245,6 +245,15 @@ EXAMPLES:
         steps: Option<String>,
     },
 
+    /// Check that all prerequisites are installed and configured
+    #[command(after_help = "\
+Verifies Docker daemon connectivity, API key availability, and displays \
+current configuration. Use this to troubleshoot setup issues.\n\n\
+EXAMPLES:
+  desktest doctor
+  desktest doctor --config config.json")]
+    Doctor,
+
     /// Update desktest to the latest release from GitHub
     #[command(after_help = "\
 EXAMPLES:
