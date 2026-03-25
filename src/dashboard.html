@@ -383,7 +383,7 @@ if (MODE === 'live') {
       html += '<div class="section"><h3 class="collapsible open" onclick="toggleCollapse(this)"><span class="arrow">&#9654;</span> Completion Condition</h3><div class="collapse-content"><div class="task-instruction">' + escapeHtml(data.completion_condition) + '</div></div></div>';
     }
     html += '<div class="section"><h3>Details</h3><dl class="task-meta">';
-    html += '<dt>Max Steps</dt><dd>' + (data.max_steps != null ? data.max_steps : 15) + '</dd>';
+    html += '<dt>Max Steps</dt><dd>' + (data.max_steps != null ? data.max_steps : '\u2014') + '</dd>';
     if (data.vnc_url) {
       var safeVnc = /^(https?|vnc):\/\//i.test(data.vnc_url) ? data.vnc_url : '';
       if (safeVnc) {
