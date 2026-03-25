@@ -91,16 +91,18 @@ impl TelemetryClient {
         let base_url = std::env::var("DESKTEST_TELEMETRY_URL")
             .unwrap_or_else(|_| DEFAULT_TELEMETRY_URL.to_string());
 
-        let existing = load_config();
+        let (existing, was_corrupt) = load_config();
         let was_fresh = existing.is_none();
         let mut config = existing.unwrap_or_default();
         let mut is_env_override = false;
 
-        // Persist the config if freshly generated, so install_id is stable across runs.
+        // Persist the config if freshly generated (or reset after corruption),
+        // so install_id is stable across runs.
         // Done before env override to avoid leaking an env-overridden consent level to disk.
         if was_fresh {
             let _ = save_config(&config);
         }
+        let _ = was_corrupt; // consumed by the warning in load_config
 
         if let Some(val) = env_override {
             is_env_override = true;
@@ -143,8 +145,11 @@ impl TelemetryClient {
             self.show_nudge();
         }
 
-        self.config.run_count_since_prompt += 1;
-        let _ = save_config(&self.config);
+        // Only increment and persist for users who can be nudged (not Rich)
+        if self.config.consent_level != ConsentLevel::Rich {
+            self.config.run_count_since_prompt += 1;
+            let _ = save_config(&self.config);
+        }
     }
 
     /// Handle the `desktest telemetry <action>` subcommand.
@@ -409,10 +414,29 @@ fn state_file_path() -> Option<PathBuf> {
     config_dir().map(|d| d.join(STATE_FILE_NAME))
 }
 
-fn load_config() -> Option<TelemetryConfig> {
-    let path = state_file_path()?;
-    let data = std::fs::read_to_string(&path).ok()?;
-    serde_json::from_str(&data).ok()
+/// Load telemetry config from disk.
+/// Returns (Some(config), false) on success, (None, false) if file doesn't exist,
+/// or (None, true) if the file exists but is corrupt.
+fn load_config() -> (Option<TelemetryConfig>, bool) {
+    let path = match state_file_path() {
+        Some(p) => p,
+        None => return (None, false),
+    };
+    let data = match std::fs::read_to_string(&path) {
+        Ok(d) => d,
+        Err(_) => return (None, false), // file doesn't exist
+    };
+    match serde_json::from_str(&data) {
+        Ok(config) => (Some(config), false),
+        Err(e) => {
+            eprintln!(
+                "Warning: telemetry config at '{}' is corrupt ({}), resetting. Your install_id will change.",
+                path.display(),
+                e
+            );
+            (None, true)
+        }
+    }
 }
 
 fn save_config(config: &TelemetryConfig) -> Result<(), std::io::Error> {
