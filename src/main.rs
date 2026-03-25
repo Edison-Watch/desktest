@@ -115,6 +115,8 @@ async fn main() {
 
             let run_config =
                 orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
+            let telem_provider = run_config.provider.clone();
+            let telem_model = run_config.model.clone();
 
             let needs_llm = !*replay && !task_def.is_programmatic_only();
             if let Err(e) = preflight::run_preflight(&run_config, needs_llm).await {
@@ -143,7 +145,7 @@ async fn main() {
             )
             .await;
 
-            record_run_event(&mut telemetry_client, &result, cmd_name, cli.qa, is_replay, bash_enabled, start_time);
+            record_run_event(&mut telemetry_client, &result, cmd_name, cli.qa, is_replay, bash_enabled, start_time, Some(&telem_provider), Some(&telem_model));
 
             // Print result immediately so the user doesn't wait for telemetry flush
             let exit_code = match &result {
@@ -208,6 +210,8 @@ async fn main() {
                     event.duration_ms = Some(suite_result.total_duration_ms);
                     event.used_qa_mode = cli.qa;
                     event.used_bash = bash_enabled;
+                    event.provider = Some(run_config.provider.clone());
+                    event.model = Some(run_config.model.clone());
                     telemetry_client.record_event(event);
                 }
                 Err(e) => {
@@ -217,6 +221,8 @@ async fn main() {
                     event.error_category = Some(format!("exit_{}", e.exit_code()));
                     event.used_qa_mode = cli.qa;
                     event.used_bash = bash_enabled;
+                    event.provider = Some(run_config.provider.clone());
+                    event.model = Some(run_config.model.clone());
                     telemetry_client.record_event(event);
                 }
             }
@@ -259,6 +265,8 @@ async fn main() {
 
             let run_config =
                 orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
+            let telem_provider = run_config.provider.clone();
+            let telem_model = run_config.model.clone();
 
             let needs_llm = !*replay && !task_def.is_programmatic_only();
             if let Err(e) = preflight::run_preflight(&run_config, needs_llm).await {
@@ -287,7 +295,7 @@ async fn main() {
             )
             .await;
 
-            record_run_event(&mut telemetry_client, &result, "attach", cli.qa, is_replay, bash_enabled, start_time);
+            record_run_event(&mut telemetry_client, &result, "attach", cli.qa, is_replay, bash_enabled, start_time, Some(&telem_provider), Some(&telem_model));
 
             // Print result immediately so the user doesn't wait for telemetry flush
             let exit_code = match &result {
@@ -324,6 +332,8 @@ async fn main() {
 
             let run_config =
                 orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
+            let telem_provider = run_config.provider.clone();
+            let telem_model = run_config.model.clone();
 
             // run_interactive_step unconditionally creates an LLM provider,
             // so any --step invocation needs an API key regardless of evaluator mode.
@@ -355,7 +365,7 @@ async fn main() {
             let is_expected_interrupt = matches!(&result, Err(e) if !step && !validate_only && e.is_interrupt());
 
             if !is_expected_interrupt {
-                record_run_event(&mut telemetry_client, &result, "interactive", cli.qa, false, bash_enabled, start_time);
+                record_run_event(&mut telemetry_client, &result, "interactive", cli.qa, false, bash_enabled, start_time, Some(&telem_provider), Some(&telem_model));
             }
 
             // Print result immediately so the user doesn't wait for telemetry flush
@@ -724,7 +734,7 @@ async fn main() {
     }
 }
 
-/// Record a telemetry event for a single test run (used by Run and Attach commands).
+/// Record a telemetry event for a single test run (used by Run, Attach, and Interactive commands).
 fn record_run_event(
     client: &mut telemetry::TelemetryClient,
     result: &Result<crate::error::AgentOutcome, crate::error::AppError>,
@@ -733,6 +743,8 @@ fn record_run_event(
     replay: bool,
     bash_enabled: bool,
     start_time: std::time::Instant,
+    provider: Option<&str>,
+    model: Option<&str>,
 ) {
     let duration_ms = start_time.elapsed().as_millis() as u64;
     let mut event = telemetry::build_event(client, "test_completed", command);
@@ -740,6 +752,8 @@ fn record_run_event(
     event.used_qa_mode = qa;
     event.used_replay = replay;
     event.used_bash = bash_enabled;
+    event.provider = provider.map(|s| s.to_string());
+    event.model = model.map(|s| s.to_string());
 
     match result {
         Ok(outcome) => {
