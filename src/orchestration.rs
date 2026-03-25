@@ -1493,17 +1493,29 @@ mod tests {
 
     #[test]
     fn test_provider_override_clears_stale_api_key() {
-        // Simulate a config that has an api_key for one provider, then
-        // --provider switches to a different provider without --api-key.
-        // The stale key must be cleared so the env var fallback kicks in.
+        // Config file has an api_key for anthropic. Switching to openrouter
+        // via --provider (without --api-key) must clear the stale key.
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.json");
+        std::fs::write(
+            &config_path,
+            r#"{
+                "provider": "anthropic",
+                "api_key": "sk-ant-stale",
+                "model": "claude-sonnet-4-20250514",
+                "app_type": "docker_image"
+            }"#,
+        )
+        .unwrap();
         let overrides = LlmOverrides {
             provider: Some("openrouter".into()),
             model: None,
             api_key: None,
         };
-        // Start from defaults (empty key) — no clearing needed
-        let config = load_config_or_defaults(&None, &None, &overrides);
-        assert!(config.api_key.is_empty());
+        let config_flag = Some(config_path);
+        let config = load_config_or_defaults(&config_flag, &None, &overrides);
+        // Stale anthropic key must be cleared when switching to openrouter
+        assert!(config.api_key.is_empty(), "stale api_key should be cleared");
         assert_eq!(config.provider, "openrouter");
     }
 
