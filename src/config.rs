@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::error::AppError;
 
-fn default_model() -> String {
+pub(crate) fn default_model() -> String {
     "claude-sonnet-4-5-20250929".into()
 }
 
