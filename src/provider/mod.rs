@@ -159,7 +159,8 @@ pub fn create_provider(
             } else {
                 "https://generativelanguage.googleapis.com/v1beta/openai"
             };
-            let client = custom::CustomProvider::new(&resolved_key, model, url);
+            let client = custom::CustomProvider::new(&resolved_key, model, url)
+                .with_completions_path("/chat/completions");
             Ok(Box::new(client))
         }
         "custom" => {
