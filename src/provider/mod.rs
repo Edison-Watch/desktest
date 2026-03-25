@@ -399,4 +399,22 @@ mod tests {
         let key = resolve_api_key("custom-key", "custom").unwrap();
         assert_eq!(key, "custom-key");
     }
+
+    #[test]
+    fn test_is_known_default_url_matches_all_builtins() {
+        assert!(is_known_default_url("https://api.anthropic.com"));
+        assert!(is_known_default_url("https://api.openai.com"));
+        assert!(is_known_default_url("https://openrouter.ai/api"));
+        assert!(is_known_default_url("https://api.cerebras.ai"));
+        assert!(is_known_default_url(
+            "https://generativelanguage.googleapis.com/v1beta/openai"
+        ));
+    }
+
+    #[test]
+    fn test_is_known_default_url_rejects_custom() {
+        assert!(!is_known_default_url("http://localhost:8080"));
+        assert!(!is_known_default_url("https://custom.api.com"));
+        assert!(!is_known_default_url("https://litellm.example.com/v1"));
+    }
 }
