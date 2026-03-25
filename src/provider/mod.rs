@@ -416,5 +416,7 @@ mod tests {
         assert!(!is_known_default_url("http://localhost:8080"));
         assert!(!is_known_default_url("https://custom.api.com"));
         assert!(!is_known_default_url("https://litellm.example.com/v1"));
+        assert!(!is_known_default_url("https://api.anthropic.com/extra"));
+        assert!(!is_known_default_url(""));
     }
 }

@@ -84,7 +84,7 @@ pub struct Cli {
     pub model: Option<String>,
 
     /// API key for the LLM provider (overrides config file and env vars).
-    /// Note: CLI args are visible in process listings; prefer env vars for sensitive contexts
+    /// Note: prefer env vars (ANTHROPIC_API_KEY, OPENROUTER_API_KEY, etc.) to avoid exposing secrets in shell history and process listings
     #[arg(long, global = true)]
     pub api_key: Option<String>,
 }
