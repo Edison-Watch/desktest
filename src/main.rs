@@ -172,14 +172,13 @@ async fn main() {
 
             let result = suite::run_suite(
                 dir,
-                cli.config_flag.as_deref(),
+                run_config,
                 filter.as_deref(),
                 &cli.output,
                 cli.debug,
                 cli.verbose,
                 bash_enabled,
                 !cli.record,
-                cli.resolution.as_deref(),
                 monitor_handle,
                 cli.qa,
             )

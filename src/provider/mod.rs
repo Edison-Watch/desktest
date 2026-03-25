@@ -122,10 +122,15 @@ pub fn create_provider(
 ) -> Result<Box<dyn LlmProvider>, AppError> {
     let resolved_key = resolve_api_key(api_key, provider_name)?;
 
+    // Treat any known default URL as "no custom URL was set" so that switching
+    // providers via --provider doesn't accidentally send requests to the old
+    // provider's endpoint.
+    let has_custom_url = !is_known_default_url(base_url);
+
     match provider_name {
         "openai" => {
             let mut client = openai::OpenAiProvider::new(&resolved_key, model);
-            if base_url != "https://api.openai.com" && base_url != "https://api.anthropic.com" {
+            if has_custom_url {
                 client = client.with_base_url(base_url);
             }
             Ok(Box::new(client))
@@ -133,34 +138,26 @@ pub fn create_provider(
         "anthropic" => {
             validate_image_support(provider_name, model)?;
             let mut client = anthropic::AnthropicProvider::new(&resolved_key, model);
-            if base_url != "https://api.openai.com" && base_url != "https://api.anthropic.com" {
+            if has_custom_url {
                 client = client.with_base_url(base_url);
             }
             Ok(Box::new(client))
         }
         "openrouter" => {
-            let url = if base_url == "https://api.anthropic.com" || base_url == "https://api.openai.com" {
-                "https://openrouter.ai/api"
-            } else {
-                base_url
-            };
+            let url = if has_custom_url { base_url } else { "https://openrouter.ai/api" };
             let client = custom::CustomProvider::new(&resolved_key, model, url);
             Ok(Box::new(client))
         }
         "cerebras" => {
-            let url = if base_url == "https://api.anthropic.com" || base_url == "https://api.openai.com" {
-                "https://api.cerebras.ai"
-            } else {
-                base_url
-            };
+            let url = if has_custom_url { base_url } else { "https://api.cerebras.ai" };
             let client = custom::CustomProvider::new(&resolved_key, model, url);
             Ok(Box::new(client))
         }
         "gemini" => {
-            let url = if base_url == "https://api.anthropic.com" || base_url == "https://api.openai.com" {
-                "https://generativelanguage.googleapis.com/v1beta/openai"
-            } else {
+            let url = if has_custom_url {
                 base_url
+            } else {
+                "https://generativelanguage.googleapis.com/v1beta/openai"
             };
             let client = custom::CustomProvider::new(&resolved_key, model, url);
             Ok(Box::new(client))
@@ -173,6 +170,19 @@ pub fn create_provider(
             "Unknown provider '{other}'. Supported: anthropic, openai, openrouter, cerebras, gemini, custom"
         ))),
     }
+}
+
+/// Returns true if the URL is a known default for any built-in provider.
+/// Used to detect when `api_base_url` was not explicitly customized by the user.
+fn is_known_default_url(url: &str) -> bool {
+    matches!(
+        url,
+        "https://api.anthropic.com"
+            | "https://api.openai.com"
+            | "https://openrouter.ai/api"
+            | "https://api.cerebras.ai"
+            | "https://generativelanguage.googleapis.com/v1beta/openai"
+    )
 }
 
 /// Validate that the selected model supports image inputs.
