@@ -74,6 +74,18 @@ pub struct Cli {
     /// Enable QA mode: agent reports app bugs it encounters during testing
     #[arg(long, default_value_t = false, global = true)]
     pub qa: bool,
+
+    /// LLM provider (overrides config file). Supported: anthropic, openai, openrouter, cerebras, gemini, custom
+    #[arg(long, global = true)]
+    pub provider: Option<String>,
+
+    /// LLM model name (overrides config file)
+    #[arg(long, global = true)]
+    pub model: Option<String>,
+
+    /// API key for the LLM provider (overrides config file and env vars)
+    #[arg(long, global = true)]
+    pub api_key: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]

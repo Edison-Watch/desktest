@@ -103,13 +103,16 @@ pub fn user_image_message(data_url: &str) -> ChatMessage {
 /// Create an LlmProvider from configuration fields.
 ///
 /// Provider selection:
-/// - "openai" (default): OpenAI API
-/// - "anthropic": Anthropic Messages API (Claude models)
+/// - "anthropic" (default): Anthropic Messages API (Claude models)
+/// - "openai": OpenAI API
+/// - "openrouter": OpenRouter (OpenAI-compatible, auto-sets base URL)
+/// - "cerebras": Cerebras (OpenAI-compatible, auto-sets base URL)
+/// - "gemini": Google Gemini (OpenAI-compatible, auto-sets base URL)
 /// - "custom": OpenAI-compatible API with configurable base_url
 ///
 /// API key resolution order:
 /// 1. Explicit `api_key` parameter
-/// 2. Provider-specific env var (OPENAI_API_KEY, ANTHROPIC_API_KEY)
+/// 2. Provider-specific env var (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.)
 /// 3. Generic LLM_API_KEY env var
 pub fn create_provider(
     provider_name: &str,
@@ -122,7 +125,7 @@ pub fn create_provider(
     match provider_name {
         "openai" => {
             let mut client = openai::OpenAiProvider::new(&resolved_key, model);
-            if base_url != "https://api.openai.com" {
+            if base_url != "https://api.openai.com" && base_url != "https://api.anthropic.com" {
                 client = client.with_base_url(base_url);
             }
             Ok(Box::new(client))
@@ -135,12 +138,39 @@ pub fn create_provider(
             }
             Ok(Box::new(client))
         }
+        "openrouter" => {
+            let url = if base_url == "https://api.anthropic.com" || base_url == "https://api.openai.com" {
+                "https://openrouter.ai/api"
+            } else {
+                base_url
+            };
+            let client = custom::CustomProvider::new(&resolved_key, model, url);
+            Ok(Box::new(client))
+        }
+        "cerebras" => {
+            let url = if base_url == "https://api.anthropic.com" || base_url == "https://api.openai.com" {
+                "https://api.cerebras.ai"
+            } else {
+                base_url
+            };
+            let client = custom::CustomProvider::new(&resolved_key, model, url);
+            Ok(Box::new(client))
+        }
+        "gemini" => {
+            let url = if base_url == "https://api.anthropic.com" || base_url == "https://api.openai.com" {
+                "https://generativelanguage.googleapis.com/v1beta/openai"
+            } else {
+                base_url
+            };
+            let client = custom::CustomProvider::new(&resolved_key, model, url);
+            Ok(Box::new(client))
+        }
         "custom" => {
             let client = custom::CustomProvider::new(&resolved_key, model, base_url);
             Ok(Box::new(client))
         }
         other => Err(AppError::Config(format!(
-            "Unknown provider '{other}'. Supported: openai, anthropic, custom"
+            "Unknown provider '{other}'. Supported: anthropic, openai, openrouter, cerebras, gemini, custom"
         ))),
     }
 }
@@ -187,6 +217,9 @@ pub fn resolve_api_key_with_source(
     let provider_env = match provider_name {
         "openai" => "OPENAI_API_KEY",
         "anthropic" => "ANTHROPIC_API_KEY",
+        "openrouter" => "OPENROUTER_API_KEY",
+        "cerebras" => "CEREBRAS_API_KEY",
+        "gemini" => "GEMINI_API_KEY",
         _ => "",
     };
 
@@ -273,6 +306,24 @@ mod tests {
     #[test]
     fn test_create_provider_custom() {
         let provider = create_provider("custom", "sk-test", "local-model", "http://localhost:8080");
+        assert!(provider.is_ok());
+    }
+
+    #[test]
+    fn test_create_provider_openrouter() {
+        let provider = create_provider("openrouter", "sk-or-test", "anthropic/claude-sonnet-4", "https://api.anthropic.com");
+        assert!(provider.is_ok());
+    }
+
+    #[test]
+    fn test_create_provider_cerebras() {
+        let provider = create_provider("cerebras", "csk-test", "llama-4-scout-17b-16e-instruct", "https://api.anthropic.com");
+        assert!(provider.is_ok());
+    }
+
+    #[test]
+    fn test_create_provider_gemini() {
+        let provider = create_provider("gemini", "AIza-test", "gemini-2.5-flash", "https://api.anthropic.com");
         assert!(provider.is_ok());
     }
 

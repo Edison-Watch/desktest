@@ -25,10 +25,18 @@ pub(crate) struct TaskRunResult {
     pub(crate) agent_ran: bool,
 }
 
+/// CLI overrides for provider/model/api_key flags.
+pub(crate) struct LlmOverrides {
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub api_key: Option<String>,
+}
+
 /// Load config from --config flag path or use task defaults.
 pub(crate) fn load_config_or_defaults(
     config_flag: &Option<std::path::PathBuf>,
     resolution: &Option<String>,
+    llm: &LlmOverrides,
 ) -> Config {
     let mut config = if let Some(config_path) = config_flag {
         match Config::load_and_validate(config_path) {
@@ -41,6 +49,17 @@ pub(crate) fn load_config_or_defaults(
     } else {
         Config::from_task_defaults()
     };
+
+    // CLI flags override config file values
+    if let Some(p) = &llm.provider {
+        config.provider = p.clone();
+    }
+    if let Some(m) = &llm.model {
+        config.model = m.clone();
+    }
+    if let Some(k) = &llm.api_key {
+        config.api_key = k.clone();
+    }
 
     if let Some(res) = resolution {
         match parse_resolution(res) {
@@ -1387,9 +1406,13 @@ mod tests {
 
     // --- CLI subcommand tests ---
 
+    fn no_overrides() -> LlmOverrides {
+        LlmOverrides { provider: None, model: None, api_key: None }
+    }
+
     #[test]
     fn test_load_config_or_defaults_none() {
-        let config = load_config_or_defaults(&None, &None);
+        let config = load_config_or_defaults(&None, &None, &no_overrides());
         assert_eq!(config.provider, "anthropic");
         assert_eq!(config.model, "claude-sonnet-4-5-20250929");
         assert!(config.api_key.is_empty());
@@ -1423,9 +1446,36 @@ mod tests {
 
     #[test]
     fn test_load_config_with_resolution_override() {
-        let config = load_config_or_defaults(&None, &Some("1280x720".into()));
+        let config = load_config_or_defaults(&None, &Some("1280x720".into()), &no_overrides());
         assert_eq!(config.display_width, 1280);
         assert_eq!(config.display_height, 720);
+    }
+
+    #[test]
+    fn test_load_config_with_llm_overrides() {
+        let overrides = LlmOverrides {
+            provider: Some("openrouter".into()),
+            model: Some("anthropic/claude-sonnet-4".into()),
+            api_key: Some("sk-or-test".into()),
+        };
+        let config = load_config_or_defaults(&None, &None, &overrides);
+        assert_eq!(config.provider, "openrouter");
+        assert_eq!(config.model, "anthropic/claude-sonnet-4");
+        assert_eq!(config.api_key, "sk-or-test");
+    }
+
+    #[test]
+    fn test_load_config_partial_llm_overrides() {
+        let overrides = LlmOverrides {
+            provider: Some("gemini".into()),
+            model: None,
+            api_key: None,
+        };
+        let config = load_config_or_defaults(&None, &None, &overrides);
+        assert_eq!(config.provider, "gemini");
+        // model and api_key keep defaults
+        assert_eq!(config.model, "claude-sonnet-4-5-20250929");
+        assert!(config.api_key.is_empty());
     }
 
     #[test]
