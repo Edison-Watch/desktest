@@ -75,8 +75,10 @@ pub struct Cli {
     #[arg(long, default_value_t = false, global = true)]
     pub qa: bool,
 
-    /// LLM provider (overrides config file). Supported: anthropic, openai, openrouter, cerebras, gemini, custom
-    #[arg(long, global = true)]
+    /// LLM provider (overrides config file)
+    #[arg(long, global = true, value_parser = clap::builder::PossibleValuesParser::new([
+        "anthropic", "openai", "openrouter", "cerebras", "gemini", "custom"
+    ]))]
     pub provider: Option<String>,
 
     /// LLM model name (overrides config file)

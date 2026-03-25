@@ -184,7 +184,7 @@ pub fn create_provider(
 /// Used to detect when `api_base_url` was not explicitly customized by the user.
 fn is_known_default_url(url: &str) -> bool {
     matches!(
-        url,
+        url.trim_end_matches('/'),
         "https://api.anthropic.com"
             | "https://api.openai.com"
             | "https://openrouter.ai/api"
@@ -422,5 +422,12 @@ mod tests {
         assert!(!is_known_default_url("https://litellm.example.com/v1"));
         assert!(!is_known_default_url("https://api.anthropic.com/extra"));
         assert!(!is_known_default_url(""));
+    }
+
+    #[test]
+    fn test_is_known_default_url_trailing_slash() {
+        assert!(is_known_default_url("https://api.anthropic.com/"));
+        assert!(is_known_default_url("https://openrouter.ai/api/"));
+        assert!(is_known_default_url("https://api.cerebras.ai/"));
     }
 }
