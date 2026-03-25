@@ -210,18 +210,22 @@ fn validate_image_support(provider_name: &str, model: &str) -> Result<(), AppErr
 /// 2. Provider-specific env var
 /// 3. LLM_API_KEY env var
 pub fn resolve_api_key(explicit_key: &str, provider_name: &str) -> Result<String, AppError> {
-    resolve_api_key_with_source(explicit_key, provider_name).map(|(key, _source)| key)
+    resolve_api_key_with_source(explicit_key, provider_name, None).map(|(key, _source)| key)
 }
 
 /// Like `resolve_api_key`, but also returns a label indicating where the key
-/// came from (e.g. "config file", "ANTHROPIC_API_KEY", "LLM_API_KEY").
+/// came from (e.g. "config file", "--api-key flag", "ANTHROPIC_API_KEY", "LLM_API_KEY").
 /// Used by the `doctor` command to show the key source without revealing the key.
+///
+/// When `explicit_source` is provided and the explicit key is non-empty, that
+/// label is used instead of the default "config file".
 pub fn resolve_api_key_with_source(
     explicit_key: &str,
     provider_name: &str,
+    explicit_source: Option<&'static str>,
 ) -> Result<(String, &'static str), AppError> {
     if !explicit_key.is_empty() {
-        return Ok((explicit_key.to_string(), "config file"));
+        return Ok((explicit_key.to_string(), explicit_source.unwrap_or("config file")));
     }
 
     let provider_env = match provider_name {

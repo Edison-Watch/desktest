@@ -293,6 +293,7 @@ mod tests {
     fn test_config() -> Config {
         Config {
             api_key: "sk-test".into(),
+            api_key_source: None,
             provider: "openai".into(),
             model: "gpt-4.1".into(),
             api_base_url: "https://api.openai.com".into(),

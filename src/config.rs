@@ -46,6 +46,10 @@ pub struct Config {
     #[serde(default)]
     pub api_key: String,
 
+    /// Tracks where the API key came from (for diagnostics). Not deserialized.
+    #[serde(skip)]
+    pub api_key_source: Option<&'static str>,
+
     #[serde(default = "default_provider")]
     pub provider: String,
 
@@ -93,6 +97,7 @@ impl Config {
     pub fn from_task_defaults() -> Self {
         Config {
             api_key: String::new(),
+            api_key_source: None,
             provider: default_provider(),
             model: default_model(),
             api_base_url: default_base_url(),

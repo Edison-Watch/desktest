@@ -59,6 +59,7 @@ pub(crate) fn load_config_or_defaults(
     }
     if let Some(k) = &llm.api_key {
         config.api_key = k.clone();
+        config.api_key_source = Some("--api-key flag");
     }
 
     if let Some(res) = resolution {
