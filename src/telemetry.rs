@@ -99,7 +99,10 @@ impl TelemetryClient {
                 "0" => ConsentLevel::None,
                 "1" => ConsentLevel::Anonymous,
                 "2" => ConsentLevel::Rich,
-                _ => ConsentLevel::None,
+                other => {
+                    eprintln!("Warning: unrecognized DESKTEST_TELEMETRY value '{other}'. Expected 0, 1, or 2. Defaulting to off.");
+                    ConsentLevel::None
+                }
             };
         }
 
@@ -205,34 +208,36 @@ impl TelemetryClient {
 
     /// Flush all queued events to the backend. Fire-and-forget with timeout.
     pub async fn flush(&mut self) {
-        if self.config.consent_level == ConsentLevel::None || self.events.is_empty() {
+        if self.config.consent_level == ConsentLevel::None {
             return;
         }
 
         let client = reqwest::Client::new();
-        let url = format!("{}/api/events", self.base_url);
 
-        // Send anonymous events
-        let events = std::mem::take(&mut self.events);
-        let send_result = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            client.post(&url).json(&events).send(),
-        )
-        .await;
+        // Send anonymous events (if any were queued)
+        if !self.events.is_empty() {
+            let url = format!("{}/api/events", self.base_url);
+            let events = std::mem::take(&mut self.events);
+            let send_result = tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                client.post(&url).json(&events).send(),
+            )
+            .await;
 
-        match send_result {
-            Ok(Ok(resp)) => {
-                debug!("Telemetry events sent: status {}", resp.status());
-            }
-            Ok(Err(e)) => {
-                debug!("Telemetry send failed (ignored): {e}");
-            }
-            Err(_) => {
-                debug!("Telemetry send timed out (ignored)");
+            match send_result {
+                Ok(Ok(resp)) => {
+                    debug!("Telemetry events sent: status {}", resp.status());
+                }
+                Ok(Err(e)) => {
+                    debug!("Telemetry send failed (ignored): {e}");
+                }
+                Err(_) => {
+                    debug!("Telemetry send timed out (ignored)");
+                }
             }
         }
 
-        // Rich tier: upload artifacts tarball
+        // Rich tier: upload artifacts tarball (independent of events)
         if self.config.consent_level == ConsentLevel::Rich {
             if let Some(ref artifacts_dir) = self.artifacts_dir {
                 if artifacts_dir.exists() {
@@ -448,6 +453,11 @@ fn epoch_days_to_ymd(days: u64) -> (u64, u64, u64) {
 
 /// Create a gzipped tarball of the artifacts directory.
 /// Excludes potentially sensitive files (home directory contents, logs).
+///
+/// Note: Only includes files in the top-level directory (non-recursive).
+/// The desktest artifacts directory is flat by design — trajectory.jsonl,
+/// screenshots, task.json, and a11y trees are all written directly into it.
+/// Suite runs use separate per-test artifact directories.
 fn create_artifacts_tarball(artifacts_dir: &std::path::Path) -> Result<Vec<u8>, std::io::Error> {
     use flate2::write::GzEncoder;
     use flate2::Compression;
