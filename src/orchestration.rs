@@ -68,15 +68,6 @@ pub(crate) fn load_config_or_defaults(
     }
     if let Some(m) = &llm.model {
         config.model = m.clone();
-    } else if llm.provider.as_deref().map_or(false, |p| {
-        matches!(p, "gemini" | "cerebras")
-    }) && config.model == crate::config::default_model()
-    {
-        eprintln!(
-            "Warning: --provider {} uses the default Anthropic model ({}). \
-             Use --model to specify a provider-specific model.",
-            config.provider, config.model
-        );
     }
     if let Some(k) = &llm.api_key {
         config.api_key = k.clone();
