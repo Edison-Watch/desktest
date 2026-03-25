@@ -215,6 +215,8 @@ async fn main() {
                     event.status = Some("error".to_string());
                     event.duration_ms = Some(start_time.elapsed().as_millis() as u64);
                     event.error_category = Some(format!("exit_{}", e.exit_code()));
+                    event.used_qa_mode = cli.qa;
+                    event.used_bash = bash_enabled;
                     telemetry_client.record_event(event);
                 }
             }
