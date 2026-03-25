@@ -183,8 +183,9 @@ pub fn create_provider(
 /// Returns true if the URL is a known default for any built-in provider.
 /// Used to detect when `api_base_url` was not explicitly customized by the user.
 fn is_known_default_url(url: &str) -> bool {
+    let normalized = url.trim_end_matches('/');
     matches!(
-        url.trim_end_matches('/'),
+        normalized,
         "https://api.anthropic.com"
             | "https://api.openai.com"
             | "https://openrouter.ai/api"
