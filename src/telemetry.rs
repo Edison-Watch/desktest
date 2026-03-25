@@ -67,7 +67,7 @@ pub struct TelemetryEvent {
     pub agent_steps: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_category: Option<String>,
-    pub used_qa_mode: bool,
+    pub used_qa: bool,
     pub used_replay: bool,
     pub used_bash: bool,
     pub platform: String,
@@ -237,9 +237,10 @@ impl TelemetryClient {
         if has_events {
             let url = format!("{}/api/events", self.base_url);
             let events = std::mem::take(&mut self.events);
+            let payload = serde_json::json!({ "events": events });
             let send_result = tokio::time::timeout(
                 std::time::Duration::from_secs(5),
-                client.post(&url).json(&events).send(),
+                client.post(&url).json(&payload).send(),
             )
             .await;
 
@@ -335,18 +336,23 @@ impl TelemetryClient {
         };
 
         let url = format!("{}/api/upload", self.base_url);
+        let run_id = uuid::Uuid::new_v4().to_string();
         let part = reqwest::multipart::Part::bytes(tarball)
             .file_name("artifacts.tar.gz")
             .mime_str("application/gzip")
             .expect("hardcoded MIME type is always valid");
 
         let form = reqwest::multipart::Form::new()
-            .text("install_id", self.config.install_id.clone())
-            .part("artifacts", part);
+            .part("archive", part);
 
         let send_result = tokio::time::timeout(
             std::time::Duration::from_secs(30),
-            client.post(&url).multipart(form).send(),
+            client
+                .post(&url)
+                .header("X-Install-Id", &self.config.install_id)
+                .header("X-Run-Id", &run_id)
+                .multipart(form)
+                .send(),
         )
         .await;
 
@@ -379,7 +385,7 @@ pub fn build_event(client: &TelemetryClient, event_type: &str, command: &str) ->
         duration_ms: None,
         agent_steps: None,
         error_category: None,
-        used_qa_mode: false,
+        used_qa: false,
         used_replay: false,
         used_bash: false,
         platform: std::env::consts::OS.to_string(),
@@ -715,7 +721,7 @@ mod tests {
             duration_ms: Some(5000),
             agent_steps: Some(10),
             error_category: None,
-            used_qa_mode: false,
+            used_qa: false,
             used_replay: false,
             used_bash: true,
             platform: "linux".to_string(),

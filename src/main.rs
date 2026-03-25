@@ -208,7 +208,7 @@ async fn main() {
                     let mut event = telemetry::build_event(&telemetry_client, "suite_completed", "suite");
                     event.status = Some(if suite_result.summary.failed == 0 && suite_result.summary.errors == 0 { "pass" } else { "fail" }.to_string());
                     event.duration_ms = Some(suite_result.total_duration_ms);
-                    event.used_qa_mode = cli.qa;
+                    event.used_qa = cli.qa;
                     event.used_bash = bash_enabled;
                     event.provider = Some(run_config.provider.clone());
                     event.model = Some(run_config.model.clone());
@@ -219,7 +219,7 @@ async fn main() {
                     event.status = Some("error".to_string());
                     event.duration_ms = Some(start_time.elapsed().as_millis() as u64);
                     event.error_category = Some(format!("exit_{}", e.exit_code()));
-                    event.used_qa_mode = cli.qa;
+                    event.used_qa = cli.qa;
                     event.used_bash = bash_enabled;
                     event.provider = Some(run_config.provider.clone());
                     event.model = Some(run_config.model.clone());
@@ -750,7 +750,7 @@ fn record_run_event(
     let duration_ms = start_time.elapsed().as_millis() as u64;
     let mut event = telemetry::build_event(client, "test_completed", command);
     event.duration_ms = Some(duration_ms);
-    event.used_qa_mode = qa;
+    event.used_qa = qa;
     event.used_replay = replay;
     event.used_bash = bash_enabled;
     event.provider = provider.map(|s| s.to_string());
