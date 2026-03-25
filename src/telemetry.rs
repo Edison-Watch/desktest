@@ -162,22 +162,34 @@ impl TelemetryClient {
                 self.config.consent_level = ConsentLevel::None;
                 self.config.prompted_at = Some(now_iso8601());
                 self.config.run_count_since_prompt = 0;
-                let _ = save_config(&self.config);
-                eprintln!("Telemetry disabled.");
+                if let Err(e) = save_config(&self.config) {
+                    eprintln!("Warning: could not save telemetry config: {e}");
+                    eprintln!("Your opt-out will not persist across runs.");
+                } else {
+                    eprintln!("Telemetry disabled.");
+                }
             }
             TelemetryAction::Anonymous => {
                 self.config.consent_level = ConsentLevel::Anonymous;
                 self.config.prompted_at = Some(now_iso8601());
                 self.config.run_count_since_prompt = 0;
-                let _ = save_config(&self.config);
-                eprintln!("Telemetry set to anonymous (usage stats only).");
+                if let Err(e) = save_config(&self.config) {
+                    eprintln!("Warning: could not save telemetry config: {e}");
+                    eprintln!("Your preference will not persist across runs.");
+                } else {
+                    eprintln!("Telemetry set to anonymous (usage stats only).");
+                }
             }
             TelemetryAction::Rich => {
                 self.config.consent_level = ConsentLevel::Rich;
                 self.config.prompted_at = Some(now_iso8601());
                 self.config.run_count_since_prompt = 0;
-                let _ = save_config(&self.config);
-                eprintln!("Telemetry set to rich (usage stats + trajectories & screenshots).");
+                if let Err(e) = save_config(&self.config) {
+                    eprintln!("Warning: could not save telemetry config: {e}");
+                    eprintln!("Your preference will not persist across runs.");
+                } else {
+                    eprintln!("Telemetry set to rich (usage stats + trajectories & screenshots).");
+                }
             }
             TelemetryAction::Status => {
                 println!("Telemetry status:");
