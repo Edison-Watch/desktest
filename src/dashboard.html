@@ -175,8 +175,10 @@ if (HAS_RECORDING) {
 function badgeClass(result) {
   if (!result) return 'fail';
   if (result === 'success') return 'success';
+  if (result === 'evaluation_passed') return 'done';
   if (result === 'done') return 'done';
-  if (result.startsWith('error') || result === 'fail') return 'error';
+  if (result.startsWith('error') || result === 'fail' || result === 'evaluation_error') return 'error';
+  if (result === 'evaluation_failed') return 'fail';
   return 'fail';
 }
 
@@ -357,20 +359,48 @@ if (MODE === 'live') {
   var evtSource = new EventSource('/events');
 
   var MULTI_PHASE = false;
+  var PHASE_DATA = {}; // phase_id → test_start data
+  var CURRENT_PHASE_ID = null;
+
+  function showPhaseTask(phaseId) {
+    document.querySelectorAll('.step-item').forEach(function(el) { el.classList.remove('active'); });
+    var recNav = document.getElementById('recording-nav');
+    if (recNav) recNav.classList.remove('active');
+    var taskNav = document.getElementById('task-nav');
+    if (taskNav) taskNav.classList.remove('active');
+
+    var data = PHASE_DATA[phaseId];
+    if (!data) {
+      mainPanel.innerHTML = '<div class="empty">Task data not yet available for this phase</div>';
+      return;
+    }
+    var html = '<div class="detail-header"><h2>Task: ' + escapeHtml(data.test_id || 'Unknown') + '</h2></div>';
+    html += '<div class="section"><h3 class="collapsible open" onclick="toggleCollapse(this)"><span class="arrow">&#9654;</span> Instruction</h3><div class="collapse-content"><div class="task-instruction">' + escapeHtml(data.instruction || '') + '</div></div></div>';
+    if (data.completion_condition) {
+      html += '<div class="section"><h3 class="collapsible open" onclick="toggleCollapse(this)"><span class="arrow">&#9654;</span> Completion Condition</h3><div class="collapse-content"><div class="task-instruction">' + escapeHtml(data.completion_condition) + '</div></div></div>';
+    }
+    html += '<div class="section"><h3>Details</h3><dl class="task-meta">';
+    html += '<dt>Max Steps</dt><dd>' + (data.max_steps != null ? data.max_steps : 15) + '</dd>';
+    if (data.vnc_url) {
+      html += '<dt>VNC</dt><dd><a class="vnc-link" href="' + escapeHtml(data.vnc_url) + '" target="_blank">' + escapeHtml(data.vnc_url) + '</a></dd>';
+    }
+    html += '</dl></div>';
+    mainPanel.innerHTML = html;
+  }
 
   evtSource.addEventListener('phase_start', function(e) {
     var data = JSON.parse(e.data);
     MULTI_PHASE = true;
+    CURRENT_PHASE_ID = data.phase_id;
     // Insert a phase divider in the step list (do NOT clear steps)
     var divider = document.createElement('div');
     divider.className = 'phase-divider';
     divider.id = 'phase-' + encodeURIComponent(data.phase_id);
     divider.innerHTML = '<span class="phase-label">' + escapeHtml(data.phase_name) + '</span>';
     divider.style.cssText = 'padding:8px 16px;background:#1c2128;border-bottom:1px solid #30363d;font-size:12px;font-weight:600;color:#d2a8ff;text-transform:uppercase;letter-spacing:0.5px;cursor:pointer;';
-    divider.addEventListener('click', function() {
-      var target = divider.nextElementSibling || divider;
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
+    (function(pid) {
+      divider.addEventListener('click', function() { showPhaseTask(pid); });
+    })(data.phase_id);
     stepList.appendChild(divider);
     // Remove "awaiting next phase" indicator if present
     var awaiting = document.getElementById('awaiting-phase');
@@ -382,6 +412,10 @@ if (MODE === 'live') {
 
   evtSource.addEventListener('test_start', function(e) {
     var data = JSON.parse(e.data);
+    // Associate test_start data with the current phase
+    if (CURRENT_PHASE_ID) {
+      PHASE_DATA[CURRENT_PHASE_ID] = data;
+    }
     if (!MULTI_PHASE) {
       // Single-phase mode: clear previous test's steps and final-status div
       STEPS = [];

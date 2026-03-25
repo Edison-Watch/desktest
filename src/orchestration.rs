@@ -549,16 +549,43 @@ async fn run_eval_loop(
                 {
                     screenshot_count += 1;
                     if let Some(ref mut tl) = trajectory_logger {
-                        let result_str = match &eval_result {
-                            Ok(r) if r.passed => "evaluation_passed",
-                            Ok(_) => "evaluation_failed",
-                            Err(_) => "evaluation_error",
+                        let (result_str, thought, action_code) = match &eval_result {
+                            Ok(r) => {
+                                let status = if r.passed { "PASSED" } else { "FAILED" };
+                                let passed_count = r.metric_results.iter().filter(|m| m.passed).count();
+                                let total_count = r.metric_results.len();
+                                let thought = format!(
+                                    "Evaluation {status}: {passed_count}/{total_count} metrics passed (mode: {mode})",
+                                    mode = r.mode,
+                                );
+                                let mut code_lines = Vec::new();
+                                for (i, m) in r.metric_results.iter().enumerate() {
+                                    let m_status = if m.passed { "PASSED" } else { "FAILED" };
+                                    code_lines.push(format!("# Metric {}: {} — {}", i + 1, m.metric, m_status));
+                                    if !m.expected.is_empty() {
+                                        code_lines.push(format!("#   Expected: {}", m.expected));
+                                    }
+                                    if !m.actual.is_empty() {
+                                        code_lines.push(format!("#   Actual:   {}", m.actual));
+                                    }
+                                    if !m.detail.is_empty() {
+                                        code_lines.push(format!("#   Detail:   {}", m.detail));
+                                    }
+                                }
+                                let result_str = if r.passed { "evaluation_passed" } else { "evaluation_failed" };
+                                (result_str, thought, code_lines.join("\n"))
+                            }
+                            Err(e) => (
+                                "evaluation_error",
+                                "Evaluation error".to_string(),
+                                format!("# Error: {e}"),
+                            ),
                         };
                         let entry = crate::trajectory::TrajectoryEntry {
                             step: 2,
                             timestamp: crate::trajectory::chrono_iso8601_now(),
-                            action_code: String::new(),
-                            thought: Some("Post-evaluation screenshot".into()),
+                            action_code,
+                            thought: Some(thought),
                             screenshot_path: path.file_name().map(|n| n.to_string_lossy().to_string()),
                             a11y_tree_path: None,
                             result: result_str.into(),
