@@ -156,30 +156,31 @@ impl TelemetryClient {
     }
 
     /// Handle the `desktest telemetry <action>` subcommand.
-    pub fn handle_command(&mut self, action: &str) {
+    pub fn handle_command(&mut self, action: &crate::cli::TelemetryAction) {
+        use crate::cli::TelemetryAction;
         match action {
-            "off" => {
+            TelemetryAction::Off => {
                 self.config.consent_level = ConsentLevel::None;
                 self.config.prompted_at = Some(now_iso8601());
                 self.config.run_count_since_prompt = 0;
                 let _ = save_config(&self.config);
                 eprintln!("Telemetry disabled.");
             }
-            "anonymous" => {
+            TelemetryAction::Anonymous => {
                 self.config.consent_level = ConsentLevel::Anonymous;
                 self.config.prompted_at = Some(now_iso8601());
                 self.config.run_count_since_prompt = 0;
                 let _ = save_config(&self.config);
                 eprintln!("Telemetry set to anonymous (usage stats only).");
             }
-            "rich" => {
+            TelemetryAction::Rich => {
                 self.config.consent_level = ConsentLevel::Rich;
                 self.config.prompted_at = Some(now_iso8601());
                 self.config.run_count_since_prompt = 0;
                 let _ = save_config(&self.config);
                 eprintln!("Telemetry set to rich (usage stats + trajectories & screenshots).");
             }
-            "status" => {
+            TelemetryAction::Status => {
                 println!("Telemetry status:");
                 println!("  Consent level:    {}", self.config.consent_level);
                 println!("  Install ID:       {}", self.config.install_id);
@@ -190,12 +191,6 @@ impl TelemetryClient {
                 if let Some(ref ts) = self.config.prompted_at {
                     println!("  Last prompted:    {ts}");
                 }
-            }
-            other => {
-                eprintln!(
-                    "Unknown telemetry action: '{other}'. Use: off, anonymous, rich, or status"
-                );
-                std::process::exit(2);
             }
         }
     }
@@ -473,7 +468,9 @@ fn save_config(config: &TelemetryConfig) -> Result<(), std::io::Error> {
     // Atomic write: write to temp file then rename to avoid corruption on mid-write crash
     let tmp_path = path.with_extension("json.tmp");
     std::fs::write(&tmp_path, &json)?;
-    std::fs::rename(&tmp_path, &path)
+    std::fs::rename(&tmp_path, &path).inspect_err(|_| {
+        let _ = std::fs::remove_file(&tmp_path);
+    })
 }
 
 fn now_iso8601() -> String {

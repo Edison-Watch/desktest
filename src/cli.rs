@@ -1,6 +1,18 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::results;
+
+#[derive(Debug, Clone, ValueEnum)]
+pub enum TelemetryAction {
+    /// Disable telemetry
+    Off,
+    /// Opt in to anonymous usage stats only
+    Anonymous,
+    /// Opt in to rich diagnostics (trajectories + screenshots)
+    Rich,
+    /// Show current telemetry settings
+    Status,
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -293,8 +305,8 @@ EXAMPLES:
   desktest telemetry rich         # Opt in to rich diagnostics (trajectories + screenshots)
   desktest telemetry off          # Disable telemetry")]
     Telemetry {
-        /// Action: off, anonymous, rich, or status
-        action: String,
+        /// Action to perform
+        action: TelemetryAction,
     },
 
     /// Generate an interactive HTML trajectory viewer (best for human review in a browser)
