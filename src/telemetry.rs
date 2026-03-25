@@ -424,7 +424,15 @@ fn load_config() -> (Option<TelemetryConfig>, bool) {
     };
     let data = match std::fs::read_to_string(&path) {
         Ok(d) => d,
-        Err(_) => return (None, false), // file doesn't exist
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (None, false),
+        Err(e) => {
+            eprintln!(
+                "Warning: cannot read telemetry config at '{}' ({}), resetting. Your install_id will change.",
+                path.display(),
+                e
+            );
+            return (None, true);
+        }
     };
     match serde_json::from_str(&data) {
         Ok(config) => (Some(config), false),

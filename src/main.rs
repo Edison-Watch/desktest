@@ -384,11 +384,14 @@ async fn main() {
                 }
             };
 
-            let effective_artifacts_dir = cli.artifacts_dir.clone().unwrap_or_else(|| {
-                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")).join("desktest_artifacts")
-            });
-            telemetry_client.set_artifacts_dir(effective_artifacts_dir);
-            telemetry_client.flush().await;
+            // Skip telemetry flush on expected Ctrl+C to avoid orphaned artifact uploads
+            if !is_expected_interrupt {
+                let effective_artifacts_dir = cli.artifacts_dir.clone().unwrap_or_else(|| {
+                    std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")).join("desktest_artifacts")
+                });
+                telemetry_client.set_artifacts_dir(effective_artifacts_dir);
+                telemetry_client.flush().await;
+            }
 
             std::process::exit(exit_code);
         }
