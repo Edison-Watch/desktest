@@ -1512,11 +1512,32 @@ mod tests {
             model: None,
             api_key: None,
         };
-        let config_flag = Some(config_path);
-        let config = load_config_or_defaults(&config_flag, &None, &overrides);
+        let config = load_config_or_defaults(&Some(config_path), &None, &overrides);
         // Stale anthropic key must be cleared when switching to openrouter
         assert!(config.api_key.is_empty(), "stale api_key should be cleared");
         assert_eq!(config.provider, "openrouter");
+    }
+
+    #[test]
+    fn test_provider_override_same_provider_keeps_key() {
+        // Config file has an api_key for anthropic. Passing --provider anthropic
+        // (same provider) must NOT clear the key.
+        let dir = tempfile::TempDir::new().unwrap();
+        let config_path = dir.path().join("config.json");
+        std::fs::write(
+            &config_path,
+            r#"{"api_key": "sk-ant-valid", "provider": "anthropic", "app_type": "docker_image"}"#,
+        )
+        .unwrap();
+
+        let overrides = LlmOverrides {
+            provider: Some("anthropic".into()),
+            model: None,
+            api_key: None,
+        };
+        let config = load_config_or_defaults(&Some(config_path), &None, &overrides);
+        assert_eq!(config.api_key, "sk-ant-valid", "api_key should be preserved when provider matches");
+        assert_eq!(config.provider, "anthropic");
     }
 
     #[test]
@@ -1532,24 +1553,6 @@ mod tests {
         assert_eq!(config.api_key_source, Some("--api-key flag"));
     }
 
-    #[test]
-    fn test_provider_override_same_provider_keeps_key() {
-        // When --provider matches the config's provider, the api_key is kept.
-        // Regression: previously --provider always cleared the key even when
-        // the provider wasn't actually changing.
-        let overrides = LlmOverrides {
-            provider: Some("anthropic".into()),
-            model: None,
-            api_key: None,
-        };
-        // from_task_defaults uses "anthropic" as default provider with empty key,
-        // so this test verifies the condition check, not the clearing itself.
-        let config = load_config_or_defaults(&None, &None, &overrides);
-        assert_eq!(config.provider, "anthropic");
-        // Key stays empty (was already empty from defaults) — the important
-        // thing is we didn't error or change behavior.
-        assert!(config.api_key.is_empty());
-    }
 
     #[test]
     fn test_interactive_validate_only_requires_evaluator() {
