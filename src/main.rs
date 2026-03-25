@@ -235,10 +235,8 @@ async fn main() {
                 }
             };
 
-            // Suite manages its own per-test artifacts dirs, but set the output dir for suite-level upload
-            if let Some(ref dir) = cli.artifacts_dir {
-                telemetry_client.set_artifacts_dir(dir.clone());
-            }
+            // Suite manages its own per-test artifacts dirs; don't set telemetry artifacts_dir
+            // (--artifacts-dir is documented as ignored for suite runs)
             telemetry_client.flush().await;
 
             std::process::exit(exit_code);

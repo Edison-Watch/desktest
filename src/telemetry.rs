@@ -274,7 +274,7 @@ impl TelemetryClient {
         }
         // +1 accounts for the increment that happens after this check in check_consent()
         let next_count = self.config.run_count_since_prompt + 1;
-        next_count > 0 && next_count % NUDGE_INTERVAL == 0
+        next_count % NUDGE_INTERVAL == 0
     }
 
     fn show_first_run_prompt(&mut self) {
