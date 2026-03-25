@@ -349,7 +349,12 @@ async fn main() {
             )
             .await;
 
-            record_run_event(&mut telemetry_client, &result, "interactive", cli.qa, false, bash_enabled, start_time);
+            // In interactive mode (no --step, no --validate-only), Ctrl+C is expected — not an error
+            let is_expected_interrupt = matches!(&result, Err(e) if !step && !validate_only && e.is_interrupt());
+
+            if !is_expected_interrupt {
+                record_run_event(&mut telemetry_client, &result, "interactive", cli.qa, false, bash_enabled, start_time);
+            }
 
             // Print result immediately so the user doesn't wait for telemetry flush
             let exit_code = match &result {
@@ -358,8 +363,7 @@ async fn main() {
                     if outcome.passed { 0 } else { 1 }
                 }
                 Err(e) => {
-                    // In interactive mode (no --step, no --validate-only), Ctrl+C is expected
-                    if !step && !validate_only && e.is_interrupt() {
+                    if is_expected_interrupt {
                         0
                     } else {
                         eprintln!("Error: {e}");
