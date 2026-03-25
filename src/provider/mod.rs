@@ -145,25 +145,26 @@ pub fn create_provider(
         }
         "openrouter" => {
             let url = if has_custom_url { base_url } else { "https://openrouter.ai/api" };
-            let client = custom::CustomProvider::new(&resolved_key, model, url);
+            let client = http_base::HttpProvider::new(&resolved_key, model, url, "OpenRouter");
             Ok(Box::new(client))
         }
         "cerebras" => {
             let url = if has_custom_url { base_url } else { "https://api.cerebras.ai" };
-            let client = custom::CustomProvider::new(&resolved_key, model, url);
+            let client = http_base::HttpProvider::new(&resolved_key, model, url, "Cerebras");
             Ok(Box::new(client))
         }
         "gemini" => {
             if has_custom_url {
                 // Custom URL — assume standard OpenAI-compatible path
-                let client = custom::CustomProvider::new(&resolved_key, model, base_url);
+                let client = http_base::HttpProvider::new(&resolved_key, model, base_url, "Gemini");
                 Ok(Box::new(client))
             } else {
                 // Default Gemini URL needs the non-standard path
-                let client = custom::CustomProvider::new(
+                let client = http_base::HttpProvider::new(
                     &resolved_key,
                     model,
                     "https://generativelanguage.googleapis.com/v1beta/openai",
+                    "Gemini",
                 )
                 .with_completions_path("/chat/completions");
                 Ok(Box::new(client))
