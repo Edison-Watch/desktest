@@ -83,7 +83,8 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub model: Option<String>,
 
-    /// API key for the LLM provider (overrides config file and env vars)
+    /// API key for the LLM provider (overrides config file and env vars).
+    /// Note: CLI args are visible in process listings; prefer env vars for sensitive contexts
     #[arg(long, global = true)]
     pub api_key: Option<String>,
 }

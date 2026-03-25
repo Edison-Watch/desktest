@@ -154,14 +154,20 @@ pub fn create_provider(
             Ok(Box::new(client))
         }
         "gemini" => {
-            let url = if has_custom_url {
-                base_url
+            if has_custom_url {
+                // Custom URL — assume standard OpenAI-compatible path
+                let client = custom::CustomProvider::new(&resolved_key, model, base_url);
+                Ok(Box::new(client))
             } else {
-                "https://generativelanguage.googleapis.com/v1beta/openai"
-            };
-            let client = custom::CustomProvider::new(&resolved_key, model, url)
+                // Default Gemini URL needs the non-standard path
+                let client = custom::CustomProvider::new(
+                    &resolved_key,
+                    model,
+                    "https://generativelanguage.googleapis.com/v1beta/openai",
+                )
                 .with_completions_path("/chat/completions");
-            Ok(Box::new(client))
+                Ok(Box::new(client))
+            }
         }
         "custom" => {
             let client = custom::CustomProvider::new(&resolved_key, model, base_url);
