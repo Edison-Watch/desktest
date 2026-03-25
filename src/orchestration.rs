@@ -57,10 +57,11 @@ pub(crate) fn load_config_or_defaults(
     // named provider. The api_base_url field only matters when the user
     // explicitly sets a custom URL.
     if let Some(p) = &llm.provider {
-        // When switching providers, clear any config-file api_key unless the
-        // user also passed --api-key. Otherwise the old provider's key would
-        // silently shadow the new provider's env var, producing a cryptic 401.
-        if llm.api_key.is_none() && !config.api_key.is_empty() {
+        // When switching providers, clear any config-file API key so the new
+        // provider's env var is used instead of sending the wrong key.
+        // Only clear when the provider actually changes — if --provider matches
+        // the config's provider, the config key is still valid.
+        if config.provider != *p && !config.api_key.is_empty() && llm.api_key.is_none() {
             config.api_key = String::new();
         }
         config.provider = p.clone();
