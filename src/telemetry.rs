@@ -91,7 +91,9 @@ impl TelemetryClient {
         let base_url = std::env::var("DESKTEST_TELEMETRY_URL")
             .unwrap_or_else(|_| DEFAULT_TELEMETRY_URL.to_string());
 
-        let mut config = load_config().unwrap_or_default();
+        let existing = load_config();
+        let was_fresh = existing.is_none();
+        let mut config = existing.unwrap_or_default();
         let mut is_env_override = false;
 
         if let Some(val) = env_override {
@@ -105,6 +107,11 @@ impl TelemetryClient {
                     ConsentLevel::None
                 }
             };
+        }
+
+        // Persist the config if it was freshly generated, so install_id is stable across runs
+        if was_fresh {
+            let _ = save_config(&config);
         }
 
         Self {

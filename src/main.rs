@@ -333,6 +333,7 @@ async fn main() {
             }
 
             let bash_enabled = cli.with_bash || cli.qa;
+            let start_time = std::time::Instant::now();
             let result = interactive::run_interactive(
                 task_def,
                 run_config,
@@ -348,20 +349,32 @@ async fn main() {
             )
             .await;
 
-            match result {
+            record_run_event(&mut telemetry_client, &result, "interactive", cli.qa, false, bash_enabled, start_time);
+
+            // Print result immediately so the user doesn't wait for telemetry flush
+            let exit_code = match &result {
                 Ok(outcome) => {
                     println!("{outcome}");
-                    std::process::exit(if outcome.passed { 0 } else { 1 });
+                    if outcome.passed { 0 } else { 1 }
                 }
                 Err(e) => {
                     // In interactive mode (no --step, no --validate-only), Ctrl+C is expected
                     if !step && !validate_only && e.is_interrupt() {
-                        std::process::exit(0);
+                        0
+                    } else {
+                        eprintln!("Error: {e}");
+                        e.exit_code()
                     }
-                    eprintln!("Error: {e}");
-                    std::process::exit(e.exit_code());
                 }
-            }
+            };
+
+            let effective_artifacts_dir = cli.artifacts_dir.clone().unwrap_or_else(|| {
+                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")).join("desktest_artifacts")
+            });
+            telemetry_client.set_artifacts_dir(effective_artifacts_dir);
+            telemetry_client.flush().await;
+
+            std::process::exit(exit_code);
         }
         Command::Codify {
             trajectory,
