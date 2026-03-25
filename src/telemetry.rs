@@ -229,10 +229,18 @@ impl TelemetryClient {
             return;
         }
 
+        let has_events = !self.events.is_empty();
+        let has_artifacts = self.config.consent_level == ConsentLevel::Rich
+            && self.artifacts_dir.as_ref().is_some_and(|d| d.exists());
+
+        if !has_events && !has_artifacts {
+            return;
+        }
+
         let client = reqwest::Client::new();
 
         // Send anonymous events (if any were queued)
-        if !self.events.is_empty() {
+        if has_events {
             let url = format!("{}/api/events", self.base_url);
             let events = std::mem::take(&mut self.events);
             let send_result = tokio::time::timeout(
@@ -531,8 +539,9 @@ fn create_artifacts_tarball(artifacts_dir: &std::path::Path) -> Result<Vec<u8>, 
             let ext = path
                 .extension()
                 .and_then(|e| e.to_str())
-                .unwrap_or("");
-            if !allowed_extensions.contains(&ext) {
+                .unwrap_or("")
+                .to_lowercase();
+            if !allowed_extensions.contains(&ext.as_str()) {
                 continue;
             }
             let file_name = match path.file_name() {
