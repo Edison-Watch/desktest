@@ -10,6 +10,9 @@ Copy-paste the following prompt into Claude Code (or any coding agent) to instal
 
 > Install the desktest CLI by running `curl -fsSL https://raw.githubusercontent.com/Edison-Watch/desktest/master/install.sh | sh`. Then copy `skills/desktest-skill.md` from the desktest repo (https://raw.githubusercontent.com/Edison-Watch/desktest/master/skills/desktest-skill.md) to `~/.claude/skills/desktest/SKILL.md` so you have context on how to use it.
 
+<img width="831" height="549" alt="Screenshot 2026-03-25 at 21 04 46" src="https://github.com/user-attachments/assets/fc07dd36-2c49-4ac7-ada9-105a55e85629" />
+
+
 ## Features
 
 - **Structured JSON task definitions** with schema validation
