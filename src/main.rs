@@ -145,9 +145,10 @@ async fn main() {
 
             record_run_event(&mut telemetry_client, &result, cmd_name, cli.qa, is_replay, bash_enabled, start_time);
 
-            if let Some(ref dir) = cli.artifacts_dir {
-                telemetry_client.set_artifacts_dir(dir.clone());
-            }
+            let effective_artifacts_dir = cli.artifacts_dir.clone().unwrap_or_else(|| {
+                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")).join("desktest_artifacts")
+            });
+            telemetry_client.set_artifacts_dir(effective_artifacts_dir);
             telemetry_client.flush().await;
 
             match result {
@@ -214,6 +215,10 @@ async fn main() {
                     telemetry_client.record_event(event);
                 }
             }
+            // Suite manages its own per-test artifacts dirs, but set the output dir for suite-level upload
+            if let Some(ref dir) = cli.artifacts_dir {
+                telemetry_client.set_artifacts_dir(dir.clone());
+            }
             telemetry_client.flush().await;
 
             match result {
@@ -278,9 +283,10 @@ async fn main() {
 
             record_run_event(&mut telemetry_client, &result, "attach", cli.qa, is_replay, bash_enabled, start_time);
 
-            if let Some(ref dir) = cli.artifacts_dir {
-                telemetry_client.set_artifacts_dir(dir.clone());
-            }
+            let effective_artifacts_dir = cli.artifacts_dir.clone().unwrap_or_else(|| {
+                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")).join("desktest_artifacts")
+            });
+            telemetry_client.set_artifacts_dir(effective_artifacts_dir);
             telemetry_client.flush().await;
 
             match result {

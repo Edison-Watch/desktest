@@ -120,7 +120,8 @@ impl TelemetryClient {
         }
 
         // If stdin is not a TTY, skip prompting
-        if !atty::is(atty::Stream::Stdin) {
+        use std::io::IsTerminal;
+        if !std::io::stdin().is_terminal() {
             return;
         }
 
@@ -316,7 +317,7 @@ impl TelemetryClient {
         let part = reqwest::multipart::Part::bytes(tarball)
             .file_name("artifacts.tar.gz")
             .mime_str("application/gzip")
-            .unwrap();
+            .expect("hardcoded MIME type is always valid");
 
         let form = reqwest::multipart::Form::new()
             .text("install_id", self.config.install_id.clone())
@@ -417,11 +418,32 @@ fn save_config(config: &TelemetryConfig) -> Result<(), std::io::Error> {
 }
 
 fn now_iso8601() -> String {
-    // Use a simple approach without chrono
     let duration = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
-    format!("{}Z", duration.as_secs())
+    let secs = duration.as_secs();
+    let s = secs % 60;
+    let m = (secs / 60) % 60;
+    let h = (secs / 3600) % 24;
+    let days = secs / 86400;
+    let (y, mo, d) = epoch_days_to_ymd(days);
+    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}Z")
+}
+
+/// Convert days since 1970-01-01 to (year, month, day).
+fn epoch_days_to_ymd(days: u64) -> (u64, u64, u64) {
+    // Algorithm from http://howardhinnant.github.io/date_algorithms.html
+    let z = days + 719468;
+    let era = z / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let mo = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if mo <= 2 { y + 1 } else { y };
+    (y, mo, d)
 }
 
 /// Create a gzipped tarball of the artifacts directory.
@@ -457,12 +479,14 @@ fn create_artifacts_tarball(artifacts_dir: &std::path::Path) -> Result<Vec<u8>, 
             };
 
             // Redact home directory paths in file names (shouldn't happen, but safety)
-            let archive_name = file_name.replace(
-                &dirs_home()
-                    .map(|h| h.to_string_lossy().to_string())
-                    .unwrap_or_default(),
-                "~",
-            );
+            let home_str = dirs_home()
+                .map(|h| h.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let archive_name = if home_str.is_empty() {
+                file_name.clone()
+            } else {
+                file_name.replace(&home_str, "~")
+            };
 
             archive.append_path_with_name(&path, &archive_name)?;
         }
@@ -664,5 +688,32 @@ mod tests {
         assert_eq!(event.command, "run");
         assert_eq!(event.desktest_version, env!("CARGO_PKG_VERSION"));
         assert!(!event.timestamp.is_empty());
+    }
+
+    #[test]
+    fn test_now_iso8601_format() {
+        let ts = now_iso8601();
+        // Should match YYYY-MM-DDTHH:MM:SSZ
+        assert!(
+            ts.len() == 20,
+            "Expected 20-char ISO 8601, got {ts} (len {})",
+            ts.len()
+        );
+        assert!(ts.ends_with('Z'));
+        assert_eq!(&ts[4..5], "-");
+        assert_eq!(&ts[7..8], "-");
+        assert_eq!(&ts[10..11], "T");
+        assert_eq!(&ts[13..14], ":");
+        assert_eq!(&ts[16..17], ":");
+    }
+
+    #[test]
+    fn test_epoch_days_to_ymd_known_dates() {
+        // 1970-01-01 = day 0
+        assert_eq!(epoch_days_to_ymd(0), (1970, 1, 1));
+        // 2000-01-01 = day 10957
+        assert_eq!(epoch_days_to_ymd(10957), (2000, 1, 1));
+        // 2025-03-25 = day 20172
+        assert_eq!(epoch_days_to_ymd(20172), (2025, 3, 25));
     }
 }
