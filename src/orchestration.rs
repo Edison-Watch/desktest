@@ -50,7 +50,12 @@ pub(crate) fn load_config_or_defaults(
         Config::from_task_defaults()
     };
 
-    // CLI flags override config file values
+    // CLI flags override config file values.
+    // Note: we intentionally do NOT update config.api_base_url when --provider
+    // changes, because create_provider() uses is_known_default_url() to detect
+    // stale default URLs and auto-resolves to the correct endpoint for each
+    // named provider. The api_base_url field only matters when the user
+    // explicitly sets a custom URL.
     if let Some(p) = &llm.provider {
         config.provider = p.clone();
     }
