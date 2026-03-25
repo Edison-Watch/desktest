@@ -251,8 +251,13 @@ impl TelemetryClient {
         if self.config.consent_level == ConsentLevel::Rich {
             return false;
         }
-        self.config.run_count_since_prompt > 0
-            && self.config.run_count_since_prompt % NUDGE_INTERVAL == 0
+        // Don't nudge users who explicitly opted out via `desktest telemetry off`
+        if self.config.consent_level == ConsentLevel::None && self.config.prompted_at.is_some() {
+            return false;
+        }
+        // +1 accounts for the increment that happens after this check in check_consent()
+        let next_count = self.config.run_count_since_prompt + 1;
+        next_count > 0 && next_count % NUDGE_INTERVAL == 0
     }
 
     fn show_first_run_prompt(&mut self) {
@@ -552,7 +557,7 @@ mod tests {
         let config = TelemetryConfig {
             consent_level: ConsentLevel::Anonymous,
             install_id: "test-uuid".to_string(),
-            prompted_at: Some("12345Z".to_string()),
+            prompted_at: Some("2025-03-25T10:13:20Z".to_string()),
             run_count_since_prompt: 5,
         };
 
@@ -569,7 +574,7 @@ mod tests {
         let json = r#"{
             "consent_level": "rich",
             "install_id": "abc-123",
-            "prompted_at": "99999Z",
+            "prompted_at": "2000-01-01T00:00:00Z",
             "run_count_since_prompt": 3
         }"#;
         let config: TelemetryConfig = serde_json::from_str(json).unwrap();
@@ -590,9 +595,9 @@ mod tests {
     fn test_should_nudge_logic() {
         let mut client = TelemetryClient {
             config: TelemetryConfig {
-                consent_level: ConsentLevel::None,
+                consent_level: ConsentLevel::Anonymous,
                 install_id: "test".to_string(),
-                prompted_at: Some("0Z".to_string()),
+                prompted_at: Some("2025-01-01T00:00:00Z".to_string()),
                 run_count_since_prompt: 0,
             },
             events: Vec::new(),
@@ -601,16 +606,20 @@ mod tests {
             artifacts_dir: None,
         };
 
-        // run_count 0 → no nudge
+        // run_count 0 → no nudge (next_count=1, 1%10!=0)
         assert!(!client.should_nudge());
 
-        // run_count 10 → nudge
-        client.config.run_count_since_prompt = 10;
+        // run_count 9 → nudge (next_count=10, 10%10==0)
+        client.config.run_count_since_prompt = 9;
         assert!(client.should_nudge());
 
-        // run_count 20 → nudge
-        client.config.run_count_since_prompt = 20;
+        // run_count 19 → nudge (next_count=20)
+        client.config.run_count_since_prompt = 19;
         assert!(client.should_nudge());
+
+        // run_count 10 → no nudge (next_count=11)
+        client.config.run_count_since_prompt = 10;
+        assert!(!client.should_nudge());
 
         // run_count 5 → no nudge
         client.config.run_count_since_prompt = 5;
@@ -618,7 +627,13 @@ mod tests {
 
         // Rich consent → never nudge
         client.config.consent_level = ConsentLevel::Rich;
-        client.config.run_count_since_prompt = 10;
+        client.config.run_count_since_prompt = 9;
+        assert!(!client.should_nudge());
+
+        // Explicit opt-out (None + prompted_at set) → never nudge
+        client.config.consent_level = ConsentLevel::None;
+        client.config.prompted_at = Some("2025-01-01T00:00:00Z".to_string());
+        client.config.run_count_since_prompt = 9;
         assert!(!client.should_nudge());
     }
 
