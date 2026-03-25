@@ -342,7 +342,10 @@ if (MODE === 'live') {
       html += '<div class="test-info" style="margin-top:8px"><h3 class="collapsible open" onclick="toggleCollapse(this)" style="font-size:12px;color:#8b949e;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:0"><span class="arrow">&#9654;</span> Completion Condition</h3><div class="collapse-content" style="margin-top:8px">' + escapeHtml(data.completion_condition) + '</div></div>';
     }
     if (data.vnc_url) {
-      html += '<a class="vnc-link" href="' + escapeHtml(data.vnc_url) + '" target="_blank">VNC: ' + escapeHtml(data.vnc_url) + '</a>';
+      var safeVnc = /^(https?|vnc):\/\//i.test(data.vnc_url) ? data.vnc_url : '';
+      if (safeVnc) {
+        html += '<a class="vnc-link" href="' + escapeHtml(safeVnc) + '" target="_blank">VNC: ' + escapeHtml(safeVnc) + '</a>';
+      }
     }
     html += '</div>';
     return html;
@@ -382,7 +385,10 @@ if (MODE === 'live') {
     html += '<div class="section"><h3>Details</h3><dl class="task-meta">';
     html += '<dt>Max Steps</dt><dd>' + (data.max_steps != null ? data.max_steps : 15) + '</dd>';
     if (data.vnc_url) {
-      html += '<dt>VNC</dt><dd><a class="vnc-link" href="' + escapeHtml(data.vnc_url) + '" target="_blank">' + escapeHtml(data.vnc_url) + '</a></dd>';
+      var safeVnc = /^(https?|vnc):\/\//i.test(data.vnc_url) ? data.vnc_url : '';
+      if (safeVnc) {
+        html += '<dt>VNC</dt><dd><a class="vnc-link" href="' + escapeHtml(safeVnc) + '" target="_blank">' + escapeHtml(safeVnc) + '</a></dd>';
+      }
     }
     html += '</dl></div>';
     mainPanel.innerHTML = html;
@@ -412,7 +418,11 @@ if (MODE === 'live') {
 
   evtSource.addEventListener('test_start', function(e) {
     var data = JSON.parse(e.data);
-    // Associate test_start data with the current phase
+    // Associate test_start data with the current phase.
+    // Ordering guarantee: the backend (monitor_watcher.rs) always emits
+    // phase_start before test_start for a given phase, so CURRENT_PHASE_ID
+    // is set by the time we get here in multi-phase mode. In single-phase
+    // mode CURRENT_PHASE_ID stays null and PHASE_DATA is unused.
     if (CURRENT_PHASE_ID) {
       PHASE_DATA[CURRENT_PHASE_ID] = data;
     }
