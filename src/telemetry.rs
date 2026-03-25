@@ -26,6 +26,7 @@ impl std::fmt::Display for ConsentLevel {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TelemetryConfig {
     pub consent_level: ConsentLevel,
     pub install_id: String,
@@ -493,17 +494,7 @@ fn create_artifacts_tarball(artifacts_dir: &std::path::Path) -> Result<Vec<u8>, 
                 None => continue,
             };
 
-            // Redact home directory paths in file names (shouldn't happen, but safety)
-            let home_str = dirs_home()
-                .map(|h| h.to_string_lossy().to_string())
-                .unwrap_or_default();
-            let archive_name = if home_str.is_empty() {
-                file_name.clone()
-            } else {
-                file_name.replace(&home_str, "~")
-            };
-
-            archive.append_path_with_name(&path, &archive_name)?;
+            archive.append_path_with_name(&path, &file_name)?;
         }
     }
 
@@ -665,7 +656,7 @@ mod tests {
     #[test]
     fn test_event_serialization() {
         let event = TelemetryEvent {
-            timestamp: "12345Z".to_string(),
+            timestamp: "2025-03-25T10:13:20Z".to_string(),
             desktest_version: "0.12.0".to_string(),
             install_id: "test-id".to_string(),
             event_type: "test_completed".to_string(),
