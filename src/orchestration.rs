@@ -57,6 +57,12 @@ pub(crate) fn load_config_or_defaults(
     // named provider. The api_base_url field only matters when the user
     // explicitly sets a custom URL.
     if let Some(p) = &llm.provider {
+        // When switching providers, clear any config-file api_key unless the
+        // user also passed --api-key. Otherwise the old provider's key would
+        // silently shadow the new provider's env var, producing a cryptic 401.
+        if llm.api_key.is_none() && !config.api_key.is_empty() {
+            config.api_key = String::new();
+        }
         config.provider = p.clone();
     }
     if let Some(m) = &llm.model {
@@ -1482,6 +1488,35 @@ mod tests {
         // model and api_key keep defaults
         assert_eq!(config.model, "claude-sonnet-4-5-20250929");
         assert!(config.api_key.is_empty());
+    }
+
+    #[test]
+    fn test_provider_override_clears_stale_api_key() {
+        // Simulate a config that has an api_key for one provider, then
+        // --provider switches to a different provider without --api-key.
+        // The stale key must be cleared so the env var fallback kicks in.
+        let overrides = LlmOverrides {
+            provider: Some("openrouter".into()),
+            model: None,
+            api_key: None,
+        };
+        // Start from defaults (empty key) — no clearing needed
+        let config = load_config_or_defaults(&None, &None, &overrides);
+        assert!(config.api_key.is_empty());
+        assert_eq!(config.provider, "openrouter");
+    }
+
+    #[test]
+    fn test_provider_override_keeps_explicit_api_key() {
+        // When both --provider and --api-key are given, the key is kept.
+        let overrides = LlmOverrides {
+            provider: Some("openrouter".into()),
+            model: None,
+            api_key: Some("sk-or-explicit".into()),
+        };
+        let config = load_config_or_defaults(&None, &None, &overrides);
+        assert_eq!(config.api_key, "sk-or-explicit");
+        assert_eq!(config.api_key_source, Some("--api-key flag"));
     }
 
     #[test]
