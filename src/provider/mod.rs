@@ -259,9 +259,12 @@ pub fn resolve_api_key_with_source(
         }
     }
 
-    Err(AppError::Config(format!(
-        "No API key found. Set it in config, {provider_env}, or LLM_API_KEY."
-    )))
+    let hint = if provider_env.is_empty() {
+        "No API key found. Set it in config, --api-key, or LLM_API_KEY.".to_string()
+    } else {
+        format!("No API key found. Set it in config, --api-key, {provider_env}, or LLM_API_KEY.")
+    };
+    Err(AppError::Config(hint))
 }
 
 #[cfg(test)]
