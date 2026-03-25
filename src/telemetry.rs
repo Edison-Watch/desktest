@@ -145,8 +145,11 @@ impl TelemetryClient {
             self.show_nudge();
         }
 
-        // Only increment and persist for users who can be nudged (not Rich)
-        if self.config.consent_level != ConsentLevel::Rich {
+        // Only increment and persist for users who can be nudged
+        // (not Rich, and not explicitly opted out via `desktest telemetry off`)
+        let can_be_nudged = self.config.consent_level != ConsentLevel::Rich
+            && !(self.config.consent_level == ConsentLevel::None && self.config.prompted_at.is_some());
+        if can_be_nudged {
             self.config.run_count_since_prompt += 1;
             let _ = save_config(&self.config);
         }
@@ -459,7 +462,10 @@ fn save_config(config: &TelemetryConfig) -> Result<(), std::io::Error> {
     };
     let json = serde_json::to_string_pretty(config)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-    std::fs::write(&path, json)
+    // Atomic write: write to temp file then rename to avoid corruption on mid-write crash
+    let tmp_path = path.with_extension("json.tmp");
+    std::fs::write(&tmp_path, &json)?;
+    std::fs::rename(&tmp_path, &path)
 }
 
 fn now_iso8601() -> String {
@@ -510,7 +516,13 @@ fn create_artifacts_tarball(artifacts_dir: &std::path::Path) -> Result<Vec<u8>, 
     // Only include known safe file types
     let allowed_extensions = ["jsonl", "json", "png", "jpg", "txt"];
 
-    if let Ok(entries) = fs::read_dir(artifacts_dir) {
+    match fs::read_dir(artifacts_dir) {
+        Err(e) => {
+            debug!("Cannot read artifacts directory '{}': {e}", artifacts_dir.display());
+            let encoder = archive.into_inner()?;
+            return encoder.finish();
+        }
+        Ok(entries) => {
         for entry in entries.flatten() {
             let path = entry.path();
             if !path.is_file() {
@@ -529,6 +541,7 @@ fn create_artifacts_tarball(artifacts_dir: &std::path::Path) -> Result<Vec<u8>, 
             };
 
             archive.append_path_with_name(&path, &file_name)?;
+        }
         }
     }
 
