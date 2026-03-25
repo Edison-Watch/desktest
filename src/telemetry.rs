@@ -96,6 +96,12 @@ impl TelemetryClient {
         let mut config = existing.unwrap_or_default();
         let mut is_env_override = false;
 
+        // Persist the config if freshly generated, so install_id is stable across runs.
+        // Done before env override to avoid leaking an env-overridden consent level to disk.
+        if was_fresh {
+            let _ = save_config(&config);
+        }
+
         if let Some(val) = env_override {
             is_env_override = true;
             config.consent_level = match val.as_str() {
@@ -107,11 +113,6 @@ impl TelemetryClient {
                     ConsentLevel::None
                 }
             };
-        }
-
-        // Persist the config if it was freshly generated, so install_id is stable across runs
-        if was_fresh {
-            let _ = save_config(&config);
         }
 
         Self {
@@ -307,18 +308,12 @@ impl TelemetryClient {
     }
 
     fn show_nudge(&self) {
-        match self.config.consent_level {
-            ConsentLevel::None => {
-                eprintln!(
-                    "Tip: Help improve desktest \u{2014} run `desktest telemetry anonymous` to opt in"
-                );
-            }
-            ConsentLevel::Anonymous => {
-                eprintln!(
-                    "Tip: Share richer diagnostics with `desktest telemetry rich`"
-                );
-            }
-            ConsentLevel::Rich => {} // no nudge
+        // Only Anonymous users reach here (Rich is excluded by should_nudge,
+        // None+prompted is excluded, None+unprompted goes to first-run prompt)
+        if self.config.consent_level == ConsentLevel::Anonymous {
+            eprintln!(
+                "Tip: Share richer diagnostics with `desktest telemetry rich`"
+            );
         }
     }
 
