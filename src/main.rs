@@ -24,6 +24,7 @@ mod review;
 mod setup;
 mod suite;
 mod task;
+mod telemetry;
 mod trajectory;
 mod update;
 
@@ -69,6 +70,19 @@ async fn main() {
     let cli = Cli::parse();
     setup_logging(cli.debug);
 
+    let mut telemetry_client = telemetry::TelemetryClient::load_or_init();
+
+    // Handle `desktest telemetry <action>` subcommand early
+    if let Command::Telemetry { action } = &cli.command {
+        telemetry_client.handle_command(action);
+        std::process::exit(0);
+    }
+
+    // Check consent / show prompt / nudge (only for test commands)
+    if telemetry::is_test_command(&cli.command) {
+        telemetry_client.check_consent();
+    }
+
     match &cli.command {
         Command::Validate { task } => match task::TaskDefinition::load(task) {
             Ok(task_def) => {
@@ -111,7 +125,10 @@ async fn main() {
 
             let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
             let bash_enabled = cli.with_bash || cli.qa;
+            let start_time = std::time::Instant::now();
 
+            let cmd_name = telemetry::command_name(&cli.command);
+            let is_replay = *replay;
             let result = orchestration::run_task(
                 task_def,
                 run_config,
@@ -125,6 +142,14 @@ async fn main() {
                 cli.artifacts_dir.clone(),
             )
             .await;
+
+            record_run_event(&mut telemetry_client, &result, cmd_name, cli.qa, is_replay, bash_enabled, start_time);
+
+            if let Some(ref dir) = cli.artifacts_dir {
+                telemetry_client.set_artifacts_dir(dir.clone());
+            }
+            telemetry_client.flush().await;
+
             match result {
                 Ok(outcome) => {
                     println!("{outcome}");
@@ -155,6 +180,7 @@ async fn main() {
             let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
             let bash_enabled = cli.with_bash || cli.qa;
 
+            let start_time = std::time::Instant::now();
             let result = suite::run_suite(
                 dir,
                 cli.config_flag.as_deref(),
@@ -169,6 +195,26 @@ async fn main() {
                 cli.qa,
             )
             .await;
+
+            // Record suite telemetry event
+            match &result {
+                Ok(suite_result) => {
+                    let mut event = telemetry::build_event(&telemetry_client, "suite_completed", "suite");
+                    event.status = Some(if suite_result.summary.failed == 0 && suite_result.summary.errors == 0 { "pass" } else { "fail" }.to_string());
+                    event.duration_ms = Some(suite_result.total_duration_ms);
+                    event.used_qa_mode = cli.qa;
+                    event.used_bash = bash_enabled;
+                    telemetry_client.record_event(event);
+                }
+                Err(e) => {
+                    let mut event = telemetry::build_event(&telemetry_client, "error", "suite");
+                    event.status = Some("error".to_string());
+                    event.duration_ms = Some(start_time.elapsed().as_millis() as u64);
+                    event.error_category = Some(format!("exit_{}", e.exit_code()));
+                    telemetry_client.record_event(event);
+                }
+            }
+            telemetry_client.flush().await;
 
             match result {
                 Ok(suite_result) => {
@@ -212,6 +258,8 @@ async fn main() {
 
             let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
             let bash_enabled = cli.with_bash || cli.qa;
+            let start_time = std::time::Instant::now();
+            let is_replay = *replay;
 
             let result = orchestration::run_attach(
                 task_def,
@@ -227,6 +275,14 @@ async fn main() {
                 cli.artifacts_dir.clone(),
             )
             .await;
+
+            record_run_event(&mut telemetry_client, &result, "attach", cli.qa, is_replay, bash_enabled, start_time);
+
+            if let Some(ref dir) = cli.artifacts_dir {
+                telemetry_client.set_artifacts_dir(dir.clone());
+            }
+            telemetry_client.flush().await;
+
             match result {
                 Ok(outcome) => {
                     println!("{outcome}");
@@ -629,5 +685,40 @@ async fn main() {
                 std::process::exit(e.exit_code());
             }
         },
+        Command::Telemetry { .. } => {
+            // Handled above before the match; this arm is unreachable
+            unreachable!()
+        }
     }
+}
+
+/// Record a telemetry event for a single test run (used by Run and Attach commands).
+fn record_run_event(
+    client: &mut telemetry::TelemetryClient,
+    result: &Result<crate::error::AgentOutcome, crate::error::AppError>,
+    command: &str,
+    qa: bool,
+    replay: bool,
+    bash_enabled: bool,
+    start_time: std::time::Instant,
+) {
+    let duration_ms = start_time.elapsed().as_millis() as u64;
+    let mut event = telemetry::build_event(client, "test_completed", command);
+    event.duration_ms = Some(duration_ms);
+    event.used_qa_mode = qa;
+    event.used_replay = replay;
+    event.used_bash = bash_enabled;
+
+    match result {
+        Ok(outcome) => {
+            event.status = Some(if outcome.passed { "pass" } else { "fail" }.to_string());
+        }
+        Err(e) => {
+            event.event_type = "error".to_string();
+            event.status = Some("error".to_string());
+            event.error_category = Some(format!("exit_{}", e.exit_code()));
+        }
+    }
+
+    client.record_event(event);
 }

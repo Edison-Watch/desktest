@@ -285,6 +285,18 @@ EXAMPLES:
         watch: std::path::PathBuf,
     },
 
+    /// Manage telemetry settings
+    #[command(after_help = "\
+EXAMPLES:
+  desktest telemetry status       # Show current telemetry settings
+  desktest telemetry anonymous    # Opt in to anonymous usage stats
+  desktest telemetry rich         # Opt in to rich diagnostics (trajectories + screenshots)
+  desktest telemetry off          # Disable telemetry")]
+    Telemetry {
+        /// Action: off, anonymous, rich, or status
+        action: String,
+    },
+
     /// Generate an interactive HTML trajectory viewer (best for human review in a browser)
     #[command(after_help = "\
 For a CLI/agent-friendly text view, use `desktest logs` instead.\n\n\
