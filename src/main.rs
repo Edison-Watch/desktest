@@ -145,22 +145,25 @@ async fn main() {
 
             record_run_event(&mut telemetry_client, &result, cmd_name, cli.qa, is_replay, bash_enabled, start_time);
 
+            // Print result immediately so the user doesn't wait for telemetry flush
+            let exit_code = match &result {
+                Ok(outcome) => {
+                    println!("{outcome}");
+                    if outcome.passed { 0 } else { 1 }
+                }
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    e.exit_code()
+                }
+            };
+
             let effective_artifacts_dir = cli.artifacts_dir.clone().unwrap_or_else(|| {
                 std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")).join("desktest_artifacts")
             });
             telemetry_client.set_artifacts_dir(effective_artifacts_dir);
             telemetry_client.flush().await;
 
-            match result {
-                Ok(outcome) => {
-                    println!("{outcome}");
-                    std::process::exit(if outcome.passed { 0 } else { 1 });
-                }
-                Err(e) => {
-                    eprintln!("Error: {e}");
-                    std::process::exit(e.exit_code());
-                }
-            }
+            std::process::exit(exit_code);
         }
         Command::Suite { dir, filter } => {
             if cli.artifacts_dir.is_some() {
@@ -215,21 +218,22 @@ async fn main() {
                     telemetry_client.record_event(event);
                 }
             }
+            // Print result immediately so the user doesn't wait for telemetry flush
+            let exit_code = match &result {
+                Ok(suite_result) => suite::suite_exit_code(suite_result),
+                Err(e) => {
+                    eprintln!("Suite error: {e}");
+                    e.exit_code()
+                }
+            };
+
             // Suite manages its own per-test artifacts dirs, but set the output dir for suite-level upload
             if let Some(ref dir) = cli.artifacts_dir {
                 telemetry_client.set_artifacts_dir(dir.clone());
             }
             telemetry_client.flush().await;
 
-            match result {
-                Ok(suite_result) => {
-                    std::process::exit(suite::suite_exit_code(&suite_result));
-                }
-                Err(e) => {
-                    eprintln!("Suite error: {e}");
-                    std::process::exit(e.exit_code());
-                }
-            }
+            std::process::exit(exit_code);
         }
         Command::Attach {
             task,
@@ -283,22 +287,25 @@ async fn main() {
 
             record_run_event(&mut telemetry_client, &result, "attach", cli.qa, is_replay, bash_enabled, start_time);
 
+            // Print result immediately so the user doesn't wait for telemetry flush
+            let exit_code = match &result {
+                Ok(outcome) => {
+                    println!("{outcome}");
+                    if outcome.passed { 0 } else { 1 }
+                }
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    e.exit_code()
+                }
+            };
+
             let effective_artifacts_dir = cli.artifacts_dir.clone().unwrap_or_else(|| {
                 std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")).join("desktest_artifacts")
             });
             telemetry_client.set_artifacts_dir(effective_artifacts_dir);
             telemetry_client.flush().await;
 
-            match result {
-                Ok(outcome) => {
-                    println!("{outcome}");
-                    std::process::exit(if outcome.passed { 0 } else { 1 });
-                }
-                Err(e) => {
-                    eprintln!("Error: {e}");
-                    std::process::exit(e.exit_code());
-                }
-            }
+            std::process::exit(exit_code);
         }
         Command::Interactive {
             task,
