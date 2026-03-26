@@ -95,8 +95,10 @@ pub(crate) fn load_config_or_defaults(
     // Warn if the provider was switched but the model still looks like it
     // belongs to the old provider (e.g. claude model sent to Gemini).
     if llm.provider.is_some() && llm.model.is_none() {
-        let non_anthropic =
-            !matches!(config.provider.as_str(), "anthropic" | "custom" | "claude-cli");
+        let non_anthropic = !matches!(
+            config.provider.as_str(),
+            "anthropic" | "custom" | "claude-cli"
+        );
         if non_anthropic
             && (config.model.starts_with("claude") || config.model.starts_with("anthropic/"))
         {

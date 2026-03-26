@@ -93,9 +93,10 @@ impl LlmProvider for ClaudeCliProvider {
                     // Close stdin to signal EOF
                 }
 
-                child.wait_with_output().await.map_err(|e| {
-                    AppError::Agent(format!("Claude CLI process error: {e}"))
-                })
+                child
+                    .wait_with_output()
+                    .await
+                    .map_err(|e| AppError::Agent(format!("Claude CLI process error: {e}")))
             }
             .await;
 
@@ -116,10 +117,7 @@ impl LlmProvider for ClaudeCliProvider {
                     if stdout.is_empty() {
                         String::new()
                     } else {
-                        format!(
-                            "\nstdout: {}",
-                            stdout.chars().take(500).collect::<String>()
-                        )
+                        format!("\nstdout: {}", stdout.chars().take(500).collect::<String>())
                     },
                 )));
             }
@@ -221,7 +219,11 @@ fn extract_text(msg: &ChatMessage) -> Option<String> {
                     }
                 })
                 .collect();
-            if texts.is_empty() { None } else { Some(texts.join("\n")) }
+            if texts.is_empty() {
+                None
+            } else {
+                Some(texts.join("\n"))
+            }
         }
         _ => None,
     }
@@ -397,7 +399,13 @@ mod tests {
         let data_url = "data:image/png;base64,iVBORw0KGgo=";
         let path = save_image_to_temp(data_url).unwrap();
         assert!(path.exists());
-        assert!(path.file_name().unwrap().to_str().unwrap().starts_with("desktest_cli_"));
+        assert!(
+            path.file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("desktest_cli_")
+        );
         let _ = std::fs::remove_file(&path);
     }
 
