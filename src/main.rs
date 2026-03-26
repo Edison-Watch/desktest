@@ -24,6 +24,7 @@ mod review;
 mod setup;
 mod suite;
 mod task;
+mod telemetry;
 mod trajectory;
 mod update;
 
@@ -69,6 +70,19 @@ async fn main() {
     let cli = Cli::parse();
     setup_logging(cli.debug);
 
+    let mut telemetry_client = telemetry::TelemetryClient::load_or_init();
+
+    // Handle `desktest telemetry <action>` subcommand early
+    if let Command::Telemetry { action } = &cli.command {
+        telemetry_client.handle_command(action);
+        std::process::exit(0);
+    }
+
+    // Check consent / show prompt / nudge (only for test commands)
+    if telemetry::is_test_command(&cli.command) {
+        telemetry_client.check_consent();
+    }
+
     match &cli.command {
         Command::Validate { task } => match task::TaskDefinition::load(task) {
             Ok(task_def) => {
@@ -107,6 +121,8 @@ async fn main() {
 
             let run_config =
                 orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
+            let telem_provider = run_config.provider.clone();
+            let telem_model = run_config.model.clone();
 
             let needs_llm = !*replay && !task_def.is_programmatic_only();
             if let Err(e) = preflight::run_preflight(&run_config, needs_llm).await {
@@ -117,7 +133,10 @@ async fn main() {
 
             let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
             let bash_enabled = cli.with_bash || cli.qa;
+            let start_time = std::time::Instant::now();
 
+            let cmd_name = telemetry::command_name(&cli.command);
+            let is_replay = *replay;
             let result = orchestration::run_task(
                 task_def,
                 run_config,
@@ -131,16 +150,28 @@ async fn main() {
                 cli.artifacts_dir.clone(),
             )
             .await;
-            match result {
+
+            record_run_event(&mut telemetry_client, &result, cmd_name, cli.qa, is_replay, bash_enabled, start_time, Some(&telem_provider), Some(&telem_model));
+
+            // Print result immediately so the user doesn't wait for telemetry flush
+            let exit_code = match &result {
                 Ok(outcome) => {
                     println!("{outcome}");
-                    std::process::exit(if outcome.passed { 0 } else { 1 });
+                    if outcome.passed { 0 } else { 1 }
                 }
                 Err(e) => {
                     eprintln!("Error: {e}");
-                    std::process::exit(e.exit_code());
+                    e.exit_code()
                 }
-            }
+            };
+
+            let effective_artifacts_dir = cli.artifacts_dir.clone().unwrap_or_else(|| {
+                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")).join("desktest_artifacts")
+            });
+            telemetry_client.set_artifacts_dir(effective_artifacts_dir);
+            telemetry_client.flush().await;
+
+            std::process::exit(exit_code);
         }
         Command::Suite { dir, filter } => {
             if cli.artifacts_dir.is_some() {
@@ -161,6 +192,7 @@ async fn main() {
             let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
             let bash_enabled = cli.with_bash || cli.qa;
 
+            let start_time = std::time::Instant::now();
             let result = suite::run_suite(
                 dir,
                 cli.config_flag.as_deref(),
@@ -176,15 +208,44 @@ async fn main() {
             )
             .await;
 
-            match result {
+            // Record suite telemetry event
+            match &result {
                 Ok(suite_result) => {
-                    std::process::exit(suite::suite_exit_code(&suite_result));
+                    let mut event = telemetry::build_event(&telemetry_client, "suite_completed", "suite");
+                    event.status = Some(if suite_result.summary.failed == 0 && suite_result.summary.errors == 0 { "pass" } else { "fail" }.to_string());
+                    event.duration_ms = Some(suite_result.total_duration_ms);
+                    event.used_qa = cli.qa;
+                    event.used_bash = bash_enabled;
+                    event.provider = Some(run_config.provider.clone());
+                    event.model = Some(run_config.model.clone());
+                    telemetry_client.record_event(event);
                 }
                 Err(e) => {
-                    eprintln!("Suite error: {e}");
-                    std::process::exit(e.exit_code());
+                    let mut event = telemetry::build_event(&telemetry_client, "error", "suite");
+                    event.status = Some("error".to_string());
+                    event.duration_ms = Some(start_time.elapsed().as_millis() as u64);
+                    event.error_category = Some(format!("exit_{}", e.exit_code()));
+                    event.used_qa = cli.qa;
+                    event.used_bash = bash_enabled;
+                    event.provider = Some(run_config.provider.clone());
+                    event.model = Some(run_config.model.clone());
+                    telemetry_client.record_event(event);
                 }
             }
+            // Print result immediately so the user doesn't wait for telemetry flush
+            let exit_code = match &result {
+                Ok(suite_result) => suite::suite_exit_code(suite_result),
+                Err(e) => {
+                    eprintln!("Suite error: {e}");
+                    e.exit_code()
+                }
+            };
+
+            // Suite manages its own per-test artifacts dirs; don't set telemetry artifacts_dir
+            // (--artifacts-dir is documented as ignored for suite runs)
+            telemetry_client.flush().await;
+
+            std::process::exit(exit_code);
         }
         Command::Attach {
             task,
@@ -214,6 +275,8 @@ async fn main() {
 
             let run_config =
                 orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
+            let telem_provider = run_config.provider.clone();
+            let telem_model = run_config.model.clone();
 
             let needs_llm = !*replay && !task_def.is_programmatic_only();
             if let Err(e) = preflight::run_preflight(&run_config, needs_llm).await {
@@ -224,6 +287,8 @@ async fn main() {
 
             let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
             let bash_enabled = cli.with_bash || cli.qa;
+            let start_time = std::time::Instant::now();
+            let is_replay = *replay;
 
             let result = orchestration::run_attach(
                 task_def,
@@ -239,16 +304,28 @@ async fn main() {
                 cli.artifacts_dir.clone(),
             )
             .await;
-            match result {
+
+            record_run_event(&mut telemetry_client, &result, "attach", cli.qa, is_replay, bash_enabled, start_time, Some(&telem_provider), Some(&telem_model));
+
+            // Print result immediately so the user doesn't wait for telemetry flush
+            let exit_code = match &result {
                 Ok(outcome) => {
                     println!("{outcome}");
-                    std::process::exit(if outcome.passed { 0 } else { 1 });
+                    if outcome.passed { 0 } else { 1 }
                 }
                 Err(e) => {
                     eprintln!("Error: {e}");
-                    std::process::exit(e.exit_code());
+                    e.exit_code()
                 }
-            }
+            };
+
+            let effective_artifacts_dir = cli.artifacts_dir.clone().unwrap_or_else(|| {
+                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")).join("desktest_artifacts")
+            });
+            telemetry_client.set_artifacts_dir(effective_artifacts_dir);
+            telemetry_client.flush().await;
+
+            std::process::exit(exit_code);
         }
         Command::Interactive {
             task,
@@ -265,6 +342,8 @@ async fn main() {
 
             let run_config =
                 orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
+            let telem_provider = run_config.provider.clone();
+            let telem_model = run_config.model.clone();
 
             // run_interactive_step unconditionally creates an LLM provider,
             // so any --step invocation needs an API key regardless of evaluator mode.
@@ -276,6 +355,7 @@ async fn main() {
             }
 
             let bash_enabled = cli.with_bash || cli.qa;
+            let start_time = std::time::Instant::now();
             let result = interactive::run_interactive(
                 task_def,
                 run_config,
@@ -291,20 +371,39 @@ async fn main() {
             )
             .await;
 
-            match result {
+            // In interactive mode (no --step, no --validate-only), Ctrl+C is expected — not an error
+            let is_expected_interrupt = matches!(&result, Err(e) if !step && !validate_only && e.is_interrupt());
+
+            if !is_expected_interrupt {
+                record_run_event(&mut telemetry_client, &result, "interactive", cli.qa, false, bash_enabled, start_time, Some(&telem_provider), Some(&telem_model));
+            }
+
+            // Print result immediately so the user doesn't wait for telemetry flush
+            let exit_code = match &result {
                 Ok(outcome) => {
                     println!("{outcome}");
-                    std::process::exit(if outcome.passed { 0 } else { 1 });
+                    if outcome.passed { 0 } else { 1 }
                 }
                 Err(e) => {
-                    // In interactive mode (no --step, no --validate-only), Ctrl+C is expected
-                    if !step && !validate_only && e.is_interrupt() {
-                        std::process::exit(0);
+                    if is_expected_interrupt {
+                        0
+                    } else {
+                        eprintln!("Error: {e}");
+                        e.exit_code()
                     }
-                    eprintln!("Error: {e}");
-                    std::process::exit(e.exit_code());
                 }
+            };
+
+            // Skip telemetry flush on expected Ctrl+C to avoid orphaned artifact uploads
+            if !is_expected_interrupt {
+                let effective_artifacts_dir = cli.artifacts_dir.clone().unwrap_or_else(|| {
+                    std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")).join("desktest_artifacts")
+                });
+                telemetry_client.set_artifacts_dir(effective_artifacts_dir);
+                telemetry_client.flush().await;
             }
+
+            std::process::exit(exit_code);
         }
         Command::Codify {
             trajectory,
@@ -687,5 +786,44 @@ async fn main() {
                 std::process::exit(e.exit_code());
             }
         },
+        Command::Telemetry { .. } => {
+            // Handled above before the match; this arm is unreachable
+            unreachable!()
+        }
     }
+}
+
+/// Record a telemetry event for a single test run (used by Run, Attach, and Interactive commands).
+fn record_run_event(
+    client: &mut telemetry::TelemetryClient,
+    result: &Result<crate::error::AgentOutcome, crate::error::AppError>,
+    command: &str,
+    qa: bool,
+    replay: bool,
+    bash_enabled: bool,
+    start_time: std::time::Instant,
+    provider: Option<&str>,
+    model: Option<&str>,
+) {
+    let duration_ms = start_time.elapsed().as_millis() as u64;
+    let mut event = telemetry::build_event(client, "test_completed", command);
+    event.duration_ms = Some(duration_ms);
+    event.used_qa = qa;
+    event.used_replay = replay;
+    event.used_bash = bash_enabled;
+    event.provider = provider.map(|s| s.to_string());
+    event.model = model.map(|s| s.to_string());
+
+    match result {
+        Ok(outcome) => {
+            event.status = Some(if outcome.passed { "pass" } else { "fail" }.to_string());
+        }
+        Err(e) => {
+            event.event_type = "error".to_string();
+            event.status = Some("error".to_string());
+            event.error_category = Some(format!("exit_{}", e.exit_code()));
+        }
+    }
+
+    client.record_event(event);
 }

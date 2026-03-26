@@ -1,6 +1,18 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::results;
+
+#[derive(Debug, Clone, ValueEnum)]
+pub enum TelemetryAction {
+    /// Disable telemetry
+    Off,
+    /// Opt in to anonymous usage stats only
+    Anonymous,
+    /// Opt in to rich diagnostics (trajectories + screenshots)
+    Rich,
+    /// Show current telemetry settings
+    Status,
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -283,6 +295,18 @@ EXAMPLES:
         /// Directory tree to watch for phase subdirectories
         #[arg(long)]
         watch: std::path::PathBuf,
+    },
+
+    /// Manage telemetry settings
+    #[command(after_help = "\
+EXAMPLES:
+  desktest telemetry status       # Show current telemetry settings
+  desktest telemetry anonymous    # Opt in to anonymous usage stats
+  desktest telemetry rich         # Opt in to rich diagnostics (trajectories + screenshots)
+  desktest telemetry off          # Disable telemetry")]
+    Telemetry {
+        /// Action to perform
+        action: TelemetryAction,
     },
 
     /// Generate an interactive HTML trajectory viewer (best for human review in a browser)
