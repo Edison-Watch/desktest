@@ -32,6 +32,24 @@ pub(crate) struct LlmOverrides {
     pub api_key: Option<String>,
 }
 
+/// Runtime configuration flags that travel together across orchestration functions.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct RunConfig {
+    pub debug: bool,
+    pub verbose: bool,
+    pub bash_enabled: bool,
+    pub no_recording: bool,
+    pub qa: bool,
+}
+
+/// Groups the core references that every orchestration inner function needs.
+struct TaskContext<'a> {
+    task_def: &'a task::TaskDefinition,
+    config: &'a Config,
+    session: &'a docker::DockerSession,
+    artifacts_dir: &'a std::path::Path,
+}
+
 /// Load config from --config flag path or use task defaults.
 pub(crate) fn load_config_or_defaults(
     config_flag: &Option<std::path::PathBuf>,
@@ -155,13 +173,9 @@ pub(crate) async fn resolve_image_name<'a>(
 pub(crate) async fn run_task(
     mut task_def: task::TaskDefinition,
     mut config: Config,
-    debug: bool,
-    verbose: bool,
-    bash_enabled: bool,
-    no_recording: bool,
+    run: RunConfig,
     output_dir: std::path::PathBuf,
     monitor: Option<monitor::MonitorHandle>,
-    qa: bool,
     artifacts_dir_override: Option<std::path::PathBuf>,
 ) -> Result<AgentOutcome, AppError> {
     let start = Instant::now();
@@ -218,7 +232,7 @@ pub(crate) async fn run_task(
         } => r?,
     };
 
-    let test_id = task_def.id.clone();
+    let ctx = TaskContext { task_def: &task_def, config: &config, session: &session, artifacts_dir: &artifacts_dir };
 
     let result = tokio::select! {
         biased;
@@ -226,7 +240,7 @@ pub(crate) async fn run_task(
             eprintln!("\nInterrupted (Ctrl+C), cleaning up...");
             Err(AppError::Infra("Interrupted by user".into()))
         }
-        r = run_task_inner(&task_def, &config, &session, &artifacts_dir, debug, verbose, bash_enabled, no_recording, monitor.as_ref(), start, qa, Some(&redactor)) => r,
+        r = run_task_inner(&ctx, run, monitor.as_ref(), start, Some(&redactor)) => r,
     };
 
     // Always collect artifacts and clean up
@@ -238,12 +252,11 @@ pub(crate) async fn run_task(
 
     finalize_run(
         result,
-        &test_id,
         &task_def,
         &artifacts_dir,
         &output_dir,
         start,
-        qa,
+        run.qa,
         Some(&redactor),
     )
 }
@@ -253,7 +266,6 @@ pub(crate) async fn run_task(
 /// Used by both `run_task` and `run_attach` to avoid duplication.
 fn finalize_run(
     result: Result<TaskRunResult, AppError>,
-    test_id: &str,
     task_def: &task::TaskDefinition,
     artifacts_dir: &std::path::Path,
     output_dir: &std::path::Path,
@@ -261,6 +273,7 @@ fn finalize_run(
     qa: bool,
     redactor: Option<&crate::redact::Redactor>,
 ) -> Result<AgentOutcome, AppError> {
+    let test_id = &task_def.id;
     let duration_ms = start.elapsed().as_millis() as u64;
 
     // Save task definition to artifacts for review HTML
@@ -309,21 +322,15 @@ fn finalize_run(
 }
 
 async fn run_task_inner(
-    task_def: &task::TaskDefinition,
-    config: &Config,
-    session: &docker::DockerSession,
-    artifacts_dir: &std::path::Path,
-    debug: bool,
-    verbose: bool,
-    bash_enabled: bool,
-    no_recording: bool,
+    ctx: &TaskContext<'_>,
+    run: RunConfig,
     monitor: Option<&monitor::MonitorHandle>,
     start_time: Instant,
-    qa: bool,
     redactor: Option<&crate::redact::Redactor>,
 ) -> Result<TaskRunResult, AppError> {
     use task::EvaluatorMode;
 
+    let TaskContext { task_def, config, session, .. } = ctx;
     let timeout = Duration::from_secs(config.startup_timeout_seconds);
 
     // Determine evaluation mode (default to LLM if no evaluator configured)
@@ -344,7 +351,7 @@ async fn run_task_inner(
 
     // 1. Wait for desktop to be ready
     info!("Waiting for desktop to be ready...");
-    readiness::wait_for_desktop(session, timeout, debug).await?;
+    readiness::wait_for_desktop(session, timeout, run.debug).await?;
 
     // 1b. Validate custom image dependencies (after desktop is ready so X11-dependent imports work)
     let is_docker_image = matches!(task_def.app, task::AppConfig::DockerImage { .. });
@@ -401,7 +408,7 @@ async fn run_task_inner(
                 }
 
                 info!("Waiting for app window...");
-                readiness::wait_for_app_window(session, &baseline_windows, timeout, debug).await?;
+                readiness::wait_for_app_window(session, &baseline_windows, timeout, run.debug).await?;
             } else {
                 info!(
                     "No entrypoint_cmd specified, assuming app starts automatically in custom image"
@@ -440,7 +447,7 @@ async fn run_task_inner(
         }
 
         info!("Waiting for app window...");
-        readiness::wait_for_app_window(session, &baseline_windows, timeout, debug).await?;
+        readiness::wait_for_app_window(session, &baseline_windows, timeout, run.debug).await?;
     }
 
     // 6. Print VNC info
@@ -476,46 +483,26 @@ async fn run_task_inner(
     }
 
     // 7-8. Start recording and run agent loop / evaluation
-    run_eval_loop(
-        task_def,
-        config,
-        session,
-        artifacts_dir,
-        eval_mode,
-        debug,
-        verbose,
-        bash_enabled,
-        no_recording,
-        monitor,
-        start_time,
-        qa,
-        redactor,
-    )
-    .await
+    run_eval_loop(ctx, eval_mode, run, monitor, start_time, redactor).await
 }
 
 /// Shared logic for recording, agent loop, and evaluation.
 ///
 /// Used by both `run_task_inner` and `run_attach_inner` to avoid duplication.
 async fn run_eval_loop(
-    task_def: &task::TaskDefinition,
-    config: &Config,
-    session: &docker::DockerSession,
-    artifacts_dir: &std::path::Path,
+    ctx: &TaskContext<'_>,
     eval_mode: &task::EvaluatorMode,
-    debug: bool,
-    verbose: bool,
-    bash_enabled: bool,
-    no_recording: bool,
+    run: RunConfig,
     monitor: Option<&monitor::MonitorHandle>,
     start_time: Instant,
-    qa: bool,
     redactor: Option<&crate::redact::Redactor>,
 ) -> Result<TaskRunResult, AppError> {
     use task::EvaluatorMode;
 
+    let TaskContext { task_def, config, session, artifacts_dir } = ctx;
+
     // Start video recording
-    let recording = if no_recording {
+    let recording = if run.no_recording {
         None
     } else {
         match recording::Recording::start(session, config.display_width, config.display_height)
@@ -553,7 +540,7 @@ async fn run_eval_loop(
             {
                 match crate::trajectory::TrajectoryLogger::new(
                     artifacts_dir,
-                    verbose,
+                    run.verbose,
                     redactor.cloned(),
                 ) {
                     Ok(tl) => Some(tl),
@@ -709,20 +696,9 @@ async fn run_eval_loop(
         }
         EvaluatorMode::Llm => {
             info!("Starting agent loop v2 (LLM-only evaluation)...");
-            let agent_loop_result = run_agent_loop(
-                task_def,
-                config,
-                session,
-                artifacts_dir,
-                debug,
-                verbose,
-                bash_enabled,
-                recording.as_ref(),
-                monitor,
-                qa,
-                redactor,
-            )
-            .await;
+            let agent_loop_result =
+                run_agent_loop(ctx, run, recording.as_ref(), monitor, redactor)
+                    .await;
 
             if let Some(rec) = &recording {
                 rec.stop(session).await;
@@ -740,20 +716,9 @@ async fn run_eval_loop(
         }
         EvaluatorMode::Hybrid => {
             info!("Starting agent loop v2 (hybrid evaluation)...");
-            let agent_loop_result = run_agent_loop(
-                task_def,
-                config,
-                session,
-                artifacts_dir,
-                debug,
-                verbose,
-                bash_enabled,
-                recording.as_ref(),
-                monitor,
-                qa,
-                redactor,
-            )
-            .await;
+            let agent_loop_result =
+                run_agent_loop(ctx, run, recording.as_ref(), monitor, redactor)
+                    .await;
 
             if let Some(rec) = &recording {
                 rec.stop(session).await;
@@ -806,9 +771,7 @@ async fn run_eval_loop(
 pub(crate) async fn build_agent_loop_config(
     task_def: &task::TaskDefinition,
     session: &docker::DockerSession,
-    debug: bool,
-    verbose: bool,
-    bash_enabled: bool,
+    run: RunConfig,
 ) -> agent::loop_v2::AgentLoopV2Config {
     let max_a11y_nodes = task_def.max_a11y_nodes.unwrap_or(10_000);
     let max_steps = task_def.max_steps as usize;
@@ -865,27 +828,23 @@ pub(crate) async fn build_agent_loop_config(
         max_steps,
         total_timeout,
         observation_config: obs_config,
-        debug,
-        verbose,
-        bash_enabled,
+        debug: run.debug,
+        verbose: run.verbose,
+        bash_enabled: run.bash_enabled,
+        qa: run.qa,
         ..Default::default()
     }
 }
 
 /// Run the v2 agent loop (used by LLM and hybrid modes).
 async fn run_agent_loop(
-    task_def: &task::TaskDefinition,
-    config: &Config,
-    session: &docker::DockerSession,
-    artifacts_dir: &std::path::Path,
-    debug: bool,
-    verbose: bool,
-    bash_enabled: bool,
+    ctx: &TaskContext<'_>,
+    run: RunConfig,
     recording: Option<&recording::Recording>,
     monitor: Option<&monitor::MonitorHandle>,
-    qa: bool,
     redactor: Option<&crate::redact::Redactor>,
 ) -> Result<AgentOutcome, AppError> {
+    let TaskContext { task_def, config, session, artifacts_dir } = ctx;
     let llm_client = provider::create_provider(
         &config.provider,
         &config.api_key,
@@ -893,17 +852,14 @@ async fn run_agent_loop(
         &config.api_base_url,
     )?;
 
-    let mut loop_config =
-        build_agent_loop_config(task_def, session, debug, verbose, bash_enabled).await;
-    loop_config.qa = qa;
+    let loop_config = build_agent_loop_config(task_def, session, run).await;
     let full_instruction = task_def.full_instruction();
     let mut agent_loop = agent::loop_v2::AgentLoopV2::new(
         llm_client,
         session,
         artifacts_dir.to_path_buf(),
         &full_instruction,
-        config.display_width,
-        config.display_height,
+        (config.display_width, config.display_height),
         loop_config,
         recording,
         monitor.cloned(),
@@ -922,13 +878,9 @@ pub(crate) async fn run_attach(
     mut task_def: task::TaskDefinition,
     mut config: Config,
     container: &str,
-    debug: bool,
-    verbose: bool,
-    bash_enabled: bool,
-    no_recording: bool,
+    run: RunConfig,
     output_dir: std::path::PathBuf,
     monitor: Option<monitor::MonitorHandle>,
-    qa: bool,
     artifacts_dir_override: Option<std::path::PathBuf>,
 ) -> Result<AgentOutcome, AppError> {
     let start = Instant::now();
@@ -971,7 +923,7 @@ pub(crate) async fn run_attach(
     info!("Attaching to container '{container}'...");
     let session = docker::DockerSession::attach(container).await?;
 
-    let test_id = task_def.id.clone();
+    let ctx = TaskContext { task_def: &task_def, config: &config, session: &session, artifacts_dir: &artifacts_dir };
 
     let result = tokio::select! {
         biased;
@@ -979,7 +931,7 @@ pub(crate) async fn run_attach(
             eprintln!("\nInterrupted (Ctrl+C)");
             Err(AppError::Infra("Interrupted by user".into()))
         }
-        r = run_attach_inner(&task_def, &config, &session, &artifacts_dir, debug, verbose, bash_enabled, no_recording, monitor.as_ref(), start, qa, Some(&redactor)) => r,
+        r = run_attach_inner(&ctx, run, monitor.as_ref(), start, Some(&redactor)) => r,
     };
 
     // Collect artifacts but do NOT clean up the container (we don't own it)
@@ -988,12 +940,11 @@ pub(crate) async fn run_attach(
 
     finalize_run(
         result,
-        &test_id,
         &task_def,
         &artifacts_dir,
         &output_dir,
         start,
-        qa,
+        run.qa,
         Some(&redactor),
     )
 }
@@ -1004,19 +955,14 @@ pub(crate) async fn run_attach(
 /// and app deployment/launch — all of which are handled by the external
 /// orchestration script.
 async fn run_attach_inner(
-    task_def: &task::TaskDefinition,
-    config: &Config,
-    session: &docker::DockerSession,
-    artifacts_dir: &std::path::Path,
-    debug: bool,
-    verbose: bool,
-    bash_enabled: bool,
-    no_recording: bool,
+    ctx: &TaskContext<'_>,
+    run: RunConfig,
     monitor: Option<&monitor::MonitorHandle>,
     start_time: Instant,
-    qa: bool,
     redactor: Option<&crate::redact::Redactor>,
 ) -> Result<TaskRunResult, AppError> {
+    let task_def = ctx.task_def;
+    let session = ctx.session;
     let eval_mode = task_def
         .evaluator
         .as_ref()
@@ -1062,22 +1008,7 @@ async fn run_attach_inner(
     }
 
     // Recording, agent loop, and evaluation (shared with run_task_inner)
-    run_eval_loop(
-        task_def,
-        config,
-        session,
-        artifacts_dir,
-        eval_mode,
-        debug,
-        verbose,
-        bash_enabled,
-        no_recording,
-        monitor,
-        start_time,
-        qa,
-        redactor,
-    )
-    .await
+    run_eval_loop(ctx, eval_mode, run, monitor, start_time, redactor).await
 }
 
 /// Print validation results showing which sources passed/failed.
