@@ -117,11 +117,18 @@ pub(super) async fn evaluate_script_replay(
 struct ReplayStep {
     step: usize,
     thought: String,
+    action_code: Option<String>,
 }
 
-/// Parse `REPLAY_STEP_DONE:N:thought` markers from script output.
+/// Parse `REPLAY_STEP_DONE:N:thought` and `REPLAY_ACTION:N:base64` markers from script output.
 fn parse_replay_steps(output: &str) -> Vec<ReplayStep> {
+    use base64::Engine;
+
     let mut steps = Vec::new();
+    // Collect action codes keyed by step number
+    let mut action_codes: std::collections::HashMap<usize, String> =
+        std::collections::HashMap::new();
+
     for line in output.lines() {
         let line = line.trim();
         if let Some(rest) = line.strip_prefix("REPLAY_STEP_DONE:") {
@@ -130,11 +137,30 @@ fn parse_replay_steps(output: &str) -> Vec<ReplayStep> {
                     steps.push(ReplayStep {
                         step,
                         thought: thought.to_string(),
+                        action_code: None,
                     });
+                }
+            }
+        } else if let Some(rest) = line.strip_prefix("REPLAY_ACTION:") {
+            if let Some((num_str, b64)) = rest.split_once(':') {
+                if let Ok(step) = num_str.parse::<usize>() {
+                    if let Ok(bytes) =
+                        base64::engine::general_purpose::STANDARD.decode(b64.trim())
+                    {
+                        if let Ok(code) = String::from_utf8(bytes) {
+                            action_codes.insert(step, code);
+                        }
+                    }
                 }
             }
         }
     }
+
+    // Attach action codes to their corresponding steps
+    for step in &mut steps {
+        step.action_code = action_codes.remove(&step.step);
+    }
+
     steps
 }
 
@@ -190,7 +216,7 @@ async fn write_replay_trajectory(
         let entry = TrajectoryEntry {
             step: step.step,
             timestamp: chrono_iso8601_now(),
-            action_code: String::new(),
+            action_code: step.action_code.clone().unwrap_or_default(),
             thought: Some(step.thought.clone()),
             screenshot_path,
             a11y_tree_path: None,
