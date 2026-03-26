@@ -60,6 +60,7 @@ impl LlmProvider for ClaudeCliProvider {
 
             // 2. Build command
             let mut cmd = tokio::process::Command::new("claude");
+            cmd.kill_on_drop(true);
             cmd.arg("-p");
             cmd.arg("--output-format").arg("text");
 
