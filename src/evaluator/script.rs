@@ -203,8 +203,5 @@ async fn write_replay_trajectory(
         trajectory_logger.log_entry(&entry);
     }
 
-    info!(
-        "Wrote replay trajectory with {} steps",
-        steps.len()
-    );
+    info!("Wrote replay trajectory with {} steps", steps.len());
 }

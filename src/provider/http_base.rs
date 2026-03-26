@@ -87,9 +87,7 @@ impl LlmProvider for HttpProvider {
                     m.content
                         .as_ref()
                         .and_then(|c| c.as_array())
-                        .map_or(false, |arr| {
-                            arr.iter().any(|item| item.get("image_url").is_some())
-                        })
+                        .is_some_and(|arr| arr.iter().any(|item| item.get("image_url").is_some()))
                 })
                 .count();
 

@@ -81,11 +81,11 @@ pub fn generate_replay_script(
     script.push_str("import time\n");
     script.push_str("import pyautogui\n");
     script.push_str("import subprocess\n");
-    script.push_str("\n");
+    script.push('\n');
     script.push_str("# Safety settings\n");
     script.push_str("pyautogui.FAILSAFE = False\n");
     script.push_str("pyautogui.PAUSE = 0.1\n");
-    script.push_str("\n");
+    script.push('\n');
 
     // Filter entries
     let filter_set: Option<std::collections::HashSet<usize>> =
@@ -179,7 +179,7 @@ pub fn generate_replay_script(
         // NOTE: action code may contain return/sys.exit() which would short-circuit the step
         for line in entry.action_code.trim_end_matches('\n').lines() {
             if line.trim().is_empty() {
-                script.push_str("\n");
+                script.push('\n');
             } else {
                 script.push_str(&format!("    {line}\n"));
             }

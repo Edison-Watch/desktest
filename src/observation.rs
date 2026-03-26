@@ -11,7 +11,7 @@ use crate::docker::DockerSession;
 use crate::error::AppError;
 
 /// The type of observation to capture after each action.
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ObservationType {
     /// Screenshot only.
@@ -19,13 +19,8 @@ pub enum ObservationType {
     /// Accessibility tree only.
     A11yTree,
     /// Both screenshot and accessibility tree (default).
+    #[default]
     ScreenshotA11yTree,
-}
-
-impl Default for ObservationType {
-    fn default() -> Self {
-        ObservationType::ScreenshotA11yTree
-    }
 }
 
 /// A captured observation from the container.

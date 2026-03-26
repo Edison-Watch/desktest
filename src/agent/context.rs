@@ -143,6 +143,7 @@ impl ContextManager {
     }
 
     /// Get the number of turns in the trajectory.
+    #[cfg(test)]
     pub fn trajectory_len(&self) -> usize {
         self.trajectory.len()
     }

@@ -27,7 +27,7 @@ mod task;
 mod trajectory;
 mod update;
 
-pub(crate) use orchestration::{parse_resolution, run_task};
+pub(crate) use orchestration::run_task;
 
 use clap::Parser;
 use cli::{Cli, Command};
@@ -114,8 +114,11 @@ async fn main() {
                 }
             }
 
-            let run_config =
-                orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution, &llm_overrides(&cli));
+            let run_config = orchestration::load_config_or_defaults(
+                &cli.config_flag,
+                &cli.resolution,
+                &llm_overrides(&cli),
+            );
 
             let needs_llm = !*replay && !task_def.is_programmatic_only();
             if let Err(e) = preflight::run_preflight(&run_config, needs_llm).await {
@@ -153,11 +156,16 @@ async fn main() {
         }
         Command::Suite { dir, filter } => {
             if cli.artifacts_dir.is_some() {
-                eprintln!("Warning: --artifacts-dir is ignored for suite runs (each test manages its own artifacts directory).");
+                eprintln!(
+                    "Warning: --artifacts-dir is ignored for suite runs (each test manages its own artifacts directory)."
+                );
             }
 
-            let run_config =
-                orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution, &llm_overrides(&cli));
+            let run_config = orchestration::load_config_or_defaults(
+                &cli.config_flag,
+                &cli.resolution,
+                &llm_overrides(&cli),
+            );
             // Skip API key check for suites: tasks are discovered dynamically and
             // some may be programmatic-only. Each individual run_task call will
             // check for its own API key requirement.
@@ -220,8 +228,11 @@ async fn main() {
                 }
             }
 
-            let run_config =
-                orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution, &llm_overrides(&cli));
+            let run_config = orchestration::load_config_or_defaults(
+                &cli.config_flag,
+                &cli.resolution,
+                &llm_overrides(&cli),
+            );
 
             let needs_llm = !*replay && !task_def.is_programmatic_only();
             if let Err(e) = preflight::run_preflight(&run_config, needs_llm).await {
@@ -271,8 +282,11 @@ async fn main() {
                 }
             };
 
-            let run_config =
-                orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution, &llm_overrides(&cli));
+            let run_config = orchestration::load_config_or_defaults(
+                &cli.config_flag,
+                &cli.resolution,
+                &llm_overrides(&cli),
+            );
 
             // run_interactive_step unconditionally creates an LLM provider,
             // so any --step invocation needs an API key regardless of evaluator mode.
@@ -448,8 +462,12 @@ async fn main() {
             if let Some((task_path, mut value)) = overwrite_json {
                 // Store replay_script relative to the task JSON's directory so that
                 // TaskDefinition::load resolves it correctly regardless of CWD.
-                let task_dir = task_path.parent().and_then(|d| std::fs::canonicalize(d).ok())
-                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")));
+                let task_dir = task_path
+                    .parent()
+                    .and_then(|d| std::fs::canonicalize(d).ok())
+                    .unwrap_or_else(|| {
+                        std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+                    });
                 let script_abs = std::fs::canonicalize(&*effective_output)
                     .unwrap_or_else(|_| effective_output.to_path_buf());
                 let script_rel = script_abs
@@ -475,17 +493,15 @@ async fn main() {
                         .unwrap_or("desktest_artifacts");
                     // Resolve dir_name against CWD first to get a reliable absolute path,
                     // then make it relative to task_dir for portability.
-                    let dir_cwd_raw = std::env::current_dir()
-                        .unwrap_or_else(|_| std::path::PathBuf::from("."));
-                    let dir_cwd = std::fs::canonicalize(&dir_cwd_raw)
-                        .unwrap_or(dir_cwd_raw);
+                    let dir_cwd_raw =
+                        std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+                    let dir_cwd = std::fs::canonicalize(&dir_cwd_raw).unwrap_or(dir_cwd_raw);
                     let dir_abs_raw = if std::path::Path::new(dir_name).is_absolute() {
                         std::path::PathBuf::from(dir_name)
                     } else {
                         dir_cwd.join(dir_name)
                     };
-                    let dir_abs = std::fs::canonicalize(&dir_abs_raw)
-                        .unwrap_or(dir_abs_raw);
+                    let dir_abs = std::fs::canonicalize(&dir_abs_raw).unwrap_or(dir_abs_raw);
                     let dir_rel = dir_abs
                         .strip_prefix(&task_dir)
                         .map(|p| p.to_path_buf())
@@ -546,8 +562,11 @@ async fn main() {
                 std::process::exit(e.exit_code());
             }
 
-            let run_config =
-                orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution, &llm_overrides(&cli));
+            let run_config = orchestration::load_config_or_defaults(
+                &cli.config_flag,
+                &cli.resolution,
+                &llm_overrides(&cli),
+            );
 
             // Replay mode doesn't need LLM
             if let Err(e) = preflight::run_preflight(&run_config, false).await {
@@ -609,23 +628,26 @@ async fn main() {
             }
         }
         Command::Doctor => {
-            let run_config =
-                orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution, &llm_overrides(&cli));
+            let run_config = orchestration::load_config_or_defaults(
+                &cli.config_flag,
+                &cli.resolution,
+                &llm_overrides(&cli),
+            );
             let all_ok = preflight::run_doctor(&run_config).await;
             std::process::exit(if all_ok { 0 } else { 1 });
         }
-        Command::Update { force } => {
-            match update::run_update(*force).await {
-                Ok(()) => std::process::exit(0),
-                Err(e) => {
-                    eprintln!("Update failed: {e}");
-                    std::process::exit(e.exit_code());
-                }
+        Command::Update { force } => match update::run_update(*force).await {
+            Ok(()) => std::process::exit(0),
+            Err(e) => {
+                eprintln!("Update failed: {e}");
+                std::process::exit(e.exit_code());
             }
-        }
+        },
         Command::Monitor { watch } => {
             if cli.artifacts_dir.is_some() {
-                eprintln!("Warning: --artifacts-dir is ignored for the monitor command (the monitor reads existing artifacts, it does not write them).");
+                eprintln!(
+                    "Warning: --artifacts-dir is ignored for the monitor command (the monitor reads existing artifacts, it does not write them)."
+                );
             }
             let watch_dir = watch.clone();
             let port = cli.monitor_port;
@@ -638,10 +660,7 @@ async fn main() {
                     std::process::exit(2);
                 }
             } else if !watch_dir.is_dir() {
-                eprintln!(
-                    "Watch path '{}' is not a directory.",
-                    watch_dir.display()
-                );
+                eprintln!("Watch path '{}' is not a directory.", watch_dir.display());
                 std::process::exit(2);
             }
 

@@ -78,7 +78,11 @@ pub async fn run_doctor(config: &Config) -> bool {
     // API key check
     print!("API key ({}) ... ", config.provider);
     let _ = std::io::stdout().flush();
-    match provider::resolve_api_key_with_source(&config.api_key, &config.provider, config.api_key_source) {
+    match provider::resolve_api_key_with_source(
+        &config.api_key,
+        &config.provider,
+        config.api_key_source,
+    ) {
         Ok((_key, source)) => {
             println!("ok (from {source})");
         }

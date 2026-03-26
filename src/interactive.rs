@@ -88,7 +88,14 @@ pub(crate) async fn run_interactive(
     }
 
     // Default interactive: start container, run setup, print VNC info, pause
-    run_interactive_pause(task_def, config, debug, no_recording, artifacts_dir_override).await
+    run_interactive_pause(
+        task_def,
+        config,
+        debug,
+        no_recording,
+        artifacts_dir_override,
+    )
+    .await
 }
 
 /// Interactive mode: start container, run setup steps, print VNC info, pause.
@@ -190,14 +197,16 @@ async fn run_interactive_pause_inner(
 
     // 4. Launch app
     if is_docker_image {
-        if let task::AppConfig::DockerImage { entrypoint_cmd, .. } = &task_def.app {
-            if let Some(cmd) = entrypoint_cmd {
-                info!("Launching app via entrypoint_cmd: {cmd}");
-                session
-                    .exec_detached_with_log(&["bash", "-c", cmd], "/tmp/app.log")
-                    .await?;
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            }
+        if let task::AppConfig::DockerImage {
+            entrypoint_cmd: Some(cmd),
+            ..
+        } = &task_def.app
+        {
+            info!("Launching app via entrypoint_cmd: {cmd}");
+            session
+                .exec_detached_with_log(&["bash", "-c", cmd], "/tmp/app.log")
+                .await?;
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         }
     } else {
         let is_appimage = matches!(config.app_type, crate::config::AppType::Appimage);
@@ -365,17 +374,19 @@ async fn run_interactive_step_inner(
 
     // 4. Launch app
     if is_docker_image {
-        if let task::AppConfig::DockerImage { entrypoint_cmd, .. } = &task_def.app {
-            if let Some(cmd) = entrypoint_cmd {
-                let baseline_windows = readiness::get_stable_window_list(session).await?;
-                info!("Launching app via entrypoint_cmd: {cmd}");
-                session
-                    .exec_detached_with_log(&["bash", "-c", cmd], "/tmp/app.log")
-                    .await?;
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                info!("Waiting for app window...");
-                readiness::wait_for_app_window(session, &baseline_windows, timeout, debug).await?;
-            }
+        if let task::AppConfig::DockerImage {
+            entrypoint_cmd: Some(cmd),
+            ..
+        } = &task_def.app
+        {
+            let baseline_windows = readiness::get_stable_window_list(session).await?;
+            info!("Launching app via entrypoint_cmd: {cmd}");
+            session
+                .exec_detached_with_log(&["bash", "-c", cmd], "/tmp/app.log")
+                .await?;
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            info!("Waiting for app window...");
+            readiness::wait_for_app_window(session, &baseline_windows, timeout, debug).await?;
         }
     } else {
         let baseline_windows = readiness::get_stable_window_list(session).await?;
@@ -422,7 +433,7 @@ async fn run_interactive_step_inner(
     )?;
 
     let mut loop_config =
-        build_agent_loop_config(&task_def, session, debug, verbose, bash_enabled).await;
+        build_agent_loop_config(task_def, session, debug, verbose, bash_enabled).await;
     loop_config.qa = qa;
     let full_instruction = task_def.full_instruction();
     let mut agent_loop = agent::loop_v2::AgentLoopV2::new(

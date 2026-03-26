@@ -124,7 +124,9 @@ pub async fn run_update(force: bool) -> Result<(), AppError> {
                 "GitHub API rate limit exceeded. Set GITHUB_TOKEN env var to raise the limit (60/hr → 5000/hr): {e}"
             )));
         }
-        return Err(AppError::Infra(format!("failed to fetch latest release: {e}")));
+        return Err(AppError::Infra(format!(
+            "failed to fetch latest release: {e}"
+        )));
     }
     let release: Release = response
         .json()
@@ -140,9 +142,7 @@ pub async fn run_update(force: bool) -> Result<(), AppError> {
     }
 
     if force && !is_newer(latest, current) {
-        println!(
-            "Warning: re-installing {latest} (current: v{current})"
-        );
+        println!("Warning: re-installing {latest} (current: v{current})");
     }
 
     let suffix = asset_suffix()?;
@@ -157,10 +157,7 @@ pub async fn run_update(force: bool) -> Result<(), AppError> {
         })?;
 
     // Download SHA256SUMS for integrity verification
-    let checksums_asset = release
-        .assets
-        .iter()
-        .find(|a| a.name == "SHA256SUMS.txt");
+    let checksums_asset = release.assets.iter().find(|a| a.name == "SHA256SUMS.txt");
 
     // sums_available: true if SHA256SUMS.txt exists in the release
     let (expected_hash, sums_available) = if let Some(sums_asset) = checksums_asset {
@@ -236,8 +233,8 @@ pub async fn run_update(force: bool) -> Result<(), AppError> {
         }
     }
 
-    let binary_data =
-        binary_data.ok_or_else(|| AppError::Infra("'desktest' binary not found in archive".into()))?;
+    let binary_data = binary_data
+        .ok_or_else(|| AppError::Infra("'desktest' binary not found in archive".into()))?;
 
     // Replace the current executable
     let current_exe = std::env::current_exe()

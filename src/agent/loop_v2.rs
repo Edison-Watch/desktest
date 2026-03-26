@@ -272,8 +272,7 @@ impl<'a> AgentLoopV2<'a> {
                 .map(|b| format!("# [bash]\n{b}"))
                 .chain(code_blocks.iter().cloned())
                 .collect();
-            let action_type =
-                crate::trajectory::compute_action_type(&code_blocks, &bash_blocks);
+            let action_type = crate::trajectory::compute_action_type(&code_blocks, &bash_blocks);
 
             // Update video caption with agent's thought before executing
             self.update_caption(step_index, &response_text, &all_blocks)
@@ -574,8 +573,7 @@ impl<'a> AgentLoopV2<'a> {
                 .map(|b| format!("# [bash]\n{b}"))
                 .chain(code_blocks.iter().cloned())
                 .collect();
-            let action_type =
-                crate::trajectory::compute_action_type(&code_blocks, &bash_blocks);
+            let action_type = crate::trajectory::compute_action_type(&code_blocks, &bash_blocks);
 
             // Update video caption with agent's thought before executing
             self.update_caption(step_index, &response_text, &all_blocks)

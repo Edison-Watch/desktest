@@ -49,7 +49,9 @@ pub async fn run_watcher(watch_dir: PathBuf, handle: MonitorHandle) {
         {
             Ok(map) => phases = Some(map),
             Err(e) => {
-                warn!("spawn_blocking panicked, phase state lost (all phases will be re-discovered): {e}");
+                warn!(
+                    "spawn_blocking panicked, phase state lost (all phases will be re-discovered): {e}"
+                );
                 phases = Some(HashMap::new());
             }
         }
@@ -61,11 +63,7 @@ pub async fn run_watcher(watch_dir: PathBuf, handle: MonitorHandle) {
 /// If subdirectories with trajectory.jsonl exist, those are used (multi-phase mode).
 /// Otherwise, if watch_dir itself contains trajectory.jsonl, it's used (single-phase mode).
 /// This avoids phase ID collisions between the root and a same-named subdirectory.
-fn scan_phases(
-    watch_dir: &Path,
-    phases: &mut HashMap<String, PhaseState>,
-    handle: &MonitorHandle,
-) {
+fn scan_phases(watch_dir: &Path, phases: &mut HashMap<String, PhaseState>, handle: &MonitorHandle) {
     let entries = match std::fs::read_dir(watch_dir) {
         Ok(e) => e,
         Err(e) => {
@@ -118,7 +116,13 @@ fn scan_phases(
 
         let already_registered = phases.contains_key(&root_phase_id);
         if !found_subdirs || already_registered {
-            process_phase(&root_phase_id, &root_display_name, watch_dir, phases, handle);
+            process_phase(
+                &root_phase_id,
+                &root_display_name,
+                watch_dir,
+                phases,
+                handle,
+            );
         }
     }
 }
@@ -277,7 +281,10 @@ fn read_new_lines(path: &Path, byte_offset: u64) -> Result<ReadResult, std::io::
                 safe_offset = current_offset;
             }
             Err(e) => {
-                debug!("Possibly partial line in {}, will retry: {e}", path.display());
+                debug!(
+                    "Possibly partial line in {}, will retry: {e}",
+                    path.display()
+                );
                 // Do NOT advance safe_offset — retry on next poll
             }
         }
@@ -324,7 +331,10 @@ fn emit_trajectory_event(
     trajectory_path: &Path,
 ) {
     let step = entry.get("step").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-    let thought = entry.get("thought").and_then(|v| v.as_str()).map(String::from);
+    let thought = entry
+        .get("thought")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let action_code = entry
         .get("action_code")
         .and_then(|v| v.as_str())
@@ -340,9 +350,18 @@ fn emit_trajectory_event(
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    let bash_output = entry.get("bash_output").and_then(|v| v.as_str()).map(String::from);
-    let error_feedback = entry.get("error_feedback").and_then(|v| v.as_str()).map(String::from);
-    let action_type = entry.get("action_type").and_then(|v| v.as_str()).map(String::from);
+    let bash_output = entry
+        .get("bash_output")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let error_feedback = entry
+        .get("error_feedback")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let action_type = entry
+        .get("action_type")
+        .and_then(|v| v.as_str())
+        .map(String::from);
 
     // Load screenshot from the phase's artifact directory.
     // Only load for the last entry in a batch to avoid reading hundreds of files

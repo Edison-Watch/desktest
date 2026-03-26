@@ -92,10 +92,7 @@ impl TrajectoryLogger {
         redactor: Option<Redactor>,
     ) -> Result<Self, std::io::Error> {
         let path = artifacts_dir.join("trajectory.jsonl");
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)?;
+        let file = OpenOptions::new().create(true).append(true).open(&path)?;
 
         Ok(Self {
             writer: BufWriter::new(file),
@@ -472,14 +469,35 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // Non-verbose: build_entry should NOT include raw response
         let logger = TrajectoryLogger::new(dir.path(), false, None).unwrap();
-        let entry = logger.build_entry(1, "text", &[], None, None, "done", Some("raw"), None, None, None);
+        let entry = logger.build_entry(
+            1,
+            "text",
+            &[],
+            None,
+            None,
+            "done",
+            Some("raw"),
+            None,
+            None,
+            None,
+        );
         assert!(entry.llm_raw_response.is_none());
 
         // Verbose: build_entry SHOULD include raw response
         let dir2 = tempfile::tempdir().unwrap();
         let logger2 = TrajectoryLogger::new(dir2.path(), true, None).unwrap();
-        let entry2 =
-            logger2.build_entry(1, "text", &[], None, None, "done", Some("raw"), None, None, None);
+        let entry2 = logger2.build_entry(
+            1,
+            "text",
+            &[],
+            None,
+            None,
+            "done",
+            Some("raw"),
+            None,
+            None,
+            None,
+        );
         assert!(entry2.llm_raw_response.is_some());
     }
 
