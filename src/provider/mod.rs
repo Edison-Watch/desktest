@@ -103,13 +103,16 @@ pub fn user_image_message(data_url: &str) -> ChatMessage {
 /// Create an LlmProvider from configuration fields.
 ///
 /// Provider selection:
-/// - "openai" (default): OpenAI API
-/// - "anthropic": Anthropic Messages API (Claude models)
+/// - "anthropic" (default): Anthropic Messages API (Claude models)
+/// - "openai": OpenAI API
+/// - "openrouter": OpenRouter (OpenAI-compatible, auto-sets base URL)
+/// - "cerebras": Cerebras (OpenAI-compatible, auto-sets base URL)
+/// - "gemini": Google Gemini (OpenAI-compatible, auto-sets base URL)
 /// - "custom": OpenAI-compatible API with configurable base_url
 ///
 /// API key resolution order:
 /// 1. Explicit `api_key` parameter
-/// 2. Provider-specific env var (OPENAI_API_KEY, ANTHROPIC_API_KEY)
+/// 2. Provider-specific env var (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.)
 /// 3. Generic LLM_API_KEY env var
 pub fn create_provider(
     provider_name: &str,
@@ -119,10 +122,15 @@ pub fn create_provider(
 ) -> Result<Box<dyn LlmProvider>, AppError> {
     let resolved_key = resolve_api_key(api_key, provider_name)?;
 
+    // Treat any known default URL as "no custom URL was set" so that switching
+    // providers via --provider doesn't accidentally send requests to the old
+    // provider's endpoint.
+    let has_custom_url = !is_known_default_url(base_url);
+
     match provider_name {
         "openai" => {
             let mut client = openai::OpenAiProvider::new(&resolved_key, model);
-            if base_url != "https://api.openai.com" {
+            if has_custom_url {
                 client = client.with_base_url(base_url);
             }
             Ok(Box::new(client))
@@ -130,19 +138,60 @@ pub fn create_provider(
         "anthropic" => {
             validate_image_support(provider_name, model)?;
             let mut client = anthropic::AnthropicProvider::new(&resolved_key, model);
-            if base_url != "https://api.openai.com" && base_url != "https://api.anthropic.com" {
+            if has_custom_url {
                 client = client.with_base_url(base_url);
             }
             Ok(Box::new(client))
+        }
+        "openrouter" => {
+            let url = if has_custom_url { base_url } else { "https://openrouter.ai/api" };
+            let client = http_base::HttpProvider::new(&resolved_key, model, url, "OpenRouter");
+            Ok(Box::new(client))
+        }
+        "cerebras" => {
+            let url = if has_custom_url { base_url } else { "https://api.cerebras.ai" };
+            let client = http_base::HttpProvider::new(&resolved_key, model, url, "Cerebras");
+            Ok(Box::new(client))
+        }
+        "gemini" => {
+            if has_custom_url {
+                // Custom URL — assume standard OpenAI-compatible path
+                let client = http_base::HttpProvider::new(&resolved_key, model, base_url, "Gemini");
+                Ok(Box::new(client))
+            } else {
+                // Default Gemini URL needs the non-standard path
+                let client = http_base::HttpProvider::new(
+                    &resolved_key,
+                    model,
+                    "https://generativelanguage.googleapis.com/v1beta/openai",
+                    "Gemini",
+                )
+                .with_completions_path("/chat/completions");
+                Ok(Box::new(client))
+            }
         }
         "custom" => {
             let client = custom::CustomProvider::new(&resolved_key, model, base_url);
             Ok(Box::new(client))
         }
         other => Err(AppError::Config(format!(
-            "Unknown provider '{other}'. Supported: openai, anthropic, custom"
+            "Unknown provider '{other}'. Supported: anthropic, openai, openrouter, cerebras, gemini, custom"
         ))),
     }
+}
+
+/// Returns true if the URL is a known default for any built-in provider.
+/// Used to detect when `api_base_url` was not explicitly customized by the user.
+fn is_known_default_url(url: &str) -> bool {
+    let normalized = url.trim_end_matches('/');
+    matches!(
+        normalized,
+        "https://api.anthropic.com"
+            | "https://api.openai.com"
+            | "https://openrouter.ai/api"
+            | "https://api.cerebras.ai"
+            | "https://generativelanguage.googleapis.com/v1beta/openai"
+    )
 }
 
 /// Validate that the selected model supports image inputs.
@@ -170,23 +219,30 @@ fn validate_image_support(provider_name: &str, model: &str) -> Result<(), AppErr
 /// 2. Provider-specific env var
 /// 3. LLM_API_KEY env var
 pub fn resolve_api_key(explicit_key: &str, provider_name: &str) -> Result<String, AppError> {
-    resolve_api_key_with_source(explicit_key, provider_name).map(|(key, _source)| key)
+    resolve_api_key_with_source(explicit_key, provider_name, None).map(|(key, _source)| key)
 }
 
 /// Like `resolve_api_key`, but also returns a label indicating where the key
-/// came from (e.g. "config file", "ANTHROPIC_API_KEY", "LLM_API_KEY").
+/// came from (e.g. "config file", "--api-key flag", "ANTHROPIC_API_KEY", "LLM_API_KEY").
 /// Used by the `doctor` command to show the key source without revealing the key.
+///
+/// When `explicit_source` is provided and the explicit key is non-empty, that
+/// label is used instead of the default "config file".
 pub fn resolve_api_key_with_source(
     explicit_key: &str,
     provider_name: &str,
+    explicit_source: Option<&'static str>,
 ) -> Result<(String, &'static str), AppError> {
     if !explicit_key.is_empty() {
-        return Ok((explicit_key.to_string(), "config file"));
+        return Ok((explicit_key.to_string(), explicit_source.unwrap_or("config file")));
     }
 
     let provider_env = match provider_name {
         "openai" => "OPENAI_API_KEY",
         "anthropic" => "ANTHROPIC_API_KEY",
+        "openrouter" => "OPENROUTER_API_KEY",
+        "cerebras" => "CEREBRAS_API_KEY",
+        "gemini" => "GEMINI_API_KEY",
         _ => "",
     };
 
@@ -204,9 +260,12 @@ pub fn resolve_api_key_with_source(
         }
     }
 
-    Err(AppError::Config(format!(
-        "No API key found. Set it in config, {provider_env}, or LLM_API_KEY."
-    )))
+    let hint = if provider_env.is_empty() {
+        "No API key found. Set it in config, --api-key, or LLM_API_KEY.".to_string()
+    } else {
+        format!("No API key found. Set it in config, --api-key, {provider_env}, or LLM_API_KEY.")
+    };
+    Err(AppError::Config(hint))
 }
 
 #[cfg(test)]
@@ -277,6 +336,24 @@ mod tests {
     }
 
     #[test]
+    fn test_create_provider_openrouter() {
+        let provider = create_provider("openrouter", "sk-or-test", "anthropic/claude-sonnet-4", "https://api.anthropic.com");
+        assert!(provider.is_ok());
+    }
+
+    #[test]
+    fn test_create_provider_cerebras() {
+        let provider = create_provider("cerebras", "csk-test", "llama-4-scout-17b-16e-instruct", "https://api.anthropic.com");
+        assert!(provider.is_ok());
+    }
+
+    #[test]
+    fn test_create_provider_gemini() {
+        let provider = create_provider("gemini", "AIza-test", "gemini-2.5-flash", "https://api.anthropic.com");
+        assert!(provider.is_ok());
+    }
+
+    #[test]
     fn test_create_provider_unknown() {
         let result = create_provider("unknown", "sk-test", "model", "https://example.com");
         assert!(result.is_err());
@@ -326,5 +403,32 @@ mod tests {
         // Custom provider falls through to LLM_API_KEY (no provider-specific env var)
         let key = resolve_api_key("custom-key", "custom").unwrap();
         assert_eq!(key, "custom-key");
+    }
+
+    #[test]
+    fn test_is_known_default_url_matches_all_builtins() {
+        assert!(is_known_default_url("https://api.anthropic.com"));
+        assert!(is_known_default_url("https://api.openai.com"));
+        assert!(is_known_default_url("https://openrouter.ai/api"));
+        assert!(is_known_default_url("https://api.cerebras.ai"));
+        assert!(is_known_default_url(
+            "https://generativelanguage.googleapis.com/v1beta/openai"
+        ));
+    }
+
+    #[test]
+    fn test_is_known_default_url_rejects_custom() {
+        assert!(!is_known_default_url("http://localhost:8080"));
+        assert!(!is_known_default_url("https://custom.api.com"));
+        assert!(!is_known_default_url("https://proxy.example.com/v1"));
+        assert!(!is_known_default_url("https://api.anthropic.com/extra"));
+        assert!(!is_known_default_url(""));
+    }
+
+    #[test]
+    fn test_is_known_default_url_trailing_slash() {
+        assert!(is_known_default_url("https://api.anthropic.com/"));
+        assert!(is_known_default_url("https://openrouter.ai/api/"));
+        assert!(is_known_default_url("https://api.cerebras.ai/"));
     }
 }

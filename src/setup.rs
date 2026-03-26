@@ -218,6 +218,7 @@ mod tests {
     async fn test_execute_step() {
         let config = crate::config::Config {
             api_key: "sk-test".into(),
+            api_key_source: None,
             provider: "openai".into(),
             model: "gpt-4.1".into(),
             api_base_url: "https://api.openai.com".into(),
@@ -250,6 +251,7 @@ mod tests {
     async fn test_copy_step() {
         let config = crate::config::Config {
             api_key: "sk-test".into(),
+            api_key_source: None,
             provider: "openai".into(),
             model: "gpt-4.1".into(),
             api_base_url: "https://api.openai.com".into(),
@@ -290,6 +292,7 @@ mod tests {
     async fn test_sleep_step() {
         let config = crate::config::Config {
             api_key: "sk-test".into(),
+            api_key_source: None,
             provider: "openai".into(),
             model: "gpt-4.1".into(),
             api_base_url: "https://api.openai.com".into(),
@@ -323,6 +326,7 @@ mod tests {
     async fn test_setup_steps_abort_on_failure() {
         let config = crate::config::Config {
             api_key: "sk-test".into(),
+            api_key_source: None,
             provider: "openai".into(),
             model: "gpt-4.1".into(),
             api_base_url: "https://api.openai.com".into(),
@@ -356,6 +360,7 @@ mod tests {
     async fn test_multiple_steps_in_order() {
         let config = crate::config::Config {
             api_key: "sk-test".into(),
+            api_key_source: None,
             provider: "openai".into(),
             model: "gpt-4.1".into(),
             api_base_url: "https://api.openai.com".into(),

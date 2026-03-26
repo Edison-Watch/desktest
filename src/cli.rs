@@ -74,6 +74,21 @@ pub struct Cli {
     /// Enable QA mode: agent reports app bugs it encounters during testing
     #[arg(long, default_value_t = false, global = true)]
     pub qa: bool,
+
+    /// LLM provider (overrides config file)
+    #[arg(long, global = true, value_parser = clap::builder::PossibleValuesParser::new([
+        "anthropic", "openai", "openrouter", "cerebras", "gemini", "custom"
+    ]))]
+    pub provider: Option<String>,
+
+    /// LLM model name (overrides config file)
+    #[arg(long, global = true)]
+    pub model: Option<String>,
+
+    /// API key for the LLM provider (overrides config file and env vars).
+    /// Note: prefer env vars (ANTHROPIC_API_KEY, OPENROUTER_API_KEY, etc.) to avoid exposing secrets in shell history and process listings
+    #[arg(long, global = true)]
+    pub api_key: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]

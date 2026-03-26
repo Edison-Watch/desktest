@@ -26,6 +26,8 @@ pub struct HttpProvider {
     api_key: String,
     model: String,
     base_url: String,
+    /// Suffix appended to base_url for completions. Defaults to "/v1/chat/completions".
+    completions_path: String,
     /// Label used in log/error messages (e.g., "OpenAI" or "Custom").
     label: String,
 }
@@ -37,6 +39,7 @@ impl HttpProvider {
             api_key: api_key.into(),
             model: model.into(),
             base_url: base_url.into(),
+            completions_path: "/v1/chat/completions".into(),
             label: label.into(),
         }
     }
@@ -47,9 +50,15 @@ impl HttpProvider {
         self
     }
 
+    /// Override the completions path suffix (e.g., "/chat/completions" for Gemini).
+    pub fn with_completions_path(mut self, path: &str) -> Self {
+        self.completions_path = path.into();
+        self
+    }
+
     /// Get the full URL for the chat completions endpoint.
     pub fn completions_url(&self) -> String {
-        format!("{}/v1/chat/completions", self.base_url)
+        format!("{}{}", self.base_url, self.completions_path)
     }
 }
 

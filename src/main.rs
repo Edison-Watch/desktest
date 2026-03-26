@@ -31,6 +31,7 @@ pub(crate) use orchestration::{parse_resolution, run_task};
 
 use clap::Parser;
 use cli::{Cli, Command};
+use orchestration::LlmOverrides;
 
 fn setup_logging(debug: bool) {
     use tracing_subscriber::EnvFilter;
@@ -42,6 +43,14 @@ fn setup_logging(debug: bool) {
     };
 
     tracing_subscriber::fmt().with_env_filter(filter).init();
+}
+
+fn llm_overrides(cli: &Cli) -> LlmOverrides {
+    LlmOverrides {
+        provider: cli.provider.clone(),
+        model: cli.model.clone(),
+        api_key: cli.api_key.clone(),
+    }
 }
 
 async fn maybe_start_monitor(
@@ -106,7 +115,7 @@ async fn main() {
             }
 
             let run_config =
-                orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
+                orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution, &llm_overrides(&cli));
 
             let needs_llm = !*replay && !task_def.is_programmatic_only();
             if let Err(e) = preflight::run_preflight(&run_config, needs_llm).await {
@@ -148,7 +157,7 @@ async fn main() {
             }
 
             let run_config =
-                orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
+                orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution, &llm_overrides(&cli));
             // Skip API key check for suites: tasks are discovered dynamically and
             // some may be programmatic-only. Each individual run_task call will
             // check for its own API key requirement.
@@ -163,14 +172,13 @@ async fn main() {
 
             let result = suite::run_suite(
                 dir,
-                cli.config_flag.as_deref(),
+                run_config,
                 filter.as_deref(),
                 &cli.output,
                 cli.debug,
                 cli.verbose,
                 bash_enabled,
                 !cli.record,
-                cli.resolution.as_deref(),
                 monitor_handle,
                 cli.qa,
             )
@@ -213,7 +221,7 @@ async fn main() {
             }
 
             let run_config =
-                orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
+                orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution, &llm_overrides(&cli));
 
             let needs_llm = !*replay && !task_def.is_programmatic_only();
             if let Err(e) = preflight::run_preflight(&run_config, needs_llm).await {
@@ -264,7 +272,7 @@ async fn main() {
             };
 
             let run_config =
-                orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
+                orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution, &llm_overrides(&cli));
 
             // run_interactive_step unconditionally creates an LLM provider,
             // so any --step invocation needs an API key regardless of evaluator mode.
@@ -539,7 +547,7 @@ async fn main() {
             }
 
             let run_config =
-                orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
+                orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution, &llm_overrides(&cli));
 
             // Replay mode doesn't need LLM
             if let Err(e) = preflight::run_preflight(&run_config, false).await {
@@ -602,7 +610,7 @@ async fn main() {
         }
         Command::Doctor => {
             let run_config =
-                orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution);
+                orchestration::load_config_or_defaults(&cli.config_flag, &cli.resolution, &llm_overrides(&cli));
             let all_ok = preflight::run_doctor(&run_config).await;
             std::process::exit(if all_ok { 0 } else { 1 });
         }

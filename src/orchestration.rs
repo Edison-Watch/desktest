@@ -25,10 +25,18 @@ pub(crate) struct TaskRunResult {
     pub(crate) agent_ran: bool,
 }
 
+/// CLI overrides for provider/model/api_key flags.
+pub(crate) struct LlmOverrides {
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub api_key: Option<String>,
+}
+
 /// Load config from --config flag path or use task defaults.
 pub(crate) fn load_config_or_defaults(
     config_flag: &Option<std::path::PathBuf>,
     resolution: &Option<String>,
+    llm: &LlmOverrides,
 ) -> Config {
     let mut config = if let Some(config_path) = config_flag {
         match Config::load_and_validate(config_path) {
@@ -41,6 +49,42 @@ pub(crate) fn load_config_or_defaults(
     } else {
         Config::from_task_defaults()
     };
+
+    // CLI flags override config file values.
+    // Note: we intentionally do NOT update config.api_base_url when --provider
+    // changes, because create_provider() uses is_known_default_url() to detect
+    // stale default URLs and auto-resolves to the correct endpoint for each
+    // named provider. The api_base_url field only matters when the user
+    // explicitly sets a custom URL.
+    if let Some(p) = &llm.provider {
+        // When switching providers, clear any config-file API key so the new
+        // provider's env var is used instead of sending the wrong key.
+        // Only clear when the provider actually changes — if --provider matches
+        // the config's provider, the config key is still valid.
+        if config.provider != *p && !config.api_key.is_empty() && llm.api_key.is_none() {
+            config.api_key = String::new();
+        }
+        config.provider = p.clone();
+    }
+    if let Some(m) = &llm.model {
+        config.model = m.clone();
+    }
+    if let Some(k) = &llm.api_key {
+        config.api_key = k.clone();
+        config.api_key_source = Some("--api-key flag");
+    }
+
+    // Warn if the provider was switched but the model still looks like it
+    // belongs to the old provider (e.g. claude model sent to Gemini).
+    if llm.provider.is_some() && llm.model.is_none() {
+        let non_anthropic = !matches!(config.provider.as_str(), "anthropic" | "custom");
+        if non_anthropic && (config.model.starts_with("claude") || config.model.starts_with("anthropic/")) {
+            eprintln!(
+                "Warning: --provider {} with default model '{}' — did you mean to also pass --model?",
+                config.provider, config.model
+            );
+        }
+    }
 
     if let Some(res) = resolution {
         match parse_resolution(res) {
@@ -1387,9 +1431,13 @@ mod tests {
 
     // --- CLI subcommand tests ---
 
+    fn no_overrides() -> LlmOverrides {
+        LlmOverrides { provider: None, model: None, api_key: None }
+    }
+
     #[test]
     fn test_load_config_or_defaults_none() {
-        let config = load_config_or_defaults(&None, &None);
+        let config = load_config_or_defaults(&None, &None, &no_overrides());
         assert_eq!(config.provider, "anthropic");
         assert_eq!(config.model, "claude-sonnet-4-5-20250929");
         assert!(config.api_key.is_empty());
@@ -1423,10 +1471,100 @@ mod tests {
 
     #[test]
     fn test_load_config_with_resolution_override() {
-        let config = load_config_or_defaults(&None, &Some("1280x720".into()));
+        let config = load_config_or_defaults(&None, &Some("1280x720".into()), &no_overrides());
         assert_eq!(config.display_width, 1280);
         assert_eq!(config.display_height, 720);
     }
+
+    #[test]
+    fn test_load_config_with_llm_overrides() {
+        let overrides = LlmOverrides {
+            provider: Some("openrouter".into()),
+            model: Some("anthropic/claude-sonnet-4".into()),
+            api_key: Some("sk-or-test".into()),
+        };
+        let config = load_config_or_defaults(&None, &None, &overrides);
+        assert_eq!(config.provider, "openrouter");
+        assert_eq!(config.model, "anthropic/claude-sonnet-4");
+        assert_eq!(config.api_key, "sk-or-test");
+    }
+
+    #[test]
+    fn test_load_config_partial_llm_overrides() {
+        let overrides = LlmOverrides {
+            provider: Some("gemini".into()),
+            model: None,
+            api_key: None,
+        };
+        let config = load_config_or_defaults(&None, &None, &overrides);
+        assert_eq!(config.provider, "gemini");
+        // model and api_key keep defaults
+        assert_eq!(config.model, "claude-sonnet-4-5-20250929");
+        assert!(config.api_key.is_empty());
+    }
+
+    #[test]
+    fn test_provider_override_clears_stale_api_key() {
+        // Config file has an api_key for anthropic. Switching to openrouter
+        // via --provider (without --api-key) must clear the stale key.
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.json");
+        std::fs::write(
+            &config_path,
+            r#"{
+                "provider": "anthropic",
+                "api_key": "sk-ant-stale",
+                "model": "claude-sonnet-4-20250514",
+                "app_type": "docker_image"
+            }"#,
+        )
+        .unwrap();
+        let overrides = LlmOverrides {
+            provider: Some("openrouter".into()),
+            model: None,
+            api_key: None,
+        };
+        let config = load_config_or_defaults(&Some(config_path), &None, &overrides);
+        // Stale anthropic key must be cleared when switching to openrouter
+        assert!(config.api_key.is_empty(), "stale api_key should be cleared");
+        assert_eq!(config.provider, "openrouter");
+    }
+
+    #[test]
+    fn test_provider_override_same_provider_keeps_key() {
+        // Config file has an api_key for anthropic. Passing --provider anthropic
+        // (same provider) must NOT clear the key.
+        let dir = tempfile::TempDir::new().unwrap();
+        let config_path = dir.path().join("config.json");
+        std::fs::write(
+            &config_path,
+            r#"{"api_key": "sk-ant-valid", "provider": "anthropic", "app_type": "docker_image"}"#,
+        )
+        .unwrap();
+
+        let overrides = LlmOverrides {
+            provider: Some("anthropic".into()),
+            model: None,
+            api_key: None,
+        };
+        let config = load_config_or_defaults(&Some(config_path), &None, &overrides);
+        assert_eq!(config.api_key, "sk-ant-valid", "api_key should be preserved when provider matches");
+        assert_eq!(config.provider, "anthropic");
+    }
+
+    #[test]
+    fn test_provider_override_keeps_explicit_api_key() {
+        // When both --provider and --api-key are given, the key is kept.
+        let overrides = LlmOverrides {
+            provider: Some("openrouter".into()),
+            model: None,
+            api_key: Some("sk-or-explicit".into()),
+        };
+        let config = load_config_or_defaults(&None, &None, &overrides);
+        assert_eq!(config.api_key, "sk-or-explicit");
+        assert_eq!(config.api_key_source, Some("--api-key flag"));
+    }
+
 
     #[test]
     fn test_interactive_validate_only_requires_evaluator() {
