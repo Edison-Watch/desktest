@@ -45,7 +45,13 @@ impl CodexCliProvider {
             .status();
 
         match status {
-            Ok(s) if s.success() => Ok(Self),
+            Ok(s) if s.success() => {
+                tracing::warn!(
+                    "codex-cli provider uses --sandbox danger-full-access: \
+                     the Codex model can execute arbitrary shell commands without approval"
+                );
+                Ok(Self)
+            }
             _ => Err(AppError::Config(
                 "Codex CLI not found. Install it with `npm install -g @openai/codex` \
                  or use a different provider."
@@ -65,17 +71,10 @@ impl LlmProvider for CodexCliProvider {
             let start = std::time::Instant::now();
 
             // 1. Create temp directory and build the prompt with screenshot files.
-            let PromptResult {
-                prompt_text,
-                temp_dir,
-                screenshot_paths,
-            } = build_codex_prompt(messages)?;
-
-            // RAII guard ensures the temp directory is cleaned up even if the
-            // future is cancelled by an external timeout (e.g., step_timeout).
-            let _guard = TempDirGuard(temp_dir.clone());
-
-            let screenshot_count = screenshot_paths.len();
+            // The PromptResult owns a TempDirGuard that ensures cleanup even if
+            // the future is cancelled by an external timeout (e.g., step_timeout).
+            let prompt_result = build_codex_prompt(messages)?;
+            let screenshot_count = prompt_result.screenshot_paths.len();
 
             info!(
                 "Codex CLI request: {} messages, {} screenshots",
@@ -84,7 +83,7 @@ impl LlmProvider for CodexCliProvider {
             );
 
             // Output file for the final response.
-            let output_file = temp_dir.join("codex_response.txt");
+            let output_file = prompt_result.temp_dir.join("codex_response.txt");
 
             // 2. Build command — system prompt is embedded in the prompt text
             //    (not via a separate flag) to keep the prompt self-contained.
@@ -98,7 +97,7 @@ impl LlmProvider for CodexCliProvider {
             cmd.arg("-o").arg(&output_file);
 
             // Pass each screenshot as an image attachment.
-            for path in &screenshot_paths {
+            for path in &prompt_result.screenshot_paths {
                 cmd.arg("-i").arg(path);
             }
 
@@ -114,7 +113,7 @@ impl LlmProvider for CodexCliProvider {
 
                 if let Some(mut stdin) = child.stdin.take() {
                     use tokio::io::AsyncWriteExt;
-                    if let Err(e) = stdin.write_all(prompt_text.as_bytes()).await {
+                    if let Err(e) = stdin.write_all(prompt_result.prompt_text.as_bytes()).await {
                         let _ = child.kill().await;
                         return Err(AppError::Agent(format!(
                             "Failed to write to codex stdin: {e}"
@@ -126,6 +125,9 @@ impl LlmProvider for CodexCliProvider {
                 // 5-minute timeout as defense-in-depth (the agent loop's
                 // step_timeout also wraps this call, but a hung process should
                 // not block indefinitely if that outer timeout is misconfigured).
+                // When the timeout fires, the future (and its `child`) are dropped.
+                // `kill_on_drop(true)` on the Command ensures the child process
+                // receives SIGKILL on drop rather than being left as an orphan.
                 tokio::time::timeout(
                     std::time::Duration::from_secs(300),
                     child.wait_with_output(),
@@ -186,10 +188,12 @@ impl LlmProvider for CodexCliProvider {
 struct PromptResult {
     /// The full prompt text to pipe to `codex exec -` via stdin.
     prompt_text: String,
-    /// Temp directory containing screenshot files (cleaned up by TempDirGuard).
+    /// Temp directory containing screenshot files.
     temp_dir: PathBuf,
     /// Paths to screenshot files, passed as `-i` flags to codex.
     screenshot_paths: Vec<PathBuf>,
+    /// RAII guard — drops (and deletes) the temp directory when PromptResult is dropped.
+    _guard: TempDirGuard,
 }
 
 /// A single observation step extracted from the message array.
@@ -213,9 +217,12 @@ fn build_codex_prompt(messages: &[ChatMessage]) -> Result<PromptResult, AppError
     let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
     let temp_dir = std::env::temp_dir().join(format!("desktest_codex_{pid}_{counter}"));
+    // Remove any leftover directory from a crashed previous run with the same
+    // PID + counter (possible if the OS recycles PIDs). Without this, stale
+    // screenshot or response files could be silently reused.
+    let _ = std::fs::remove_dir_all(&temp_dir);
     std::fs::create_dir_all(&temp_dir)
         .map_err(|e| AppError::Agent(format!("Failed to create temp dir: {e}")))?;
-    let mut cleanup_guard = Some(TempDirGuard(temp_dir.clone()));
 
     let mut system_parts = Vec::new();
     let mut prompt_sections: Vec<String> = Vec::new();
@@ -290,15 +297,12 @@ fn build_codex_prompt(messages: &[ChatMessage]) -> Result<PromptResult, AppError
     let system_prompt = system_parts.join("\n");
     let prompt_text = assemble_prompt(&system_prompt, &prompt_sections, &observations);
 
-    // Disarm the cleanup guard — ownership transfers to the caller's TempDirGuard.
-    if let Some(guard) = cleanup_guard.take() {
-        std::mem::forget(guard);
-    }
-
     Ok(PromptResult {
         prompt_text,
-        temp_dir,
         screenshot_paths,
+        // The guard owns the temp_dir and will clean it up when dropped.
+        _guard: TempDirGuard(temp_dir.clone()),
+        temp_dir,
     })
 }
 
