@@ -232,7 +232,12 @@ pub(crate) async fn run_task(
         } => r?,
     };
 
-    let ctx = TaskContext { task_def: &task_def, config: &config, session: &session, artifacts_dir: &artifacts_dir };
+    let ctx = TaskContext {
+        task_def: &task_def,
+        config: &config,
+        session: &session,
+        artifacts_dir: &artifacts_dir,
+    };
 
     let result = tokio::select! {
         biased;
@@ -330,7 +335,12 @@ async fn run_task_inner(
 ) -> Result<TaskRunResult, AppError> {
     use task::EvaluatorMode;
 
-    let TaskContext { task_def, config, session, .. } = ctx;
+    let TaskContext {
+        task_def,
+        config,
+        session,
+        ..
+    } = ctx;
     let timeout = Duration::from_secs(config.startup_timeout_seconds);
 
     // Determine evaluation mode (default to LLM if no evaluator configured)
@@ -408,7 +418,8 @@ async fn run_task_inner(
                 }
 
                 info!("Waiting for app window...");
-                readiness::wait_for_app_window(session, &baseline_windows, timeout, run.debug).await?;
+                readiness::wait_for_app_window(session, &baseline_windows, timeout, run.debug)
+                    .await?;
             } else {
                 info!(
                     "No entrypoint_cmd specified, assuming app starts automatically in custom image"
@@ -499,7 +510,12 @@ async fn run_eval_loop(
 ) -> Result<TaskRunResult, AppError> {
     use task::EvaluatorMode;
 
-    let TaskContext { task_def, config, session, artifacts_dir } = ctx;
+    let TaskContext {
+        task_def,
+        config,
+        session,
+        artifacts_dir,
+    } = ctx;
 
     // Start video recording
     let recording = if run.no_recording {
@@ -697,8 +713,7 @@ async fn run_eval_loop(
         EvaluatorMode::Llm => {
             info!("Starting agent loop v2 (LLM-only evaluation)...");
             let agent_loop_result =
-                run_agent_loop(ctx, run, recording.as_ref(), monitor, redactor)
-                    .await;
+                run_agent_loop(ctx, run, recording.as_ref(), monitor, redactor).await;
 
             if let Some(rec) = &recording {
                 rec.stop(session).await;
@@ -717,8 +732,7 @@ async fn run_eval_loop(
         EvaluatorMode::Hybrid => {
             info!("Starting agent loop v2 (hybrid evaluation)...");
             let agent_loop_result =
-                run_agent_loop(ctx, run, recording.as_ref(), monitor, redactor)
-                    .await;
+                run_agent_loop(ctx, run, recording.as_ref(), monitor, redactor).await;
 
             if let Some(rec) = &recording {
                 rec.stop(session).await;
@@ -844,7 +858,12 @@ async fn run_agent_loop(
     monitor: Option<&monitor::MonitorHandle>,
     redactor: Option<&crate::redact::Redactor>,
 ) -> Result<AgentOutcome, AppError> {
-    let TaskContext { task_def, config, session, artifacts_dir } = ctx;
+    let TaskContext {
+        task_def,
+        config,
+        session,
+        artifacts_dir,
+    } = ctx;
     let llm_client = provider::create_provider(
         &config.provider,
         &config.api_key,
@@ -923,7 +942,12 @@ pub(crate) async fn run_attach(
     info!("Attaching to container '{container}'...");
     let session = docker::DockerSession::attach(container).await?;
 
-    let ctx = TaskContext { task_def: &task_def, config: &config, session: &session, artifacts_dir: &artifacts_dir };
+    let ctx = TaskContext {
+        task_def: &task_def,
+        config: &config,
+        session: &session,
+        artifacts_dir: &artifacts_dir,
+    };
 
     let result = tokio::select! {
         biased;

@@ -300,8 +300,11 @@ impl<'a> AgentLoopV2<'a> {
                     SpecialCommand::Done => {
                         info!("Agent signalled DONE at step {step_index}");
                         let data = StepData {
-                            step_index, response_text: &response_text, code_blocks: &all_blocks,
-                            result: "done", raw_response: Some(&response_text),
+                            step_index,
+                            response_text: &response_text,
+                            code_blocks: &all_blocks,
+                            result: "done",
+                            raw_response: Some(&response_text),
                             bash_output: turn_result.bash_output.as_deref(),
                             error_feedback: turn_result.error_feedback.as_deref(),
                             action_type: action_type.as_deref(),
@@ -327,8 +330,11 @@ impl<'a> AgentLoopV2<'a> {
                     SpecialCommand::Fail => {
                         info!("Agent signalled FAIL at step {step_index}");
                         let data = StepData {
-                            step_index, response_text: &response_text, code_blocks: &all_blocks,
-                            result: "fail", raw_response: Some(&response_text),
+                            step_index,
+                            response_text: &response_text,
+                            code_blocks: &all_blocks,
+                            result: "fail",
+                            raw_response: Some(&response_text),
                             bash_output: turn_result.bash_output.as_deref(),
                             error_feedback: turn_result.error_feedback.as_deref(),
                             action_type: action_type.as_deref(),
@@ -354,8 +360,11 @@ impl<'a> AgentLoopV2<'a> {
                     SpecialCommand::Wait => {
                         info!("Agent signalled WAIT at step {step_index}, re-observing...");
                         let data = StepData {
-                            step_index, response_text: &response_text, code_blocks: &all_blocks,
-                            result: "wait", raw_response: Some(&response_text),
+                            step_index,
+                            response_text: &response_text,
+                            code_blocks: &all_blocks,
+                            result: "wait",
+                            raw_response: Some(&response_text),
                             bash_output: turn_result.bash_output.as_deref(),
                             error_feedback: turn_result.error_feedback.as_deref(),
                             action_type: action_type.as_deref(),
@@ -390,8 +399,11 @@ impl<'a> AgentLoopV2<'a> {
 
             // Log trajectory entry
             let data = StepData {
-                step_index, response_text: &response_text, code_blocks: &all_blocks,
-                result: &result_str, raw_response: Some(&response_text),
+                step_index,
+                response_text: &response_text,
+                code_blocks: &all_blocks,
+                result: &result_str,
+                raw_response: Some(&response_text),
                 bash_output: turn_result.bash_output.as_deref(),
                 error_feedback: turn_result.error_feedback.as_deref(),
                 action_type: action_type.as_deref(),
@@ -553,8 +565,11 @@ impl<'a> AgentLoopV2<'a> {
                     SpecialCommand::Done => {
                         println!("  => Agent signalled DONE");
                         let data = StepData {
-                            step_index, response_text: &response_text, code_blocks: &all_blocks,
-                            result: "done", raw_response: Some(&response_text),
+                            step_index,
+                            response_text: &response_text,
+                            code_blocks: &all_blocks,
+                            result: "done",
+                            raw_response: Some(&response_text),
                             bash_output: turn_result.bash_output.as_deref(),
                             error_feedback: turn_result.error_feedback.as_deref(),
                             action_type: action_type.as_deref(),
@@ -577,8 +592,11 @@ impl<'a> AgentLoopV2<'a> {
                     SpecialCommand::Fail => {
                         println!("  => Agent signalled FAIL");
                         let data = StepData {
-                            step_index, response_text: &response_text, code_blocks: &all_blocks,
-                            result: "fail", raw_response: Some(&response_text),
+                            step_index,
+                            response_text: &response_text,
+                            code_blocks: &all_blocks,
+                            result: "fail",
+                            raw_response: Some(&response_text),
                             bash_output: turn_result.bash_output.as_deref(),
                             error_feedback: turn_result.error_feedback.as_deref(),
                             action_type: action_type.as_deref(),
@@ -601,8 +619,11 @@ impl<'a> AgentLoopV2<'a> {
                     SpecialCommand::Wait => {
                         println!("  => Agent signalled WAIT, re-observing...");
                         let data = StepData {
-                            step_index, response_text: &response_text, code_blocks: &all_blocks,
-                            result: "wait", raw_response: Some(&response_text),
+                            step_index,
+                            response_text: &response_text,
+                            code_blocks: &all_blocks,
+                            result: "wait",
+                            raw_response: Some(&response_text),
                             bash_output: turn_result.bash_output.as_deref(),
                             error_feedback: turn_result.error_feedback.as_deref(),
                             action_type: action_type.as_deref(),
@@ -638,8 +659,11 @@ impl<'a> AgentLoopV2<'a> {
             };
 
             let data = StepData {
-                step_index, response_text: &response_text, code_blocks: &all_blocks,
-                result: &result_str, raw_response: Some(&response_text),
+                step_index,
+                response_text: &response_text,
+                code_blocks: &all_blocks,
+                result: &result_str,
+                raw_response: Some(&response_text),
                 bash_output: turn_result.bash_output.as_deref(),
                 error_feedback: turn_result.error_feedback.as_deref(),
                 action_type: action_type.as_deref(),

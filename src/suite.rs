@@ -303,7 +303,13 @@ pub async fn run_suite(
                 let eval_result = None; // Results already written by run_task
                 let status = if outcome.passed { "PASS" } else { "FAIL" };
                 println!("  Result: {status} ({:.1}s)\n", duration_ms as f64 / 1000.0);
-                results::from_outcome(&entry.task_def.id, &outcome, eval_result, duration_ms, run.qa)
+                results::from_outcome(
+                    &entry.task_def.id,
+                    &outcome,
+                    eval_result,
+                    duration_ms,
+                    run.qa,
+                )
             }
             Err(ref e) => {
                 println!(

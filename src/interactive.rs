@@ -52,7 +52,15 @@ pub(crate) async fn run_interactive(
             eval.mode = task::EvaluatorMode::Programmatic;
         }
 
-        return run_task(task_def, config, run, output_dir, None, artifacts_dir_override).await;
+        return run_task(
+            task_def,
+            config,
+            run,
+            output_dir,
+            None,
+            artifacts_dir_override,
+        )
+        .await;
     }
 
     if step {
