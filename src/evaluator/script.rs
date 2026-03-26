@@ -144,8 +144,7 @@ fn parse_replay_steps(output: &str) -> Vec<ReplayStep> {
         } else if let Some(rest) = line.strip_prefix("REPLAY_ACTION:") {
             if let Some((num_str, b64)) = rest.split_once(':') {
                 if let Ok(step) = num_str.parse::<usize>() {
-                    if let Ok(bytes) =
-                        base64::engine::general_purpose::STANDARD.decode(b64.trim())
+                    if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64.trim())
                     {
                         if let Ok(code) = String::from_utf8(bytes) {
                             action_codes.insert(step, code);
