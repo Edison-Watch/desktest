@@ -79,32 +79,33 @@ impl LlmProvider for ClaudeCliProvider {
             cmd.stdout(std::process::Stdio::piped());
             cmd.stderr(std::process::Stdio::piped());
 
-            // 3. Spawn and write prompt to stdin
-            let mut child = cmd
-                .spawn()
-                .map_err(|e| AppError::Agent(format!("Failed to spawn claude CLI: {e}")))?;
+            // 3. Spawn, write prompt, wait for output, then always clean up temp files.
+            let output = async {
+                let mut child = cmd
+                    .spawn()
+                    .map_err(|e| AppError::Agent(format!("Failed to spawn claude CLI: {e}")))?;
 
-            if let Some(mut stdin) = child.stdin.take() {
-                use tokio::io::AsyncWriteExt;
-                stdin.write_all(prompt_text.as_bytes()).await.map_err(|e| {
-                    AppError::Agent(format!("Failed to write to claude stdin: {e}"))
-                })?;
-                // Close stdin to signal EOF
+                if let Some(mut stdin) = child.stdin.take() {
+                    use tokio::io::AsyncWriteExt;
+                    stdin.write_all(prompt_text.as_bytes()).await.map_err(|e| {
+                        AppError::Agent(format!("Failed to write to claude stdin: {e}"))
+                    })?;
+                    // Close stdin to signal EOF
+                }
+
+                child.wait_with_output().await.map_err(|e| {
+                    AppError::Agent(format!("Claude CLI process error: {e}"))
+                })
             }
+            .await;
 
-            // 4. Wait for output
-            let output = child.wait_with_output().await.map_err(|e| {
-                AppError::Agent(format!("Claude CLI process error: {e}"))
-            })?;
+            // Always clean up temp files, even on error paths
+            cleanup_temp_files(&temp_files);
 
-            // 5. Cleanup temp files
-            for path in &temp_files {
-                let _ = std::fs::remove_file(path);
-            }
-
+            let output = output?;
             let elapsed = start.elapsed();
 
-            // 6. Check exit status
+            // 4. Check exit status
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 let stdout = String::from_utf8_lossy(&output.stdout);
@@ -115,7 +116,10 @@ impl LlmProvider for ClaudeCliProvider {
                     if stdout.is_empty() {
                         String::new()
                     } else {
-                        format!("\nstdout: {}", &stdout[..stdout.len().min(500)])
+                        format!(
+                            "\nstdout: {}",
+                            stdout.chars().take(500).collect::<String>()
+                        )
                     },
                 )));
             }
@@ -163,7 +167,14 @@ fn build_cli_prompt(messages: &[ChatMessage]) -> Result<(String, String, Vec<Pat
                 let mut section = String::new();
 
                 for data_url in &images {
-                    let path = save_image_to_temp(data_url)?;
+                    let path = match save_image_to_temp(data_url) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            // Clean up any files already created before propagating
+                            cleanup_temp_files(&temp_files);
+                            return Err(e);
+                        }
+                    };
                     section.push_str(&format!(
                         "Screenshot saved at: {}\n\
                          Please read this image file to see the current desktop state.\n\n",
@@ -265,12 +276,19 @@ fn save_image_to_temp(data_url: &str) -> Result<PathBuf, AppError> {
 
     let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
-    let path = PathBuf::from(format!("/tmp/desktest_cli_{pid}_{counter}.png"));
+    let path = std::env::temp_dir().join(format!("desktest_cli_{pid}_{counter}.png"));
 
     std::fs::write(&path, &bytes)
         .map_err(|e| AppError::Agent(format!("Failed to write temp screenshot: {e}")))?;
 
     Ok(path)
+}
+
+/// Remove temp files, ignoring errors (best-effort cleanup).
+fn cleanup_temp_files(paths: &[PathBuf]) {
+    for path in paths {
+        let _ = std::fs::remove_file(path);
+    }
 }
 
 #[cfg(test)]
@@ -379,7 +397,7 @@ mod tests {
         let data_url = "data:image/png;base64,iVBORw0KGgo=";
         let path = save_image_to_temp(data_url).unwrap();
         assert!(path.exists());
-        assert!(path.to_str().unwrap().starts_with("/tmp/desktest_cli_"));
+        assert!(path.file_name().unwrap().to_str().unwrap().starts_with("desktest_cli_"));
         let _ = std::fs::remove_file(&path);
     }
 
