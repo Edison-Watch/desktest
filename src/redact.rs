@@ -2,7 +2,6 @@
 ///
 /// Secret values shorter than `MIN_SECRET_LENGTH` are skipped to avoid
 /// over-redacting common substrings like single characters or empty strings.
-
 const MIN_SECRET_LENGTH: usize = 3;
 const REDACTED: &str = "[REDACTED]";
 
@@ -30,7 +29,7 @@ impl Redactor {
             .filter(|s| s.len() >= MIN_SECRET_LENGTH)
             .collect();
         // Sort longest-first so overlapping values are replaced greedily.
-        secrets.sort_by(|a, b| b.len().cmp(&a.len()));
+        secrets.sort_by_key(|s| std::cmp::Reverse(s.len()));
         Self { secrets }
     }
 
@@ -62,6 +61,7 @@ impl Redactor {
     }
 
     /// Returns true when there are no secrets to redact.
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.secrets.is_empty()
     }

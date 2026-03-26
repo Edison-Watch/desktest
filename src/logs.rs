@@ -76,10 +76,7 @@ pub fn print_logs(
 }
 
 fn print_brief(entries: &[codify::TrajectoryRecord]) {
-    println!(
-        "{:<6} {:<12} {:<26} {}",
-        "Step", "Result", "Timestamp", "Thought"
-    );
+    println!("{:<6} {:<12} {:<26} Thought", "Step", "Result", "Timestamp");
     println!("{}", "-".repeat(80));
     for entry in entries {
         let thought = entry.thought.as_deref().unwrap_or("").replace('\n', " ");

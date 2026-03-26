@@ -11,11 +11,9 @@ use crate::error::AppError;
 impl DockerSession {
     /// Build the Docker image from the docker/ directory if it doesn't already exist.
     pub async fn ensure_image(client: &Docker, force_rebuild: bool) -> Result<(), AppError> {
-        if !force_rebuild {
-            if client.inspect_image(IMAGE_NAME).await.is_ok() {
-                debug!("Image {IMAGE_NAME} already exists, skipping build");
-                return Ok(());
-            }
+        if !force_rebuild && client.inspect_image(IMAGE_NAME).await.is_ok() {
+            debug!("Image {IMAGE_NAME} already exists, skipping build");
+            return Ok(());
         }
 
         info!("Building Docker image {IMAGE_NAME}...");
@@ -50,11 +48,9 @@ impl DockerSession {
         client: &Docker,
         force_rebuild: bool,
     ) -> Result<(), AppError> {
-        if !force_rebuild {
-            if client.inspect_image(IMAGE_NAME_ELECTRON).await.is_ok() {
-                debug!("Image {IMAGE_NAME_ELECTRON} already exists, skipping build");
-                return Ok(());
-            }
+        if !force_rebuild && client.inspect_image(IMAGE_NAME_ELECTRON).await.is_ok() {
+            debug!("Image {IMAGE_NAME_ELECTRON} already exists, skipping build");
+            return Ok(());
         }
 
         // Ensure base image exists first

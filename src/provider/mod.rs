@@ -129,7 +129,7 @@ pub fn create_provider(
 
     match provider_name {
         "openai" => {
-            let mut client = openai::OpenAiProvider::new(&resolved_key, model);
+            let mut client = openai::OpenAiProvider::create(&resolved_key, model);
             if has_custom_url {
                 client = client.with_base_url(base_url);
             }
@@ -144,12 +144,20 @@ pub fn create_provider(
             Ok(Box::new(client))
         }
         "openrouter" => {
-            let url = if has_custom_url { base_url } else { "https://openrouter.ai/api" };
+            let url = if has_custom_url {
+                base_url
+            } else {
+                "https://openrouter.ai/api"
+            };
             let client = http_base::HttpProvider::new(&resolved_key, model, url, "OpenRouter");
             Ok(Box::new(client))
         }
         "cerebras" => {
-            let url = if has_custom_url { base_url } else { "https://api.cerebras.ai" };
+            let url = if has_custom_url {
+                base_url
+            } else {
+                "https://api.cerebras.ai"
+            };
             let client = http_base::HttpProvider::new(&resolved_key, model, url, "Cerebras");
             Ok(Box::new(client))
         }
@@ -171,7 +179,7 @@ pub fn create_provider(
             }
         }
         "custom" => {
-            let client = custom::CustomProvider::new(&resolved_key, model, base_url);
+            let client = custom::CustomProvider::create(&resolved_key, model, base_url);
             Ok(Box::new(client))
         }
         other => Err(AppError::Config(format!(
@@ -234,7 +242,10 @@ pub fn resolve_api_key_with_source(
     explicit_source: Option<&'static str>,
 ) -> Result<(String, &'static str), AppError> {
     if !explicit_key.is_empty() {
-        return Ok((explicit_key.to_string(), explicit_source.unwrap_or("config file")));
+        return Ok((
+            explicit_key.to_string(),
+            explicit_source.unwrap_or("config file"),
+        ));
     }
 
     let provider_env = match provider_name {
@@ -337,19 +348,34 @@ mod tests {
 
     #[test]
     fn test_create_provider_openrouter() {
-        let provider = create_provider("openrouter", "sk-or-test", "anthropic/claude-sonnet-4", "https://api.anthropic.com");
+        let provider = create_provider(
+            "openrouter",
+            "sk-or-test",
+            "anthropic/claude-sonnet-4",
+            "https://api.anthropic.com",
+        );
         assert!(provider.is_ok());
     }
 
     #[test]
     fn test_create_provider_cerebras() {
-        let provider = create_provider("cerebras", "csk-test", "llama-4-scout-17b-16e-instruct", "https://api.anthropic.com");
+        let provider = create_provider(
+            "cerebras",
+            "csk-test",
+            "llama-4-scout-17b-16e-instruct",
+            "https://api.anthropic.com",
+        );
         assert!(provider.is_ok());
     }
 
     #[test]
     fn test_create_provider_gemini() {
-        let provider = create_provider("gemini", "AIza-test", "gemini-2.5-flash", "https://api.anthropic.com");
+        let provider = create_provider(
+            "gemini",
+            "AIza-test",
+            "gemini-2.5-flash",
+            "https://api.anthropic.com",
+        );
         assert!(provider.is_ok());
     }
 

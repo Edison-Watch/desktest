@@ -78,7 +78,9 @@ pub(crate) fn load_config_or_defaults(
     // belongs to the old provider (e.g. claude model sent to Gemini).
     if llm.provider.is_some() && llm.model.is_none() {
         let non_anthropic = !matches!(config.provider.as_str(), "anthropic" | "custom");
-        if non_anthropic && (config.model.starts_with("claude") || config.model.starts_with("anthropic/")) {
+        if non_anthropic
+            && (config.model.starts_with("claude") || config.model.starts_with("anthropic/"))
+        {
             eprintln!(
                 "Warning: --provider {} with default model '{}' — did you mean to also pass --model?",
                 config.provider, config.model
@@ -527,7 +529,7 @@ async fn run_eval_loop(
         }
     };
 
-    let result = match eval_mode {
+    match eval_mode {
         EvaluatorMode::Programmatic => {
             info!("Programmatic mode: skipping agent loop, running evaluation...");
 
@@ -547,11 +549,18 @@ async fn run_eval_loop(
                 .any(|m| matches!(m, task::MetricConfig::ScriptReplay { .. }));
 
             let mut screenshot_count = 0usize;
-            let mut trajectory_logger: Option<crate::trajectory::TrajectoryLogger> = if !has_replay {
-                match crate::trajectory::TrajectoryLogger::new(artifacts_dir, verbose, redactor.cloned()) {
+            let mut trajectory_logger: Option<crate::trajectory::TrajectoryLogger> = if !has_replay
+            {
+                match crate::trajectory::TrajectoryLogger::new(
+                    artifacts_dir,
+                    verbose,
+                    redactor.cloned(),
+                ) {
                     Ok(tl) => Some(tl),
                     Err(e) => {
-                        tracing::warn!("Failed to create trajectory logger, review HTML may be empty: {e}");
+                        tracing::warn!(
+                            "Failed to create trajectory logger, review HTML may be empty: {e}"
+                        );
                         None
                     }
                 }
@@ -571,7 +580,9 @@ async fn run_eval_loop(
                             timestamp: crate::trajectory::chrono_iso8601_now(),
                             action_code: String::new(),
                             thought: Some("Pre-evaluation screenshot".into()),
-                            screenshot_path: path.file_name().map(|n| n.to_string_lossy().to_string()),
+                            screenshot_path: path
+                                .file_name()
+                                .map(|n| n.to_string_lossy().to_string()),
                             a11y_tree_path: None,
                             result: "success".into(),
                             llm_raw_response: None,
@@ -596,7 +607,8 @@ async fn run_eval_loop(
                         let (result_str, thought, action_code) = match &eval_result {
                             Ok(r) => {
                                 let status = if r.passed { "PASSED" } else { "FAILED" };
-                                let passed_count = r.metric_results.iter().filter(|m| m.passed).count();
+                                let passed_count =
+                                    r.metric_results.iter().filter(|m| m.passed).count();
                                 let total_count = r.metric_results.len();
                                 let thought = format!(
                                     "Evaluation {status}: {passed_count}/{total_count} metrics passed (mode: {mode})",
@@ -605,7 +617,12 @@ async fn run_eval_loop(
                                 let mut code_lines = Vec::new();
                                 for (i, m) in r.metric_results.iter().enumerate() {
                                     let m_status = if m.passed { "PASSED" } else { "FAILED" };
-                                    code_lines.push(format!("# Metric {}: {} — {}", i + 1, m.metric, m_status));
+                                    code_lines.push(format!(
+                                        "# Metric {}: {} — {}",
+                                        i + 1,
+                                        m.metric,
+                                        m_status
+                                    ));
                                     if !m.expected.is_empty() {
                                         code_lines.push(format!("#   Expected: {}", m.expected));
                                     }
@@ -616,7 +633,11 @@ async fn run_eval_loop(
                                         code_lines.push(format!("#   Detail:   {}", m.detail));
                                     }
                                 }
-                                let result_str = if r.passed { "evaluation_passed" } else { "evaluation_failed" };
+                                let result_str = if r.passed {
+                                    "evaluation_passed"
+                                } else {
+                                    "evaluation_failed"
+                                };
                                 (result_str, thought, code_lines.join("\n"))
                             }
                             Err(e) => (
@@ -630,7 +651,9 @@ async fn run_eval_loop(
                             timestamp: crate::trajectory::chrono_iso8601_now(),
                             action_code,
                             thought: Some(thought),
-                            screenshot_path: path.file_name().map(|n| n.to_string_lossy().to_string()),
+                            screenshot_path: path
+                                .file_name()
+                                .map(|n| n.to_string_lossy().to_string()),
                             a11y_tree_path: None,
                             result: result_str.into(),
                             llm_raw_response: None,
@@ -775,9 +798,7 @@ async fn run_eval_loop(
                 agent_ran: true,
             })
         }
-    };
-
-    result
+    }
 }
 
 /// Build an AgentLoopV2Config from a task definition, probing the a11y tree
@@ -792,8 +813,10 @@ pub(crate) async fn build_agent_loop_config(
     let max_a11y_nodes = task_def.max_a11y_nodes.unwrap_or(10_000);
     let max_steps = task_def.max_steps as usize;
 
-    let mut obs_config = observation::ObservationConfig::default();
-    obs_config.max_a11y_nodes = max_a11y_nodes;
+    let mut obs_config = observation::ObservationConfig {
+        max_a11y_nodes,
+        ..observation::ObservationConfig::default()
+    };
 
     // Determine a11y timeout: explicit override or probe
     let a11y_timeout = if let Some(secs) = task_def.a11y_timeout_secs {
@@ -1432,7 +1455,11 @@ mod tests {
     // --- CLI subcommand tests ---
 
     fn no_overrides() -> LlmOverrides {
-        LlmOverrides { provider: None, model: None, api_key: None }
+        LlmOverrides {
+            provider: None,
+            model: None,
+            api_key: None,
+        }
     }
 
     #[test]
@@ -1548,7 +1575,10 @@ mod tests {
             api_key: None,
         };
         let config = load_config_or_defaults(&Some(config_path), &None, &overrides);
-        assert_eq!(config.api_key, "sk-ant-valid", "api_key should be preserved when provider matches");
+        assert_eq!(
+            config.api_key, "sk-ant-valid",
+            "api_key should be preserved when provider matches"
+        );
         assert_eq!(config.provider, "anthropic");
     }
 
@@ -1564,7 +1594,6 @@ mod tests {
         assert_eq!(config.api_key, "sk-or-explicit");
         assert_eq!(config.api_key_source, Some("--api-key flag"));
     }
-
 
     #[test]
     fn test_interactive_validate_only_requires_evaluator() {

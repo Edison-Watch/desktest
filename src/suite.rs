@@ -157,10 +157,7 @@ pub fn print_summary_table(suite_result: &SuiteResult) {
     println!("{}", "=".repeat(60));
 
     // Header
-    println!(
-        "  {:<30} {:>8} {:>10} {}",
-        "Test", "Status", "Duration", "Reason"
-    );
+    println!("  {:<30} {:>8} {:>10} Reason", "Test", "Status", "Duration");
     println!("  {}", "-".repeat(56));
 
     for result in &suite_result.results {
