@@ -88,8 +88,10 @@ cd desktest
 make install_cli
 ```
 
+## Main Commands
+
 <details>
-<summary><strong>Main Commands</strong></summary>
+<summary>Expand</summary>
 
 ```bash
 # Validate a task file
@@ -145,9 +147,10 @@ Options:
   --api-key <KEY>            API key for the LLM provider (prefer env vars to avoid shell history exposure)
 ```
 
-<a id="task-definition"></a>
+## Task Definition
+
 <details>
-<summary><strong>Task Definition</strong></summary>
+<summary>Expand</summary>
 
 Tests are defined in JSON files. Here's a complete example that tests a calculator app:
 
@@ -240,8 +243,10 @@ When `--qa` is enabled:
 - The agent continues its task after reporting — multiple bugs can be found per run
 - Bug count is included in `results.json` and the test output
 
+## Architecture
+
 <details>
-<summary><strong>Architecture</strong></summary>
+<summary>Expand</summary>
 
 ```
 Developer writes task.json
@@ -280,8 +285,10 @@ Developer writes task.json
 
 </details>
 
+## Artifacts
+
 <details>
-<summary><strong>Artifacts</strong></summary>
+<summary>Expand</summary>
 
 Each test run produces:
 
@@ -311,8 +318,10 @@ desktest_artifacts/
 | 3 | Infrastructure error |
 | 4 | Agent error |
 
+## Environment Variables
+
 <details>
-<summary><strong>Environment Variables</strong></summary>
+<summary>Expand</summary>
 
 | Variable | Description |
 |----------|-------------|
