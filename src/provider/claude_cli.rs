@@ -96,10 +96,16 @@ impl LlmProvider for ClaudeCliProvider {
                     // Close stdin to signal EOF
                 }
 
-                child
-                    .wait_with_output()
-                    .await
-                    .map_err(|e| AppError::Agent(format!("Claude CLI process error: {e}")))
+                // 5-minute timeout as defense-in-depth (the agent loop's
+                // step_timeout also wraps this call, but a hung process should
+                // not block indefinitely if that outer timeout is misconfigured).
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(300),
+                    child.wait_with_output(),
+                )
+                .await
+                .map_err(|_| AppError::Agent("Claude CLI timed out after 300s".into()))?
+                .map_err(|e| AppError::Agent(format!("Claude CLI process error: {e}")))
             }
             .await;
 
@@ -125,7 +131,7 @@ impl LlmProvider for ClaudeCliProvider {
                 )));
             }
 
-            // 7. Read text response
+            // 5. Read text response
             let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
             if result.is_empty() {
