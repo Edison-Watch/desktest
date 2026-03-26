@@ -204,11 +204,14 @@ struct ObservationStep {
 /// each file by exact path for Claude to read in order.
 fn build_cli_prompt(messages: &[ChatMessage]) -> Result<PromptResult, AppError> {
     // Create temp directory for this invocation.
+    // The guard ensures cleanup if we error out partway through saving files.
+    // On success, we extract the path and pass it to the caller's TempDirGuard.
     let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
     let temp_dir = std::env::temp_dir().join(format!("desktest_cli_{pid}_{counter}"));
     std::fs::create_dir_all(&temp_dir)
         .map_err(|e| AppError::Agent(format!("Failed to create temp dir: {e}")))?;
+    let mut cleanup_guard = Some(TempDirGuard(temp_dir.clone()));
 
     let mut system_parts = Vec::new();
     let mut prompt_sections: Vec<String> = Vec::new();
@@ -286,6 +289,12 @@ fn build_cli_prompt(messages: &[ChatMessage]) -> Result<PromptResult, AppError> 
     // Assemble the final prompt.
     let system_prompt = system_parts.join("\n");
     let prompt_text = assemble_prompt(&system_prompt, &prompt_sections, &observations);
+
+    // Disarm the cleanup guard — ownership transfers to the caller's TempDirGuard.
+    // We must forget (not drop) the guard to prevent it from cleaning up the directory.
+    if let Some(guard) = cleanup_guard.take() {
+        std::mem::forget(guard);
+    }
 
     Ok(PromptResult {
         prompt_text,
