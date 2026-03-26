@@ -87,9 +87,12 @@ impl LlmProvider for ClaudeCliProvider {
 
                 if let Some(mut stdin) = child.stdin.take() {
                     use tokio::io::AsyncWriteExt;
-                    stdin.write_all(prompt_text.as_bytes()).await.map_err(|e| {
-                        AppError::Agent(format!("Failed to write to claude stdin: {e}"))
-                    })?;
+                    if let Err(e) = stdin.write_all(prompt_text.as_bytes()).await {
+                        let _ = child.kill().await;
+                        return Err(AppError::Agent(format!(
+                            "Failed to write to claude stdin: {e}"
+                        )));
+                    }
                     // Close stdin to signal EOF
                 }
 
@@ -265,12 +268,22 @@ fn extract_text_and_images(msg: &ChatMessage) -> (String, Vec<String>) {
     (texts.join("\n"), images)
 }
 
-/// Decode a base64 data URL and save to a temp PNG file.
+/// Decode a base64 data URL and save to a temp image file.
+///
+/// The file extension is derived from the MIME type in the data URL
+/// (e.g., `data:image/jpeg;base64,...` → `.jpeg`), falling back to `.png`.
 fn save_image_to_temp(data_url: &str) -> Result<PathBuf, AppError> {
     let base64_data = data_url
         .split(',')
         .nth(1)
         .ok_or_else(|| AppError::Agent("Invalid image data URL format".into()))?;
+
+    // Extract extension from MIME type: "data:image/jpeg;base64,..." → "jpeg"
+    let ext = data_url
+        .split(';')
+        .next()
+        .and_then(|s| s.split('/').nth(1))
+        .unwrap_or("png");
 
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(base64_data)
@@ -278,7 +291,7 @@ fn save_image_to_temp(data_url: &str) -> Result<PathBuf, AppError> {
 
     let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
-    let path = std::env::temp_dir().join(format!("desktest_cli_{pid}_{counter}.png"));
+    let path = std::env::temp_dir().join(format!("desktest_cli_{pid}_{counter}.{ext}"));
 
     std::fs::write(&path, &bytes)
         .map_err(|e| AppError::Agent(format!("Failed to write temp screenshot: {e}")))?;

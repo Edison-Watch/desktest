@@ -27,7 +27,7 @@ No `api_key`, `ANTHROPIC_API_KEY`, or any other key is needed. The provider shel
 Each agent loop step:
 
 1. Flattens the message array (system prompt, trajectory, current observation) into a single text prompt
-2. Saves any base64 screenshots to temporary PNG files in `/tmp/`
+2. Saves any base64 screenshots to temporary image files in the system temp directory
 3. Runs `claude -p --output-format text` with the prompt piped via stdin
 4. When screenshots are present, passes `--allowedTools Read --max-turns 2` so Claude can view the image file
 5. Returns the text response to the agent loop
