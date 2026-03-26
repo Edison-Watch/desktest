@@ -28,9 +28,9 @@ Each agent loop step:
 
 1. Flattens the message array (system prompt, trajectory, current observation) into a single text prompt
 2. Saves any base64 screenshots to temporary PNG files in `/tmp/`
-3. Runs `claude -p --output-format json` with the prompt piped via stdin
+3. Runs `claude -p --output-format text` with the prompt piped via stdin
 4. When screenshots are present, passes `--allowedTools Read --max-turns 2` so Claude can view the image file
-5. Parses the JSON response and returns it to the agent loop
+5. Returns the text response to the agent loop
 6. Cleans up temporary files
 
 ## Limitations

@@ -61,7 +61,7 @@ impl LlmProvider for ClaudeCliProvider {
             // 2. Build command
             let mut cmd = tokio::process::Command::new("claude");
             cmd.arg("-p");
-            cmd.arg("--output-format").arg("json");
+            cmd.arg("--output-format").arg("text");
 
             if has_images {
                 // Need an extra turn for Claude to read the screenshot file
@@ -120,31 +120,23 @@ impl LlmProvider for ClaudeCliProvider {
                 )));
             }
 
-            // 7. Parse JSON response
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let response: CliResponse = serde_json::from_str(&stdout).map_err(|e| {
-                AppError::Agent(format!(
-                    "Failed to parse Claude CLI JSON: {e}\nRaw: {}",
-                    &stdout[..stdout.len().min(500)]
-                ))
-            })?;
+            // 7. Read text response
+            let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+            if result.is_empty() {
+                return Err(AppError::Agent("Claude CLI returned empty response".into()));
+            }
 
             info!("Claude CLI response in {:.1}s", elapsed.as_secs_f64());
 
             Ok(ChatMessage {
                 role: "assistant".into(),
-                content: Some(serde_json::Value::String(response.result)),
+                content: Some(serde_json::Value::String(result)),
                 tool_calls: None,
                 tool_call_id: None,
             })
         })
     }
-}
-
-/// JSON response shape from `claude -p --output-format json`.
-#[derive(serde::Deserialize)]
-struct CliResponse {
-    result: String,
 }
 
 /// Build the CLI prompt from the message array.
