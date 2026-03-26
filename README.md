@@ -15,16 +15,21 @@ Copy-paste the following prompt into Claude Code (or any coding agent) to instal
 
 ## Features
 
-- **Structured JSON task definitions** with schema validation
+**Testing & Execution**
+- **[Structured JSON task definitions](#task-definition)** with schema validation
 - **OSWorld-style agent loop**: observe (screenshot + accessibility tree) → think → act (PyAutoGUI) → repeat
 - **Programmatic evaluation**: file comparison, command output checks, file existence, exit codes
 - **Three validation modes**: LLM-only, programmatic-only, or hybrid (both must pass)
 - **Test suites**: run a directory of tests with aggregated results
+
+**Observability & Debugging**
+- **Live monitoring dashboard**: real-time web UI to watch agent actions as they happen
 - **Video recording**: ffmpeg captures every test session
 - **Trajectory logging**: step-by-step JSONL logs with screenshots and accessibility trees
-- **Custom Docker images**: bring your own image for apps with complex dependencies
-- **Live monitoring dashboard**: real-time web UI to watch agent actions as they happen
 - **Interactive mode**: step through agent actions one at a time for debugging
+
+**Extensibility**
+- **Custom Docker images**: bring your own image for apps with complex dependencies
 - **[Attach mode](docs/attach-mode.md)**: connect to an already-running container for integration with external orchestration
 - **QA mode** (`--qa`): agent reports application bugs it encounters as structured markdown reports
 
@@ -58,43 +63,6 @@ Use desktest as the eyes for your coding agent. You watch the test live, then ha
 
 `--monitor` is designed for human eyes (real-time web dashboard), while `logs` is designed for agent consumption (structured terminal output). Together they close the loop between observing a failure and fixing it.
 
-## Architecture
-
-```
-Developer writes task.json
-        │
-        ▼
-   ┌─────────┐
-   │ desktest CLI │  validate / run / suite / interactive
-   └────┬─────┘
-        │
-        ▼
-   ┌──────────────────────────────────┐
-   │  Docker Container                │
-   │  ┌──────┐  ┌─────┐  ┌────────┐  │
-   │  │ Xvfb │  │XFCE │  │x11vnc  │  │
-   │  └──┬───┘  └──┬──┘  └────────┘  │
-   │     │  virtual desktop           │
-   │  ┌──┴─────────┴──┐              │
-   │  │  Your App      │              │
-   │  └───────────────┘              │
-   └──────────┬───────────────────────┘
-              │ screenshot + a11y tree
-              ▼
-   ┌──────────────────┐
-   │  LLM Agent Loop  │  observe → think → act → repeat
-   │  (PyAutoGUI code) │
-   └────────┬─────────┘
-            │
-            ▼
-   ┌──────────────────┐
-   │  Evaluator        │  programmatic checks / LLM judge / hybrid
-   └────────┬─────────┘
-            │
-            ▼
-   results.json + recording.mp4 + trajectory.jsonl
-```
-
 ## Requirements
 
 **To run tests:**
@@ -120,27 +88,27 @@ cd desktest
 make install_cli
 ```
 
-## Quick Start
+<details>
+<summary><strong>Main Commands</strong></summary>
 
 ```bash
-# Build
-cargo build --release
-
 # Validate a task file
-cargo run -- validate elcalc-test.json
+desktest validate elcalc-test.json
 
 # Run a single test
-cargo run -- run elcalc-test.json
+desktest run elcalc-test.json
 
 # Run a test suite
-cargo run -- suite tests/
+desktest suite tests/
 
 # Interactive debugging (starts container, prints VNC info, pauses)
-cargo run -- interactive elcalc-test.json
+desktest interactive elcalc-test.json
 
 # Step-by-step mode (pause after each agent action)
-cargo run -- interactive elcalc-test.json --step
+desktest interactive elcalc-test.json --step
 ```
+
+</details>
 
 ## CLI
 
@@ -154,41 +122,49 @@ Commands:
   attach        Attach to an existing running container
   validate      Check task JSON against schema without running
   codify        Convert trajectory to deterministic Python replay script
-  review        Generate web-based trajectory review viewer
+  review        Generate interactive HTML trajectory viewer
   logs          View trajectory logs in the terminal (supports --steps N, N-M, or N,M,X-Y)
+  monitor       Start a persistent monitor server for multi-phase runs
   doctor        Check that all prerequisites are installed and configured
+  update        Update desktest to the latest release from GitHub
 
 Options:
-  --config <FILE>        Config JSON file (optional; API key can come from env vars)
-  --output <DIR>         Output directory for results (default: ./test-results/)
-  --debug                Enable debug logging
-  --verbose              Include full LLM responses in trajectory logs
-  --record               Enable video recording
-  --monitor              Enable live monitoring web dashboard
-  --monitor-port <PORT>  Port for the monitoring dashboard (default: 7860)
-  --qa                   Enable QA mode: agent reports app bugs during testing
-  --with-bash            Allow the agent to run bash commands inside the container (disabled by default)
+  --config <FILE>            Config JSON file (optional; API key can come from env vars)
+  --output <DIR>             Output directory for results (default: ./test-results/)
+  --debug                    Enable debug logging
+  --verbose                  Include full LLM responses in trajectory logs
+  --record                   Enable video recording
+  --monitor                  Enable live monitoring web dashboard
+  --monitor-port <PORT>      Port for the monitoring dashboard (default: 7860)
+  --resolution <WxH>         Display resolution (e.g., 1280x720, 1920x1080, or preset: 720p, 1080p)
+  --artifacts-dir <DIR>      Directory for trajectory logs, screenshots, and a11y snapshots
+  --qa                       Enable QA mode: agent reports app bugs during testing
+  --with-bash                Allow the agent to run bash commands inside the container (disabled by default)
+  --provider <PROVIDER>      LLM provider: anthropic, openai, openrouter, cerebras, gemini, custom
+  --model <MODEL>            LLM model name (overrides config file)
+  --api-key <KEY>            API key for the LLM provider (prefer env vars to avoid shell history exposure)
 ```
 
-## Task Definition
+<details>
+<summary><strong>Task Definition</strong></summary>
 
 Tests are defined in JSON files. Here's a complete example that tests a calculator app:
 
 ```json
 {
-  "schema_version": "1.0",
-  "id": "elcalc-addition",
-  "instruction": "Using the calculator app, compute 42 + 58.",
-  "completion_condition": "The calculator display shows 100 as the result.",
+  "schema_version": "1.0",        // Required: task schema version
+  "id": "elcalc-addition",        // Unique test identifier
+  "instruction": "Using the calculator app, compute 42 + 58.",  // What the agent should do
+  "completion_condition": "The calculator display shows 100 as the result.",  // Success criteria (optional)
   "app": {
-    "type": "appimage",
+    "type": "appimage",            // How to deploy the app (see App Types below)
     "path": "./elcalc-2.0.3-x86_64.AppImage"
   },
   "evaluator": {
-    "mode": "llm",
+    "mode": "llm",                 // Validation mode: "llm", "programmatic", or "hybrid"
     "llm_judge_prompt": "Does the calculator display show the number 100 as the result? Answer pass or fail."
   },
-  "timeout": 120
+  "timeout": 120                   // Max seconds before the test is aborted
 }
 ```
 
@@ -217,6 +193,8 @@ See `examples/` for more examples including folder deploys and custom Docker ima
 | `file_exists` | Check if a file exists (or doesn't) in the container |
 | `exit_code` | Run a command, check its exit code |
 | `script_replay` | Run a Python replay script, check for REPLAY_COMPLETE + exit 0 |
+
+</details>
 
 ## Live Monitoring
 
@@ -261,23 +239,66 @@ When `--qa` is enabled:
 - The agent continues its task after reporting — multiple bugs can be found per run
 - Bug count is included in `results.json` and the test output
 
-## Artifacts
+<details>
+<summary><strong>Architecture</strong></summary>
+
+```
+Developer writes task.json
+        │
+        ▼
+   ┌─────────┐
+   │ desktest CLI │  validate / run / suite / interactive
+   └────┬─────┘
+        │
+        ▼
+   ┌──────────────────────────────────┐
+   │  Docker Container                │
+   │  ┌──────┐  ┌─────┐  ┌────────┐  │
+   │  │ Xvfb │  │XFCE │  │x11vnc  │  │
+   │  └──┬───┘  └──┬──┘  └────────┘  │
+   │     │  virtual desktop           │
+   │  ┌──┴─────────┴──┐              │
+   │  │  Your App      │              │
+   │  └───────────────┘              │
+   └──────────┬───────────────────────┘
+              │ screenshot + a11y tree
+              ▼
+   ┌──────────────────┐
+   │  LLM Agent Loop  │  observe → think → act → repeat
+   │  (PyAutoGUI code) │
+   └────────┬─────────┘
+            │
+            ▼
+   ┌──────────────────┐
+   │  Evaluator        │  programmatic checks / LLM judge / hybrid
+   └────────┬─────────┘
+            │
+            ▼
+   results.json + recording.mp4 + trajectory.jsonl
+```
+
+</details>
+
+<details>
+<summary><strong>Artifacts</strong></summary>
 
 Each test run produces:
 
 ```
 test-results/
-  results.json                # Structured test results (pass/fail, metrics, duration)
+  results.json                # Structured test results (always)
 
 desktest_artifacts/
   recording.mp4               # Video of the test session (with --record)
-  trajectory.jsonl            # Step-by-step agent log
-  agent_conversation.json     # Full LLM conversation
-  step_001.png                # Screenshot per step
-  step_001_a11y.txt           # Accessibility tree per step
+  trajectory.jsonl            # Step-by-step agent log (always)
+  agent_conversation.json     # Full LLM conversation (always)
+  step_001.png                # Screenshot per step (always)
+  step_001_a11y.txt           # Accessibility tree per step (always)
   bugs/                       # Bug reports (with --qa)
-    BUG-001.md                # Individual bug report
+    BUG-001.md                # Individual bug report (with --qa)
 ```
+
+</details>
 
 ## Exit Codes
 
@@ -289,18 +310,17 @@ desktest_artifacts/
 | 3 | Infrastructure error |
 | 4 | Agent error |
 
-## Environment Variables
+<details>
+<summary><strong>Environment Variables</strong></summary>
 
 | Variable | Description |
 |----------|-------------|
 | `OPENAI_API_KEY` | OpenAI API key |
 | `ANTHROPIC_API_KEY` | Anthropic API key |
+| `OPENROUTER_API_KEY` | OpenRouter API key |
+| `CEREBRAS_API_KEY` | Cerebras API key |
+| `GEMINI_API_KEY` | Gemini API key |
 | `LLM_API_KEY` | Fallback API key for any provider |
+| `GITHUB_TOKEN` | GitHub token (used by `desktest update`) |
 
-## Legacy CLI
-
-The original CLI format is still supported for backward compatibility:
-
-```bash
-cargo run -- config.json instructions.md [--debug] [--interactive]
-```
+</details>
