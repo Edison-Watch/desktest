@@ -5,6 +5,7 @@
 use std::io::BufRead;
 use std::path::Path;
 
+use base64::Engine;
 use serde::Deserialize;
 
 use crate::error::AppError;
@@ -231,6 +232,12 @@ pub fn generate_replay_script(
         script.push_str(&format!(
             "    print('REPLAY_STEP_DONE:{}:{}')\n",
             entry.step, thought_escaped
+        ));
+        // Emit base64-encoded action code for trajectory reconstruction
+        let action_b64 = base64::engine::general_purpose::STANDARD.encode(&entry.action_code);
+        script.push_str(&format!(
+            "    print('REPLAY_ACTION:{}:{}')\n",
+            entry.step, action_b64
         ));
     }
     script.push_str("    print('REPLAY_COMPLETE')\n");
