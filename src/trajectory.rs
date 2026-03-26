@@ -48,6 +48,18 @@ pub struct TrajectoryEntry {
     pub action_type: Option<String>,
 }
 
+/// Data for a single agent step, used by trajectory logging and monitor events.
+pub struct StepData<'a> {
+    pub step_index: usize,
+    pub response_text: &'a str,
+    pub code_blocks: &'a [String],
+    pub result: &'a str,
+    pub raw_response: Option<&'a str>,
+    pub bash_output: Option<&'a str>,
+    pub error_feedback: Option<&'a str>,
+    pub action_type: Option<&'a str>,
+}
+
 /// Incremental trajectory logger that writes JSONL (one JSON object per line).
 ///
 /// Uses `BufWriter` with explicit `flush()` after each entry for crash resilience.
@@ -148,19 +160,12 @@ impl TrajectoryLogger {
     /// from the LLM response text, and populates paths from observation data.
     pub fn build_entry(
         &self,
-        step: usize,
-        response_text: &str,
-        code_blocks: &[String],
+        data: &StepData<'_>,
         screenshot_path: Option<&Path>,
         a11y_tree_text: Option<&str>,
-        result: &str,
-        raw_response: Option<&str>,
-        bash_output: Option<&str>,
-        error_feedback: Option<&str>,
-        action_type: Option<&str>,
     ) -> TrajectoryEntry {
-        let action_code = code_blocks.join("\n\n");
-        let thought = extract_thought(response_text, code_blocks);
+        let action_code = data.code_blocks.join("\n\n");
+        let thought = extract_thought(data.response_text, data.code_blocks);
 
         // Convert absolute paths to relative (just the filename)
         let screenshot_rel = screenshot_path
@@ -171,13 +176,13 @@ impl TrajectoryLogger {
         let a11y_tree_path = if let Some(text) = a11y_tree_text {
             let a11y_path = self
                 .artifacts_dir
-                .join(format!("step_{:03}_a11y.txt", step));
+                .join(format!("step_{:03}_a11y.txt", data.step_index));
             match std::fs::write(&a11y_path, text) {
                 Ok(()) => a11y_path
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string()),
                 Err(e) => {
-                    warn!("Failed to save a11y tree for step {step}: {e}");
+                    warn!("Failed to save a11y tree for step {}: {e}", data.step_index);
                     None
                 }
             }
@@ -186,7 +191,7 @@ impl TrajectoryLogger {
         };
 
         let llm_raw_response = if self.verbose {
-            raw_response.map(|s| s.to_string())
+            data.raw_response.map(|s| s.to_string())
         } else {
             None
         };
@@ -194,17 +199,17 @@ impl TrajectoryLogger {
         let now = chrono_iso8601_now();
 
         TrajectoryEntry {
-            step,
+            step: data.step_index,
             timestamp: now,
             action_code,
             thought,
             screenshot_path: screenshot_rel,
             a11y_tree_path,
-            result: result.to_string(),
+            result: data.result.to_string(),
             llm_raw_response,
-            bash_output: bash_output.map(|s| s.to_string()),
-            error_feedback: error_feedback.map(|s| s.to_string()),
-            action_type: action_type.map(|s| s.to_string()),
+            bash_output: data.bash_output.map(|s| s.to_string()),
+            error_feedback: data.error_feedback.map(|s| s.to_string()),
+            action_type: data.action_type.map(|s| s.to_string()),
         }
     }
 }
@@ -469,35 +474,23 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // Non-verbose: build_entry should NOT include raw response
         let logger = TrajectoryLogger::new(dir.path(), false, None).unwrap();
-        let entry = logger.build_entry(
-            1,
-            "text",
-            &[],
-            None,
-            None,
-            "done",
-            Some("raw"),
-            None,
-            None,
-            None,
-        );
+        let data = StepData {
+            step_index: 1,
+            response_text: "text",
+            code_blocks: &[],
+            result: "done",
+            raw_response: Some("raw"),
+            bash_output: None,
+            error_feedback: None,
+            action_type: None,
+        };
+        let entry = logger.build_entry(&data, None, None);
         assert!(entry.llm_raw_response.is_none());
 
         // Verbose: build_entry SHOULD include raw response
         let dir2 = tempfile::tempdir().unwrap();
         let logger2 = TrajectoryLogger::new(dir2.path(), true, None).unwrap();
-        let entry2 = logger2.build_entry(
-            1,
-            "text",
-            &[],
-            None,
-            None,
-            "done",
-            Some("raw"),
-            None,
-            None,
-            None,
-        );
+        let entry2 = logger2.build_entry(&data, None, None);
         assert!(entry2.llm_raw_response.is_some());
     }
 
@@ -556,18 +549,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let logger = TrajectoryLogger::new(dir.path(), false, None).unwrap();
 
-        let entry = logger.build_entry(
-            1,
-            "I see the editor.\n\n```python\npyautogui.click(100, 200)\n```",
-            &["pyautogui.click(100, 200)".to_string()],
-            Some(&dir.path().join("step_001.png")),
-            None,
-            "success",
-            Some("full response"),
-            None,
-            None,
-            Some("python"),
-        );
+        let code_blocks = vec!["pyautogui.click(100, 200)".to_string()];
+        let data = StepData {
+            step_index: 1,
+            response_text: "I see the editor.\n\n```python\npyautogui.click(100, 200)\n```",
+            code_blocks: &code_blocks,
+            result: "success",
+            raw_response: Some("full response"),
+            bash_output: None,
+            error_feedback: None,
+            action_type: Some("python"),
+        };
+        let entry = logger.build_entry(&data, Some(&dir.path().join("step_001.png")), None);
 
         assert_eq!(entry.step, 1);
         assert_eq!(entry.action_code, "pyautogui.click(100, 200)");
@@ -583,18 +576,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let logger = TrajectoryLogger::new(dir.path(), true, None).unwrap();
 
-        let entry = logger.build_entry(
-            1,
-            "text",
-            &[],
-            None,
-            None,
-            "done",
-            Some("full LLM response"),
-            None,
-            None,
-            None,
-        );
+        let data = StepData {
+            step_index: 1,
+            response_text: "text",
+            code_blocks: &[],
+            result: "done",
+            raw_response: Some("full LLM response"),
+            bash_output: None,
+            error_feedback: None,
+            action_type: None,
+        };
+        let entry = logger.build_entry(&data, None, None);
 
         assert!(entry.llm_raw_response.is_some());
         assert_eq!(entry.llm_raw_response.as_deref(), Some("full LLM response"));
@@ -606,18 +598,17 @@ mod tests {
         let logger = TrajectoryLogger::new(dir.path(), false, None).unwrap();
 
         let a11y_text = "button\tOK\t\tGtkButton";
-        let entry = logger.build_entry(
-            3,
-            "text",
-            &[],
-            None,
-            Some(a11y_text),
-            "success",
-            None,
-            None,
-            None,
-            None,
-        );
+        let data = StepData {
+            step_index: 3,
+            response_text: "text",
+            code_blocks: &[],
+            result: "success",
+            raw_response: None,
+            bash_output: None,
+            error_feedback: None,
+            action_type: None,
+        };
+        let entry = logger.build_entry(&data, None, Some(a11y_text));
 
         assert_eq!(entry.a11y_tree_path.as_deref(), Some("step_003_a11y.txt"));
         // Verify the file was actually written
@@ -657,21 +648,21 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let logger = TrajectoryLogger::new(dir.path(), false, None).unwrap();
 
-        let entry = logger.build_entry(
-            1,
-            "text",
-            &[
-                "pyautogui.click(100, 200)".to_string(),
-                "pyautogui.press('enter')".to_string(),
-            ],
-            None,
-            None,
-            "success",
-            None,
-            None,
-            None,
-            None,
-        );
+        let code_blocks = vec![
+            "pyautogui.click(100, 200)".to_string(),
+            "pyautogui.press('enter')".to_string(),
+        ];
+        let data = StepData {
+            step_index: 1,
+            response_text: "text",
+            code_blocks: &code_blocks,
+            result: "success",
+            raw_response: None,
+            bash_output: None,
+            error_feedback: None,
+            action_type: None,
+        };
+        let entry = logger.build_entry(&data, None, None);
 
         // Code blocks should be joined with double newlines
         assert!(entry.action_code.contains("pyautogui.click(100, 200)"));

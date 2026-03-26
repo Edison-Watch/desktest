@@ -19,7 +19,7 @@ use crate::observation::{self, Observation, ObservationConfig};
 use crate::provider::{ChatMessage, LlmProvider};
 use crate::recording::Recording;
 use crate::redact::Redactor;
-use crate::trajectory::TrajectoryLogger;
+use crate::trajectory::{StepData, TrajectoryLogger};
 
 /// Default maximum number of agent steps per test.
 const DEFAULT_MAX_STEPS: usize = 15;
@@ -51,6 +51,14 @@ pub struct AgentLoopV2Config {
     pub bash_enabled: bool,
     /// Enable QA bug reporting mode.
     pub qa: bool,
+    /// Display width in pixels.
+    pub display_width: u32,
+    /// Display height in pixels.
+    pub display_height: u32,
+    /// Test identifier for monitoring events.
+    pub test_id: String,
+    /// Secret redactor for scrubbing sensitive data from logs.
+    pub redactor: Option<Redactor>,
 }
 
 impl Default for AgentLoopV2Config {
@@ -65,6 +73,10 @@ impl Default for AgentLoopV2Config {
             verbose: false,
             bash_enabled: false,
             qa: false,
+            display_width: 1920,
+            display_height: 1080,
+            test_id: String::new(),
+            redactor: None,
         }
     }
 }
@@ -99,17 +111,15 @@ impl<'a> AgentLoopV2<'a> {
         session: &'a DockerSession,
         artifacts_dir: PathBuf,
         instruction: &str,
-        display_width: u32,
-        display_height: u32,
         config: AgentLoopV2Config,
         recording: Option<&'a Recording>,
         monitor: Option<MonitorHandle>,
-        test_id: String,
-        redactor: Option<Redactor>,
     ) -> Self {
+        let test_id = config.test_id.clone();
+        let redactor = config.redactor.clone();
         let context = ContextManager::new(
-            display_width,
-            display_height,
+            config.display_width,
+            config.display_height,
             instruction,
             config.max_trajectory_length,
             config.bash_enabled,
@@ -177,17 +187,17 @@ impl<'a> AgentLoopV2<'a> {
                     "Total timeout ({:?}) exceeded after {} steps",
                     self.config.total_timeout, step_index
                 );
-                self.log_trajectory_entry(
+                let data = StepData {
                     step_index,
-                    "",
-                    &[],
-                    &current_observation,
-                    "timeout",
-                    None,
-                    None,
-                    None,
-                    None,
-                );
+                    response_text: "",
+                    code_blocks: &[],
+                    result: "timeout",
+                    raw_response: None,
+                    bash_output: None,
+                    error_feedback: None,
+                    action_type: None,
+                };
+                self.log_trajectory_entry(&data, &current_observation);
                 self.save_conversation_log();
                 let reasoning = format!(
                     "Total timeout ({}s) exceeded after {} steps",
@@ -206,17 +216,17 @@ impl<'a> AgentLoopV2<'a> {
             // Check max steps
             if step_index >= self.config.max_steps {
                 warn!("Max steps ({}) reached", self.config.max_steps);
-                self.log_trajectory_entry(
+                let data = StepData {
                     step_index,
-                    "",
-                    &[],
-                    &current_observation,
-                    "max_steps",
-                    None,
-                    None,
-                    None,
-                    None,
-                );
+                    response_text: "",
+                    code_blocks: &[],
+                    result: "max_steps",
+                    raw_response: None,
+                    bash_output: None,
+                    error_feedback: None,
+                    action_type: None,
+                };
+                self.log_trajectory_entry(&data, &current_observation);
                 self.save_conversation_log();
                 let reasoning = format!(
                     "Max steps ({}) reached without task completion",
@@ -299,27 +309,18 @@ impl<'a> AgentLoopV2<'a> {
                 match command {
                     SpecialCommand::Done => {
                         info!("Agent signalled DONE at step {step_index}");
-                        self.log_trajectory_entry(
+                        let data = StepData {
                             step_index,
-                            &response_text,
-                            &all_blocks,
-                            &current_observation,
-                            "done",
-                            Some(&response_text),
-                            turn_result.bash_output.as_deref(),
-                            turn_result.error_feedback.as_deref(),
-                            action_type.as_deref(),
-                        );
-                        self.publish_step_event(
-                            step_index,
-                            &response_text,
-                            &all_blocks,
-                            &current_observation,
-                            "done",
-                            turn_result.bash_output.as_deref(),
-                            turn_result.error_feedback.as_deref(),
-                            action_type.as_deref(),
-                        );
+                            response_text: &response_text,
+                            code_blocks: &all_blocks,
+                            result: "done",
+                            raw_response: Some(&response_text),
+                            bash_output: turn_result.bash_output.as_deref(),
+                            error_feedback: turn_result.error_feedback.as_deref(),
+                            action_type: action_type.as_deref(),
+                        };
+                        self.log_trajectory_entry(&data, &current_observation);
+                        self.publish_step_event(&data, &current_observation);
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
@@ -338,27 +339,18 @@ impl<'a> AgentLoopV2<'a> {
                     }
                     SpecialCommand::Fail => {
                         info!("Agent signalled FAIL at step {step_index}");
-                        self.log_trajectory_entry(
+                        let data = StepData {
                             step_index,
-                            &response_text,
-                            &all_blocks,
-                            &current_observation,
-                            "fail",
-                            Some(&response_text),
-                            turn_result.bash_output.as_deref(),
-                            turn_result.error_feedback.as_deref(),
-                            action_type.as_deref(),
-                        );
-                        self.publish_step_event(
-                            step_index,
-                            &response_text,
-                            &all_blocks,
-                            &current_observation,
-                            "fail",
-                            turn_result.bash_output.as_deref(),
-                            turn_result.error_feedback.as_deref(),
-                            action_type.as_deref(),
-                        );
+                            response_text: &response_text,
+                            code_blocks: &all_blocks,
+                            result: "fail",
+                            raw_response: Some(&response_text),
+                            bash_output: turn_result.bash_output.as_deref(),
+                            error_feedback: turn_result.error_feedback.as_deref(),
+                            action_type: action_type.as_deref(),
+                        };
+                        self.log_trajectory_entry(&data, &current_observation);
+                        self.publish_step_event(&data, &current_observation);
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
@@ -377,27 +369,18 @@ impl<'a> AgentLoopV2<'a> {
                     }
                     SpecialCommand::Wait => {
                         info!("Agent signalled WAIT at step {step_index}, re-observing...");
-                        self.log_trajectory_entry(
+                        let data = StepData {
                             step_index,
-                            &response_text,
-                            &all_blocks,
-                            &current_observation,
-                            "wait",
-                            Some(&response_text),
-                            turn_result.bash_output.as_deref(),
-                            turn_result.error_feedback.as_deref(),
-                            action_type.as_deref(),
-                        );
-                        self.publish_step_event(
-                            step_index,
-                            &response_text,
-                            &all_blocks,
-                            &current_observation,
-                            "wait",
-                            turn_result.bash_output.as_deref(),
-                            turn_result.error_feedback.as_deref(),
-                            action_type.as_deref(),
-                        );
+                            response_text: &response_text,
+                            code_blocks: &all_blocks,
+                            result: "wait",
+                            raw_response: Some(&response_text),
+                            bash_output: turn_result.bash_output.as_deref(),
+                            error_feedback: turn_result.error_feedback.as_deref(),
+                            action_type: action_type.as_deref(),
+                        };
+                        self.log_trajectory_entry(&data, &current_observation);
+                        self.publish_step_event(&data, &current_observation);
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
@@ -425,27 +408,18 @@ impl<'a> AgentLoopV2<'a> {
             };
 
             // Log trajectory entry
-            self.log_trajectory_entry(
+            let data = StepData {
                 step_index,
-                &response_text,
-                &all_blocks,
-                &current_observation,
-                &result_str,
-                Some(&response_text),
-                turn_result.bash_output.as_deref(),
-                turn_result.error_feedback.as_deref(),
-                action_type.as_deref(),
-            );
-            self.publish_step_event(
-                step_index,
-                &response_text,
-                &all_blocks,
-                &current_observation,
-                &result_str,
-                turn_result.bash_output.as_deref(),
-                turn_result.error_feedback.as_deref(),
-                action_type.as_deref(),
-            );
+                response_text: &response_text,
+                code_blocks: &all_blocks,
+                result: &result_str,
+                raw_response: Some(&response_text),
+                bash_output: turn_result.bash_output.as_deref(),
+                error_feedback: turn_result.error_feedback.as_deref(),
+                action_type: action_type.as_deref(),
+            };
+            self.log_trajectory_entry(&data, &current_observation);
+            self.publish_step_event(&data, &current_observation);
 
             // Record the turn in trajectory
             self.context.push_turn(TrajectoryTurn {
@@ -600,17 +574,17 @@ impl<'a> AgentLoopV2<'a> {
                 match command {
                     SpecialCommand::Done => {
                         println!("  => Agent signalled DONE");
-                        self.log_trajectory_entry(
+                        let data = StepData {
                             step_index,
-                            &response_text,
-                            &all_blocks,
-                            &current_observation,
-                            "done",
-                            Some(&response_text),
-                            turn_result.bash_output.as_deref(),
-                            turn_result.error_feedback.as_deref(),
-                            action_type.as_deref(),
-                        );
+                            response_text: &response_text,
+                            code_blocks: &all_blocks,
+                            result: "done",
+                            raw_response: Some(&response_text),
+                            bash_output: turn_result.bash_output.as_deref(),
+                            error_feedback: turn_result.error_feedback.as_deref(),
+                            action_type: action_type.as_deref(),
+                        };
+                        self.log_trajectory_entry(&data, &current_observation);
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
@@ -627,17 +601,17 @@ impl<'a> AgentLoopV2<'a> {
                     }
                     SpecialCommand::Fail => {
                         println!("  => Agent signalled FAIL");
-                        self.log_trajectory_entry(
+                        let data = StepData {
                             step_index,
-                            &response_text,
-                            &all_blocks,
-                            &current_observation,
-                            "fail",
-                            Some(&response_text),
-                            turn_result.bash_output.as_deref(),
-                            turn_result.error_feedback.as_deref(),
-                            action_type.as_deref(),
-                        );
+                            response_text: &response_text,
+                            code_blocks: &all_blocks,
+                            result: "fail",
+                            raw_response: Some(&response_text),
+                            bash_output: turn_result.bash_output.as_deref(),
+                            error_feedback: turn_result.error_feedback.as_deref(),
+                            action_type: action_type.as_deref(),
+                        };
+                        self.log_trajectory_entry(&data, &current_observation);
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
@@ -654,17 +628,17 @@ impl<'a> AgentLoopV2<'a> {
                     }
                     SpecialCommand::Wait => {
                         println!("  => Agent signalled WAIT, re-observing...");
-                        self.log_trajectory_entry(
+                        let data = StepData {
                             step_index,
-                            &response_text,
-                            &all_blocks,
-                            &current_observation,
-                            "wait",
-                            Some(&response_text),
-                            turn_result.bash_output.as_deref(),
-                            turn_result.error_feedback.as_deref(),
-                            action_type.as_deref(),
-                        );
+                            response_text: &response_text,
+                            code_blocks: &all_blocks,
+                            result: "wait",
+                            raw_response: Some(&response_text),
+                            bash_output: turn_result.bash_output.as_deref(),
+                            error_feedback: turn_result.error_feedback.as_deref(),
+                            action_type: action_type.as_deref(),
+                        };
+                        self.log_trajectory_entry(&data, &current_observation);
                         self.context.push_turn(TrajectoryTurn {
                             observation: current_observation,
                             response_text: response_text.clone(),
@@ -694,17 +668,17 @@ impl<'a> AgentLoopV2<'a> {
                 format!("error:{err}")
             };
 
-            self.log_trajectory_entry(
+            let data = StepData {
                 step_index,
-                &response_text,
-                &all_blocks,
-                &current_observation,
-                &result_str,
-                Some(&response_text),
-                turn_result.bash_output.as_deref(),
-                turn_result.error_feedback.as_deref(),
-                action_type.as_deref(),
-            );
+                response_text: &response_text,
+                code_blocks: &all_blocks,
+                result: &result_str,
+                raw_response: Some(&response_text),
+                bash_output: turn_result.bash_output.as_deref(),
+                error_feedback: turn_result.error_feedback.as_deref(),
+                action_type: action_type.as_deref(),
+            };
+            self.log_trajectory_entry(&data, &current_observation);
             self.context.push_turn(TrajectoryTurn {
                 observation: current_observation,
                 response_text: response_text.clone(),
@@ -761,33 +735,27 @@ impl<'a> AgentLoopV2<'a> {
     /// Publish a StepComplete event to the live monitor.
     fn publish_step_event(
         &self,
-        step_index: usize,
-        response_text: &str,
-        code_blocks: &[String],
+        data: &crate::trajectory::StepData<'_>,
         observation: &Observation,
-        result: &str,
-        bash_output: Option<&str>,
-        error_feedback: Option<&str>,
-        action_type: Option<&str>,
     ) {
         if let Some(ref m) = self.monitor {
-            let thought = crate::trajectory::extract_thought(response_text, code_blocks);
-            let action_code = code_blocks.join("\n\n");
+            let thought = crate::trajectory::extract_thought(data.response_text, data.code_blocks);
+            let action_code = data.code_blocks.join("\n\n");
             let screenshot_base64 = observation.screenshot_data_url.as_ref().and_then(|url| {
                 url.strip_prefix("data:image/png;base64,")
                     .map(|s| s.to_string())
             });
             let timestamp = crate::trajectory::chrono_iso8601_now();
             m.send(MonitorEvent::StepComplete {
-                step: step_index,
+                step: data.step_index,
                 thought,
                 action_code,
-                result: result.to_string(),
+                result: data.result.to_string(),
                 screenshot_base64,
                 timestamp,
-                bash_output: bash_output.map(|s| s.to_string()),
-                error_feedback: error_feedback.map(|s| s.to_string()),
-                action_type: action_type.map(|s| s.to_string()),
+                bash_output: data.bash_output.map(|s| s.to_string()),
+                error_feedback: data.error_feedback.map(|s| s.to_string()),
+                action_type: data.action_type.map(|s| s.to_string()),
             });
         }
     }
@@ -807,28 +775,14 @@ impl<'a> AgentLoopV2<'a> {
     /// Log a trajectory entry for the current step.
     fn log_trajectory_entry(
         &mut self,
-        step_index: usize,
-        response_text: &str,
-        code_blocks: &[String],
+        data: &crate::trajectory::StepData<'_>,
         observation: &Observation,
-        result: &str,
-        raw_response: Option<&str>,
-        bash_output: Option<&str>,
-        error_feedback: Option<&str>,
-        action_type: Option<&str>,
     ) {
         if let Some(ref mut trajectory) = self.trajectory {
             let entry = trajectory.build_entry(
-                step_index,
-                response_text,
-                code_blocks,
+                data,
                 observation.screenshot_path.as_deref(),
                 observation.a11y_tree_text.as_deref(),
-                result,
-                raw_response,
-                bash_output,
-                error_feedback,
-                action_type,
             );
             trajectory.log_entry(&entry);
         }
@@ -955,6 +909,10 @@ mod tests {
             verbose: true,
             bash_enabled: true,
             qa: false,
+            display_width: 1920,
+            display_height: 1080,
+            test_id: String::new(),
+            redactor: None,
         };
         assert_eq!(config.max_steps, 25);
         assert_eq!(config.step_timeout.as_secs(), 120);

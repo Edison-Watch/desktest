@@ -9,8 +9,8 @@ use crate::docker;
 use crate::error::{AgentOutcome, AppError};
 use crate::evaluator;
 use crate::orchestration::{
-    TaskRunResult, build_agent_loop_config, format_evaluation_reasoning, print_validation_results,
-    resolve_image_name, run_task,
+    RunConfig, TaskRunResult, build_agent_loop_config, format_evaluation_reasoning,
+    print_validation_results, resolve_image_name, run_task,
 };
 use crate::provider;
 use crate::readiness;
@@ -23,14 +23,10 @@ use crate::task;
 pub(crate) async fn run_interactive(
     task_def: task::TaskDefinition,
     config: Config,
-    debug: bool,
-    verbose: bool,
-    bash_enabled: bool,
-    no_recording: bool,
+    run: RunConfig,
     output_dir: std::path::PathBuf,
     step: bool,
     validate_only: bool,
-    qa: bool,
     artifacts_dir_override: Option<std::path::PathBuf>,
 ) -> Result<AgentOutcome, AppError> {
     // Guard: vnc_attach tasks must use `desktest attach`, not `desktest interactive`
@@ -59,13 +55,9 @@ pub(crate) async fn run_interactive(
         return run_task(
             task_def,
             config,
-            debug,
-            verbose,
-            bash_enabled,
-            no_recording,
+            run,
             output_dir,
             None,
-            qa,
             artifacts_dir_override,
         )
         .await;
@@ -73,37 +65,19 @@ pub(crate) async fn run_interactive(
 
     if step {
         // --step: run agent one step at a time, pausing after each
-        return run_interactive_step(
-            task_def,
-            config,
-            debug,
-            verbose,
-            bash_enabled,
-            no_recording,
-            output_dir,
-            qa,
-            artifacts_dir_override,
-        )
-        .await;
+        return run_interactive_step(task_def, config, run, output_dir, artifacts_dir_override)
+            .await;
     }
 
     // Default interactive: start container, run setup, print VNC info, pause
-    run_interactive_pause(
-        task_def,
-        config,
-        debug,
-        no_recording,
-        artifacts_dir_override,
-    )
-    .await
+    run_interactive_pause(task_def, config, run, artifacts_dir_override).await
 }
 
 /// Interactive mode: start container, run setup steps, print VNC info, pause.
 async fn run_interactive_pause(
     mut task_def: task::TaskDefinition,
     mut config: Config,
-    debug: bool,
-    no_recording: bool,
+    run: RunConfig,
     artifacts_dir_override: Option<std::path::PathBuf>,
 ) -> Result<AgentOutcome, AppError> {
     let resolved_secrets = task_def.resolve_secrets()?;
@@ -142,7 +116,7 @@ async fn run_interactive_pause(
             eprintln!("\nInterrupted (Ctrl+C), cleaning up...");
             Err(AppError::Infra("Interrupted by user".into()))
         }
-        r = run_interactive_pause_inner(&task_def, &config, &session, timeout, debug, no_recording, Some(&redactor)) => r,
+        r = run_interactive_pause_inner(&task_def, &config, &session, timeout, run.debug, run.no_recording, Some(&redactor)) => r,
     };
 
     // Always clean up
@@ -243,12 +217,8 @@ async fn run_interactive_pause_inner(
 async fn run_interactive_step(
     mut task_def: task::TaskDefinition,
     mut config: Config,
-    debug: bool,
-    verbose: bool,
-    bash_enabled: bool,
-    no_recording: bool,
+    run: RunConfig,
     output_dir: std::path::PathBuf,
-    qa: bool,
     artifacts_dir_override: Option<std::path::PathBuf>,
 ) -> Result<AgentOutcome, AppError> {
     let start = Instant::now();
@@ -298,7 +268,7 @@ async fn run_interactive_step(
             eprintln!("\nInterrupted (Ctrl+C), cleaning up...");
             Err(AppError::Infra("Interrupted by user".into()))
         }
-        r = run_interactive_step_inner(&task_def, &config, &session, &artifacts_dir, timeout, debug, verbose, bash_enabled, no_recording, qa, Some(&redactor)) => r,
+        r = run_interactive_step_inner(&task_def, &config, &session, &artifacts_dir, timeout, run, Some(&redactor)) => r,
     };
 
     // Collect artifacts and clean up
@@ -321,7 +291,7 @@ async fn run_interactive_step(
             &run_result.outcome,
             run_result.eval_result.as_ref(),
             duration_ms,
-            qa,
+            run.qa,
         ),
         Err(e) => results::from_error(&test_id, e, duration_ms),
     };
@@ -338,18 +308,14 @@ async fn run_interactive_step_inner(
     session: &docker::DockerSession,
     artifacts_dir: &std::path::Path,
     timeout: Duration,
-    debug: bool,
-    verbose: bool,
-    bash_enabled: bool,
-    no_recording: bool,
-    qa: bool,
+    run: RunConfig,
     redactor: Option<&crate::redact::Redactor>,
 ) -> Result<TaskRunResult, AppError> {
     use task::EvaluatorMode;
 
     // 1. Wait for desktop
     info!("Waiting for desktop to be ready...");
-    readiness::wait_for_desktop(session, timeout, debug).await?;
+    readiness::wait_for_desktop(session, timeout, run.debug).await?;
 
     // 1b. Validate custom image dependencies (after desktop is ready)
     let is_docker_image = matches!(task_def.app, task::AppConfig::DockerImage { .. });
@@ -386,7 +352,7 @@ async fn run_interactive_step_inner(
                 .await?;
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             info!("Waiting for app window...");
-            readiness::wait_for_app_window(session, &baseline_windows, timeout, debug).await?;
+            readiness::wait_for_app_window(session, &baseline_windows, timeout, run.debug).await?;
         }
     } else {
         let baseline_windows = readiness::get_stable_window_list(session).await?;
@@ -397,7 +363,7 @@ async fn run_interactive_step_inner(
             .await?;
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         info!("Waiting for app window...");
-        readiness::wait_for_app_window(session, &baseline_windows, timeout, debug).await?;
+        readiness::wait_for_app_window(session, &baseline_windows, timeout, run.debug).await?;
     }
 
     // Print VNC info
@@ -409,7 +375,7 @@ async fn run_interactive_step_inner(
     }
 
     // 4. Start video recording (after app is ready so we skip the boot/setup filler)
-    let recording = if no_recording {
+    let recording = if run.no_recording {
         None
     } else {
         match recording::Recording::start(session, config.display_width, config.display_height)
@@ -432,22 +398,18 @@ async fn run_interactive_step_inner(
         &config.api_base_url,
     )?;
 
-    let mut loop_config =
-        build_agent_loop_config(task_def, session, debug, verbose, bash_enabled).await;
-    loop_config.qa = qa;
+    let mut loop_config = build_agent_loop_config(task_def, session, config, run).await;
+    loop_config.test_id = task_def.id.clone();
+    loop_config.redactor = redactor.cloned();
     let full_instruction = task_def.full_instruction();
     let mut agent_loop = agent::loop_v2::AgentLoopV2::new(
         llm_client,
         session,
         artifacts_dir.to_path_buf(),
         &full_instruction,
-        config.display_width,
-        config.display_height,
         loop_config,
         recording.as_ref(),
         None, // no monitor in interactive step mode
-        task_def.id.clone(),
-        redactor.cloned(),
     );
 
     let agent_loop_result = agent_loop.run_step_by_step().await;

@@ -31,7 +31,7 @@ pub(crate) use orchestration::run_task;
 
 use clap::Parser;
 use cli::{Cli, Command};
-use orchestration::LlmOverrides;
+use orchestration::{LlmOverrides, RunConfig};
 
 fn setup_logging(debug: bool) {
     use tracing_subscriber::EnvFilter;
@@ -128,18 +128,20 @@ async fn main() {
             }
 
             let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
-            let bash_enabled = cli.with_bash || cli.qa;
+            let run = RunConfig {
+                debug: cli.debug,
+                verbose: cli.verbose,
+                bash_enabled: cli.with_bash || cli.qa,
+                no_recording: !cli.record,
+                qa: cli.qa,
+            };
 
             let result = orchestration::run_task(
                 task_def,
                 run_config,
-                cli.debug,
-                cli.verbose,
-                bash_enabled,
-                !cli.record,
+                run,
                 cli.output.clone(),
                 monitor_handle,
-                cli.qa,
                 cli.artifacts_dir.clone(),
             )
             .await;
@@ -176,19 +178,21 @@ async fn main() {
             }
 
             let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
-            let bash_enabled = cli.with_bash || cli.qa;
+            let run = RunConfig {
+                debug: cli.debug,
+                verbose: cli.verbose,
+                bash_enabled: cli.with_bash || cli.qa,
+                no_recording: !cli.record,
+                qa: cli.qa,
+            };
 
             let result = suite::run_suite(
                 dir,
                 run_config,
                 filter.as_deref(),
                 &cli.output,
-                cli.debug,
-                cli.verbose,
-                bash_enabled,
-                !cli.record,
+                run,
                 monitor_handle,
-                cli.qa,
             )
             .await;
 
@@ -242,19 +246,21 @@ async fn main() {
             }
 
             let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
-            let bash_enabled = cli.with_bash || cli.qa;
+            let run = RunConfig {
+                debug: cli.debug,
+                verbose: cli.verbose,
+                bash_enabled: cli.with_bash || cli.qa,
+                no_recording: !cli.record,
+                qa: cli.qa,
+            };
 
             let result = orchestration::run_attach(
                 task_def,
                 run_config,
                 container,
-                cli.debug,
-                cli.verbose,
-                bash_enabled,
-                !cli.record,
+                run,
                 cli.output.clone(),
                 monitor_handle,
-                cli.qa,
                 cli.artifacts_dir.clone(),
             )
             .await;
@@ -297,18 +303,20 @@ async fn main() {
                 std::process::exit(e.exit_code());
             }
 
-            let bash_enabled = cli.with_bash || cli.qa;
+            let run = RunConfig {
+                debug: cli.debug,
+                verbose: cli.verbose,
+                bash_enabled: cli.with_bash || cli.qa,
+                no_recording: !cli.record,
+                qa: cli.qa,
+            };
             let result = interactive::run_interactive(
                 task_def,
                 run_config,
-                cli.debug,
-                cli.verbose,
-                bash_enabled,
-                !cli.record,
+                run,
                 cli.output.clone(),
                 *step,
                 *validate_only,
-                cli.qa,
                 cli.artifacts_dir.clone(),
             )
             .await;
@@ -576,18 +584,20 @@ async fn main() {
             }
 
             let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
-            let bash_enabled = cli.with_bash || cli.qa;
+            let run = RunConfig {
+                debug: cli.debug,
+                verbose: cli.verbose,
+                bash_enabled: cli.with_bash || cli.qa,
+                no_recording: !cli.record,
+                qa: cli.qa,
+            };
 
             let result = orchestration::run_task(
                 task_def,
                 run_config,
-                cli.debug,
-                cli.verbose,
-                bash_enabled,
-                !cli.record,
+                run,
                 cli.output.clone(),
                 monitor_handle,
-                cli.qa,
                 cli.artifacts_dir.clone(),
             )
             .await;

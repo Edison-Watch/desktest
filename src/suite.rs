@@ -243,12 +243,8 @@ pub async fn run_suite(
     run_config: Config,
     filter: Option<&str>,
     output_dir: &Path,
-    debug: bool,
-    verbose: bool,
-    bash_enabled: bool,
-    no_recording: bool,
+    run: crate::orchestration::RunConfig,
     monitor: Option<crate::monitor::MonitorHandle>,
-    qa: bool,
 ) -> Result<SuiteResult, AppError> {
     let entries = discover_tasks(dir, filter)?;
 
@@ -293,13 +289,9 @@ pub async fn run_suite(
         let result = crate::run_task(
             entry.task_def.clone(),
             run_config.clone(),
-            debug,
-            verbose,
-            bash_enabled,
-            no_recording,
+            run,
             test_output_dir.clone(),
             monitor.clone(),
-            qa,
             None,
         )
         .await;
@@ -311,7 +303,13 @@ pub async fn run_suite(
                 let eval_result = None; // Results already written by run_task
                 let status = if outcome.passed { "PASS" } else { "FAIL" };
                 println!("  Result: {status} ({:.1}s)\n", duration_ms as f64 / 1000.0);
-                results::from_outcome(&entry.task_def.id, &outcome, eval_result, duration_ms, qa)
+                results::from_outcome(
+                    &entry.task_def.id,
+                    &outcome,
+                    eval_result,
+                    duration_ms,
+                    run.qa,
+                )
             }
             Err(ref e) => {
                 println!(
