@@ -785,6 +785,7 @@ async fn run_eval_loop(
 pub(crate) async fn build_agent_loop_config(
     task_def: &task::TaskDefinition,
     session: &docker::DockerSession,
+    config: &Config,
     run: RunConfig,
 ) -> agent::loop_v2::AgentLoopV2Config {
     let max_a11y_nodes = task_def.max_a11y_nodes.unwrap_or(10_000);
@@ -846,6 +847,8 @@ pub(crate) async fn build_agent_loop_config(
         verbose: run.verbose,
         bash_enabled: run.bash_enabled,
         qa: run.qa,
+        display_width: config.display_width,
+        display_height: config.display_height,
         ..Default::default()
     }
 }
@@ -871,19 +874,18 @@ async fn run_agent_loop(
         &config.api_base_url,
     )?;
 
-    let loop_config = build_agent_loop_config(task_def, session, run).await;
+    let mut loop_config = build_agent_loop_config(task_def, session, config, run).await;
+    loop_config.test_id = task_def.id.clone();
+    loop_config.redactor = redactor.cloned();
     let full_instruction = task_def.full_instruction();
     let mut agent_loop = agent::loop_v2::AgentLoopV2::new(
         llm_client,
         session,
         artifacts_dir.to_path_buf(),
         &full_instruction,
-        (config.display_width, config.display_height),
         loop_config,
         recording,
         monitor.cloned(),
-        task_def.id.clone(),
-        redactor.cloned(),
     );
     agent_loop.run().await
 }

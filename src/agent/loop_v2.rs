@@ -51,6 +51,14 @@ pub struct AgentLoopV2Config {
     pub bash_enabled: bool,
     /// Enable QA bug reporting mode.
     pub qa: bool,
+    /// Display width in pixels.
+    pub display_width: u32,
+    /// Display height in pixels.
+    pub display_height: u32,
+    /// Test identifier for monitoring events.
+    pub test_id: String,
+    /// Secret redactor for scrubbing sensitive data from logs.
+    pub redactor: Option<Redactor>,
 }
 
 impl Default for AgentLoopV2Config {
@@ -65,6 +73,10 @@ impl Default for AgentLoopV2Config {
             verbose: false,
             bash_enabled: false,
             qa: false,
+            display_width: 1920,
+            display_height: 1080,
+            test_id: String::new(),
+            redactor: None,
         }
     }
 }
@@ -94,22 +106,20 @@ pub struct AgentLoopV2<'a> {
 
 impl<'a> AgentLoopV2<'a> {
     /// Create a new v2 agent loop.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         client: Box<dyn LlmProvider>,
         session: &'a DockerSession,
         artifacts_dir: PathBuf,
         instruction: &str,
-        display_size: (u32, u32),
         config: AgentLoopV2Config,
         recording: Option<&'a Recording>,
         monitor: Option<MonitorHandle>,
-        test_id: String,
-        redactor: Option<Redactor>,
     ) -> Self {
+        let test_id = config.test_id.clone();
+        let redactor = config.redactor.clone();
         let context = ContextManager::new(
-            display_size.0,
-            display_size.1,
+            config.display_width,
+            config.display_height,
             instruction,
             config.max_trajectory_length,
             config.bash_enabled,
@@ -899,6 +909,10 @@ mod tests {
             verbose: true,
             bash_enabled: true,
             qa: false,
+            display_width: 1920,
+            display_height: 1080,
+            test_id: String::new(),
+            redactor: None,
         };
         assert_eq!(config.max_steps, 25);
         assert_eq!(config.step_timeout.as_secs(), 120);

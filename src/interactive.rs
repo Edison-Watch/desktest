@@ -398,19 +398,18 @@ async fn run_interactive_step_inner(
         &config.api_base_url,
     )?;
 
-    let loop_config = build_agent_loop_config(task_def, session, run).await;
+    let mut loop_config = build_agent_loop_config(task_def, session, config, run).await;
+    loop_config.test_id = task_def.id.clone();
+    loop_config.redactor = redactor.cloned();
     let full_instruction = task_def.full_instruction();
     let mut agent_loop = agent::loop_v2::AgentLoopV2::new(
         llm_client,
         session,
         artifacts_dir.to_path_buf(),
         &full_instruction,
-        (config.display_width, config.display_height),
         loop_config,
         recording.as_ref(),
         None, // no monitor in interactive step mode
-        task_def.id.clone(),
-        redactor.cloned(),
     );
 
     let agent_loop_result = agent_loop.run_step_by_step().await;
