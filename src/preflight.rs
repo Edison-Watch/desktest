@@ -79,6 +79,26 @@ pub async fn run_doctor(config: &Config) -> bool {
         }
     }
 
+    // Claude CLI binary check (replaces API key check for this provider)
+    if config.provider == "claude-cli" {
+        print!("Claude CLI ..... ");
+        let _ = std::io::stdout().flush();
+        let cli_ok = std::process::Command::new("claude")
+            .arg("--version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if cli_ok {
+            println!("ok");
+        } else {
+            println!("NOT FOUND");
+            println!("  Install Claude Code from https://claude.ai/code");
+            all_ok = false;
+        }
+    }
+
     // API key check
     print!("API key ({}) ... ", config.provider);
     let _ = std::io::stdout().flush();
