@@ -37,8 +37,6 @@ pub struct ParsedResponse {
     pub bash_blocks: Vec<String>,
     /// Bug report descriptions extracted from BUG commands in the response.
     pub bug_reports: Vec<String>,
-    /// The full raw text of the LLM response (for logging/context).
-    pub _raw_text: String,
 }
 
 /// Structured JSON response from the execute-action script.
@@ -84,7 +82,6 @@ pub fn parse_response(text: &str) -> ParsedResponse {
         code_blocks,
         bash_blocks,
         bug_reports,
-        _raw_text: text.to_string(),
     }
 }
 
