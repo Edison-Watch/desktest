@@ -253,8 +253,9 @@ fn build_cli_prompt(messages: &[ChatMessage]) -> Result<PromptResult, AppError> 
                         is_current,
                     };
 
-                    // Save screenshot(s). In practice there's one per observation.
-                    for data_url in &images {
+                    // Save screenshot. Observations have one screenshot each;
+                    // if multiple images are present, save only the first.
+                    if let Some(data_url) = images.first() {
                         let path = save_screenshot(&temp_dir, obs_counter, data_url)?;
                         obs.screenshot = Some(path);
                     }
