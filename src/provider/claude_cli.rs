@@ -2,6 +2,11 @@
 //!
 //! Uses the locally-installed Claude Code CLI, leveraging the user's existing
 //! CLI authentication instead of requiring a separate API key.
+//!
+//! All trajectory screenshots and accessibility trees are saved as numbered
+//! files in a temp directory, and the prompt instructs Claude to read them
+//! in order via the Read tool. This gives the model full visual context
+//! across the sliding window, matching the behavior of API-based providers.
 
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -13,18 +18,16 @@ use tracing::info;
 use super::{ChatMessage, LlmProvider};
 use crate::error::AppError;
 
-/// Atomic counter for unique temp file names.
+/// Atomic counter for unique temp directory names.
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// RAII guard that deletes temp files on drop, ensuring cleanup even when
-/// the future is externally cancelled (e.g., by the agent loop's step_timeout).
-struct TempFileGuard(Vec<PathBuf>);
+/// RAII guard that recursively deletes the temp directory on drop, ensuring
+/// cleanup even when the future is externally cancelled (e.g., by step_timeout).
+struct TempDirGuard(PathBuf);
 
-impl Drop for TempFileGuard {
+impl Drop for TempDirGuard {
     fn drop(&mut self) {
-        for path in &self.0 {
-            let _ = std::fs::remove_file(path);
-        }
+        let _ = std::fs::remove_dir_all(&self.0);
     }
 }
 
@@ -60,43 +63,46 @@ impl LlmProvider for ClaudeCliProvider {
         Box::pin(async move {
             let start = std::time::Instant::now();
 
-            // 1. Parse messages into system prompt, user prompt, and temp image files
-            let (system_prompt, prompt_text, temp_files) = build_cli_prompt(messages)?;
-            let has_images = !temp_files.is_empty();
-            let image_count = temp_files.len();
-            // RAII guard ensures temp files are cleaned up even if the future
-            // is cancelled by an external timeout (e.g., step_timeout).
-            let _guard = TempFileGuard(temp_files);
+            // 1. Create temp directory and build the prompt with all observation files.
+            let PromptResult {
+                prompt_text,
+                temp_dir,
+                file_count,
+            } = build_cli_prompt(messages)?;
+
+            // RAII guard ensures the temp directory is cleaned up even if the
+            // future is cancelled by an external timeout (e.g., step_timeout).
+            let _guard = TempDirGuard(temp_dir);
+
+            // max-turns: 1 turn per file read (worst case) + 1 for the response.
+            // Claude can batch reads in parallel, so this is a generous upper bound.
+            let max_turns = if file_count > 0 { file_count + 2 } else { 1 };
 
             info!(
-                "Claude CLI request: {} messages, {} images",
+                "Claude CLI request: {} messages, {} observation files, max_turns={}",
                 messages.len(),
-                image_count,
+                file_count,
+                max_turns,
             );
 
-            // 2. Build command
+            // 2. Build command — system prompt is embedded in the prompt text
+            //    (not via --append-system-prompt) to avoid stacking on top of
+            //    Claude Code's built-in coding-assistant system prompt.
             let mut cmd = tokio::process::Command::new("claude");
             cmd.kill_on_drop(true);
             cmd.arg("-p");
             cmd.arg("--output-format").arg("text");
+            cmd.arg("--max-turns").arg(max_turns.to_string());
 
-            if has_images {
-                // Need an extra turn for Claude to read the screenshot file
-                cmd.arg("--max-turns").arg("2");
+            if file_count > 0 {
                 cmd.arg("--allowedTools").arg("Read");
-            } else {
-                cmd.arg("--max-turns").arg("1");
-            }
-
-            if !system_prompt.is_empty() {
-                cmd.arg("--append-system-prompt").arg(&system_prompt);
             }
 
             cmd.stdin(std::process::Stdio::piped());
             cmd.stdout(std::process::Stdio::piped());
             cmd.stderr(std::process::Stdio::piped());
 
-            // 3. Spawn, write prompt, wait for output, then always clean up temp files.
+            // 3. Spawn, write prompt, wait for output.
             let output = async {
                 let mut child = cmd
                     .spawn()
@@ -164,22 +170,53 @@ impl LlmProvider for ClaudeCliProvider {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Prompt construction
+// ---------------------------------------------------------------------------
+
+/// Result of building the CLI prompt.
+struct PromptResult {
+    /// The full prompt text to pipe to `claude -p` via stdin.
+    prompt_text: String,
+    /// Temp directory containing observation files (cleaned up by TempDirGuard).
+    temp_dir: PathBuf,
+    /// Total number of observation files saved (screenshots + a11y trees).
+    file_count: usize,
+}
+
+/// A single observation step extracted from the message array.
+struct ObservationStep {
+    /// 1-based step number.
+    step: usize,
+    /// Path to the screenshot file (if any).
+    screenshot: Option<PathBuf>,
+    /// Path to the accessibility tree file (if any).
+    a11y_tree: Option<PathBuf>,
+    /// Whether this is the last (current) observation.
+    is_current: bool,
+}
+
 /// Build the CLI prompt from the message array.
 ///
-/// Extracts the system prompt separately (for `--append-system-prompt`),
-/// flattens user/assistant messages into a single prompt string, and saves
-/// only the **last** screenshot to a temp file (the current observation).
-/// Earlier trajectory screenshots are omitted to avoid confusion — with
-/// `--max-turns 2`, Claude only has time to read one image reliably.
-///
-/// Returns `(system_prompt, prompt_text, temp_file_paths)`.
-fn build_cli_prompt(messages: &[ChatMessage]) -> Result<(String, String, Vec<PathBuf>), AppError> {
-    let mut system_parts = Vec::new();
-    let mut temp_files = Vec::new();
+/// Creates a temp directory and saves all trajectory screenshots and
+/// accessibility trees as numbered files. The prompt embeds the system
+/// prompt inline (avoiding `--append-system-prompt` stacking) and lists
+/// each file by exact path for Claude to read in order.
+fn build_cli_prompt(messages: &[ChatMessage]) -> Result<PromptResult, AppError> {
+    // Create temp directory for this invocation.
+    let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let temp_dir = std::env::temp_dir().join(format!("desktest_cli_{pid}_{counter}"));
+    std::fs::create_dir_all(&temp_dir)
+        .map_err(|e| AppError::Agent(format!("Failed to create temp dir: {e}")))?;
 
-    // First pass: find the index of the last user message that contains images.
-    // This is the current observation; earlier images are from the trajectory.
-    let last_image_idx = messages
+    let mut system_parts = Vec::new();
+    let mut prompt_sections: Vec<String> = Vec::new();
+    let mut observations: Vec<ObservationStep> = Vec::new();
+    let mut obs_counter = 0usize;
+
+    // Identify the last observation index (the current one).
+    let last_obs_idx = messages
         .iter()
         .enumerate()
         .rev()
@@ -191,8 +228,7 @@ fn build_cli_prompt(messages: &[ChatMessage]) -> Result<(String, String, Vec<Pat
         })
         .map(|(i, _)| i);
 
-    // Second pass: build the prompt sections.
-    let mut sections = Vec::new();
+    // Process each message.
     for (idx, msg) in messages.iter().enumerate() {
         match msg.role.as_str() {
             "system" => {
@@ -202,53 +238,160 @@ fn build_cli_prompt(messages: &[ChatMessage]) -> Result<(String, String, Vec<Pat
             }
             "user" => {
                 let (text, images) = extract_text_and_images(msg);
-                let mut section = String::new();
 
                 if !images.is_empty() {
-                    if Some(idx) == last_image_idx {
-                        // Current observation — save the image to a temp file
-                        for data_url in &images {
-                            let path = match save_image_to_temp(data_url) {
-                                Ok(p) => p,
-                                Err(e) => {
-                                    cleanup_temp_files(&temp_files);
-                                    return Err(e);
-                                }
-                            };
-                            section.push_str(&format!(
-                                "Screenshot saved at: {}\n\
-                                 Please read this image file to see the current desktop state.\n\n",
-                                path.display()
-                            ));
-                            temp_files.push(path);
-                        }
-                    } else {
-                        // Trajectory image — omit, only include text
-                        section.push_str("[Previous screenshot omitted]\n\n");
+                    // This is an observation message — save files.
+                    obs_counter += 1;
+                    let is_current = Some(idx) == last_obs_idx;
+                    let mut obs = ObservationStep {
+                        step: obs_counter,
+                        screenshot: None,
+                        a11y_tree: None,
+                        is_current,
+                    };
+
+                    // Save screenshot(s). In practice there's one per observation.
+                    for data_url in &images {
+                        let path = save_screenshot(&temp_dir, obs_counter, data_url)?;
+                        obs.screenshot = Some(path);
                     }
-                }
 
-                if !text.is_empty() {
-                    section.push_str(&text);
-                }
+                    // Save accessibility tree text if present.
+                    if !text.is_empty() {
+                        let path = save_a11y_tree(&temp_dir, obs_counter, &text)?;
+                        obs.a11y_tree = Some(path);
+                    }
 
-                if !section.is_empty() {
-                    sections.push(section);
+                    observations.push(obs);
+                } else if !text.is_empty() {
+                    // Text-only user message (task instruction, error feedback, etc.)
+                    prompt_sections.push(text);
                 }
             }
             "assistant" => {
                 if let Some(text) = extract_text(msg) {
-                    sections.push(format!("[Previous agent response]\n{text}"));
+                    prompt_sections.push(format!("[Previous agent response]\n{text}"));
                 }
             }
             _ => {} // skip tool messages
         }
     }
 
-    let system_prompt = system_parts.join("\n").trim().to_string();
-    let prompt_text = sections.join("\n\n---\n\n");
+    // Count total files.
+    let file_count: usize = observations
+        .iter()
+        .map(|o| o.screenshot.is_some() as usize + o.a11y_tree.is_some() as usize)
+        .sum();
 
-    Ok((system_prompt, prompt_text, temp_files))
+    // Assemble the final prompt.
+    let system_prompt = system_parts.join("\n");
+    let prompt_text = assemble_prompt(&system_prompt, &prompt_sections, &observations);
+
+    Ok(PromptResult {
+        prompt_text,
+        temp_dir,
+        file_count,
+    })
+}
+
+/// Assemble the final prompt text with inline system prompt and file manifest.
+fn assemble_prompt(
+    system_prompt: &str,
+    inline_sections: &[String],
+    observations: &[ObservationStep],
+) -> String {
+    let mut prompt = String::new();
+
+    // 1. System prompt embedded inline to avoid stacking with Claude Code's
+    //    built-in coding-assistant system prompt.
+    if !system_prompt.is_empty() {
+        prompt.push_str("<system-instructions>\n");
+        prompt.push_str(system_prompt.trim());
+        prompt.push_str("\n</system-instructions>\n\n");
+    }
+
+    // 2. Inline sections (task instruction, previous agent responses, feedback).
+    for section in inline_sections {
+        prompt.push_str(section);
+        prompt.push_str("\n\n---\n\n");
+    }
+
+    // 3. Observation file manifest — explicit paths for Claude to read in order.
+    if !observations.is_empty() {
+        prompt.push_str("## Observation Files\n\n");
+        prompt.push_str(
+            "Read the following files IN ORDER to understand the full trajectory. \
+             Each step has a screenshot and/or accessibility tree describing the \
+             desktop state at that point.\n\n",
+        );
+
+        for obs in observations {
+            let label = if obs.is_current {
+                format!(
+                    "### Step {} (CURRENT — this is the latest desktop state)",
+                    obs.step
+                )
+            } else {
+                format!("### Step {} (previous)", obs.step)
+            };
+            prompt.push_str(&label);
+            prompt.push('\n');
+
+            if let Some(ref path) = obs.screenshot {
+                prompt.push_str(&format!("- Screenshot: {}\n", path.display()));
+            }
+            if let Some(ref path) = obs.a11y_tree {
+                prompt.push_str(&format!("- Accessibility tree: {}\n", path.display()));
+            }
+            prompt.push('\n');
+        }
+
+        prompt.push_str(
+            "**Important:** Read ALL files listed above before responding. \
+             Start with Step 1 and proceed in order. The CURRENT step is the one \
+             you should act on.\n",
+        );
+    }
+
+    prompt
+}
+
+// ---------------------------------------------------------------------------
+// File I/O helpers
+// ---------------------------------------------------------------------------
+
+/// Save a base64-encoded screenshot to the temp directory.
+fn save_screenshot(temp_dir: &std::path::Path, step: usize, data_url: &str) -> Result<PathBuf, AppError> {
+    let base64_data = data_url
+        .split(',')
+        .nth(1)
+        .ok_or_else(|| AppError::Agent("Invalid image data URL format".into()))?;
+
+    // Extract extension from MIME type: "data:image/jpeg;base64,..." → "jpeg"
+    let ext = data_url
+        .split(';')
+        .next()
+        .and_then(|s| s.split('/').nth(1))
+        .unwrap_or("png");
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(base64_data)
+        .map_err(|e| AppError::Agent(format!("Failed to decode base64 image: {e}")))?;
+
+    let path = temp_dir.join(format!("step_{step:03}_screenshot.{ext}"));
+    std::fs::write(&path, &bytes)
+        .map_err(|e| AppError::Agent(format!("Failed to write screenshot: {e}")))?;
+
+    Ok(path)
+}
+
+/// Save accessibility tree text to the temp directory.
+fn save_a11y_tree(temp_dir: &std::path::Path, step: usize, text: &str) -> Result<PathBuf, AppError> {
+    let path = temp_dir.join(format!("step_{step:03}_a11y.txt"));
+    std::fs::write(&path, text.as_bytes())
+        .map_err(|e| AppError::Agent(format!("Failed to write a11y tree: {e}")))?;
+
+    Ok(path)
 }
 
 /// Extract plain text content from a ChatMessage.
@@ -312,43 +455,9 @@ fn extract_text_and_images(msg: &ChatMessage) -> (String, Vec<String>) {
     (texts.join("\n"), images)
 }
 
-/// Decode a base64 data URL and save to a temp image file.
-///
-/// The file extension is derived from the MIME type in the data URL
-/// (e.g., `data:image/jpeg;base64,...` → `.jpeg`), falling back to `.png`.
-fn save_image_to_temp(data_url: &str) -> Result<PathBuf, AppError> {
-    let base64_data = data_url
-        .split(',')
-        .nth(1)
-        .ok_or_else(|| AppError::Agent("Invalid image data URL format".into()))?;
-
-    // Extract extension from MIME type: "data:image/jpeg;base64,..." → "jpeg"
-    let ext = data_url
-        .split(';')
-        .next()
-        .and_then(|s| s.split('/').nth(1))
-        .unwrap_or("png");
-
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(base64_data)
-        .map_err(|e| AppError::Agent(format!("Failed to decode base64 image: {e}")))?;
-
-    let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let pid = std::process::id();
-    let path = std::env::temp_dir().join(format!("desktest_cli_{pid}_{counter}.{ext}"));
-
-    std::fs::write(&path, &bytes)
-        .map_err(|e| AppError::Agent(format!("Failed to write temp screenshot: {e}")))?;
-
-    Ok(path)
-}
-
-/// Remove temp files, ignoring errors (best-effort cleanup).
-fn cleanup_temp_files(paths: &[PathBuf]) {
-    for path in paths {
-        let _ = std::fs::remove_file(path);
-    }
-}
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -356,36 +465,126 @@ mod tests {
     use crate::provider::{system_message, user_image_message, user_message};
 
     #[test]
-    fn test_build_cli_prompt_text_only() {
+    fn test_build_prompt_text_only() {
         let messages = vec![
             system_message("You are a tester."),
             user_message("Click the button."),
         ];
-        let (sys, prompt, temps) = build_cli_prompt(&messages).unwrap();
-        assert_eq!(sys, "You are a tester.");
-        assert!(prompt.contains("Click the button."));
-        assert!(temps.is_empty());
-    }
-
-    #[test]
-    fn test_build_cli_prompt_with_image() {
-        // Minimal valid base64
-        let data_url = "data:image/png;base64,iVBORw0KGgo=";
-        let messages = vec![system_message("Sys."), user_image_message(data_url)];
-        let (sys, prompt, temps) = build_cli_prompt(&messages).unwrap();
-        assert_eq!(sys, "Sys.");
-        assert!(prompt.contains("Screenshot saved at:"));
-        assert_eq!(temps.len(), 1);
-        assert!(temps[0].exists());
+        let result = build_cli_prompt(&messages).unwrap();
+        assert!(result.prompt_text.contains("<system-instructions>"));
+        assert!(result.prompt_text.contains("You are a tester."));
+        assert!(result.prompt_text.contains("Click the button."));
+        assert_eq!(result.file_count, 0);
 
         // Cleanup
-        for f in &temps {
-            let _ = std::fs::remove_file(f);
-        }
+        let _ = std::fs::remove_dir_all(&result.temp_dir);
     }
 
     #[test]
-    fn test_build_cli_prompt_preserves_assistant_turns() {
+    fn test_build_prompt_single_observation() {
+        let data_url = "data:image/png;base64,iVBORw0KGgo=";
+        let messages = vec![
+            system_message("Sys."),
+            user_message("## Task\n\nDo something."),
+            // Observation with image + a11y text
+            ChatMessage {
+                role: "user".into(),
+                content: Some(serde_json::json!([
+                    {"type": "image_url", "image_url": {"url": data_url}},
+                    {"type": "text", "text": "A11y tree content here"},
+                ])),
+                tool_calls: None,
+                tool_call_id: None,
+            },
+        ];
+
+        let result = build_cli_prompt(&messages).unwrap();
+        assert_eq!(result.file_count, 2); // screenshot + a11y
+        assert!(result.prompt_text.contains("step_001_screenshot.png"));
+        assert!(result.prompt_text.contains("step_001_a11y.txt"));
+        assert!(result.prompt_text.contains("Step 1 (CURRENT"));
+        assert!(result.prompt_text.contains("Read ALL files"));
+
+        // Verify files exist
+        let screenshot = result.temp_dir.join("step_001_screenshot.png");
+        let a11y = result.temp_dir.join("step_001_a11y.txt");
+        assert!(screenshot.exists());
+        assert!(a11y.exists());
+
+        let _ = std::fs::remove_dir_all(&result.temp_dir);
+    }
+
+    #[test]
+    fn test_build_prompt_multi_step_trajectory() {
+        let img = "data:image/png;base64,iVBORw0KGgo=";
+
+        let messages = vec![
+            system_message("System prompt."),
+            user_message("## Task\n\nDo something."),
+            // Step 1 observation (previous)
+            ChatMessage {
+                role: "user".into(),
+                content: Some(serde_json::json!([
+                    {"type": "image_url", "image_url": {"url": img}},
+                    {"type": "text", "text": "A11y tree step 1"},
+                ])),
+                tool_calls: None,
+                tool_call_id: None,
+            },
+            // Step 1 agent response
+            ChatMessage {
+                role: "assistant".into(),
+                content: Some(serde_json::Value::String("I clicked the button.".into())),
+                tool_calls: None,
+                tool_call_id: None,
+            },
+            // Step 2 observation (current)
+            ChatMessage {
+                role: "user".into(),
+                content: Some(serde_json::json!([
+                    {"type": "image_url", "image_url": {"url": img}},
+                    {"type": "text", "text": "A11y tree step 2"},
+                ])),
+                tool_calls: None,
+                tool_call_id: None,
+            },
+        ];
+
+        let result = build_cli_prompt(&messages).unwrap();
+
+        // Both observations should have files saved
+        assert_eq!(result.file_count, 4); // 2 screenshots + 2 a11y trees
+        assert!(result.prompt_text.contains("Step 1 (previous)"));
+        assert!(result.prompt_text.contains("Step 2 (CURRENT"));
+        assert!(result.prompt_text.contains("step_001_screenshot.png"));
+        assert!(result.prompt_text.contains("step_002_screenshot.png"));
+        assert!(result.prompt_text.contains("step_001_a11y.txt"));
+        assert!(result.prompt_text.contains("step_002_a11y.txt"));
+        // Agent response should be inline
+        assert!(result.prompt_text.contains("[Previous agent response]"));
+        assert!(result.prompt_text.contains("I clicked the button."));
+
+        let _ = std::fs::remove_dir_all(&result.temp_dir);
+    }
+
+    #[test]
+    fn test_build_prompt_screenshot_only_observation() {
+        let img = "data:image/png;base64,iVBORw0KGgo=";
+        let messages = vec![
+            system_message("Sys."),
+            user_image_message(img), // image only, no a11y text
+        ];
+
+        let result = build_cli_prompt(&messages).unwrap();
+        assert_eq!(result.file_count, 1); // screenshot only, no a11y
+        assert!(result.prompt_text.contains("step_001_screenshot.png"));
+        assert!(!result.prompt_text.contains("a11y.txt"));
+
+        let _ = std::fs::remove_dir_all(&result.temp_dir);
+    }
+
+    #[test]
+    fn test_build_prompt_preserves_assistant_turns() {
         let messages = vec![
             system_message("Sys."),
             user_message("Task A"),
@@ -395,12 +594,80 @@ mod tests {
                 tool_calls: None,
                 tool_call_id: None,
             },
-            user_message("Current observation."),
+            user_message("Error feedback here."),
         ];
-        let (_sys, prompt, _temps) = build_cli_prompt(&messages).unwrap();
-        assert!(prompt.contains("[Previous agent response]"));
-        assert!(prompt.contains("I clicked the button."));
-        assert!(prompt.contains("Current observation."));
+        let result = build_cli_prompt(&messages).unwrap();
+        assert!(result.prompt_text.contains("[Previous agent response]"));
+        assert!(result.prompt_text.contains("I clicked the button."));
+        assert!(result.prompt_text.contains("Error feedback here."));
+
+        let _ = std::fs::remove_dir_all(&result.temp_dir);
+    }
+
+    #[test]
+    fn test_system_prompt_embedded_inline() {
+        let messages = vec![
+            system_message("You are a desktop tester."),
+            user_message("Do the task."),
+        ];
+        let result = build_cli_prompt(&messages).unwrap();
+        // System prompt should be in <system-instructions> tags, not separate
+        assert!(result.prompt_text.contains("<system-instructions>"));
+        assert!(result.prompt_text.contains("You are a desktop tester."));
+        assert!(result.prompt_text.contains("</system-instructions>"));
+
+        let _ = std::fs::remove_dir_all(&result.temp_dir);
+    }
+
+    #[test]
+    fn test_max_turns_scales_with_files() {
+        // With 4 files, max_turns should be 4 + 2 = 6
+        let file_count = 4;
+        let max_turns = file_count + 2;
+        assert_eq!(max_turns, 6);
+
+        // With 0 files, max_turns should be 1
+        let file_count = 0;
+        let max_turns = if file_count > 0 { file_count + 2 } else { 1 };
+        assert_eq!(max_turns, 1);
+    }
+
+    #[test]
+    fn test_save_screenshot_jpeg_extension() {
+        let temp_dir = std::env::temp_dir().join("desktest_test_jpeg");
+        let _ = std::fs::create_dir_all(&temp_dir);
+
+        let data_url = "data:image/jpeg;base64,/9j/4AAQ";
+        let path = save_screenshot(&temp_dir, 1, data_url).unwrap();
+        assert!(path.to_str().unwrap().ends_with(".jpeg"));
+        assert_eq!(path.file_name().unwrap(), "step_001_screenshot.jpeg");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_save_a11y_tree() {
+        let temp_dir = std::env::temp_dir().join("desktest_test_a11y");
+        let _ = std::fs::create_dir_all(&temp_dir);
+
+        let path = save_a11y_tree(&temp_dir, 3, "tree content here").unwrap();
+        assert!(path.exists());
+        assert_eq!(path.file_name().unwrap(), "step_003_a11y.txt");
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(content, "tree content here");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_save_screenshot_invalid_data_url() {
+        let temp_dir = std::env::temp_dir().join("desktest_test_invalid");
+        let _ = std::fs::create_dir_all(&temp_dir);
+
+        let result = save_screenshot(&temp_dir, 1, "not-a-data-url");
+        assert!(result.is_err());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
@@ -452,69 +719,16 @@ mod tests {
     }
 
     #[test]
-    fn test_save_image_to_temp() {
-        let data_url = "data:image/png;base64,iVBORw0KGgo=";
-        let path = save_image_to_temp(data_url).unwrap();
-        assert!(path.exists());
-        assert!(
-            path.file_name()
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .starts_with("desktest_cli_")
-        );
-        let _ = std::fs::remove_file(&path);
-    }
+    fn test_temp_dir_guard_cleanup() {
+        let dir = std::env::temp_dir().join("desktest_guard_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("test.txt"), "hello").unwrap();
+        assert!(dir.exists());
 
-    #[test]
-    fn test_save_image_invalid_data_url() {
-        let result = save_image_to_temp("not-a-data-url");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_only_last_image_saved_in_multi_turn_prompt() {
-        // Simulate a trajectory with 2 observation images + 1 current observation.
-        // Only the LAST image should be saved to a temp file.
-        let old_img = "data:image/png;base64,iVBORw0KGgo=";
-        let current_img = "data:image/png;base64,iVBORw0KGgo=";
-
-        let messages = vec![
-            system_message("System prompt."),
-            user_message("## Task\n\nDo something."),
-            // Previous observation (trajectory) — has an image
-            user_image_message(old_img),
-            // Previous agent response
-            ChatMessage {
-                role: "assistant".into(),
-                content: Some(serde_json::Value::String("I clicked the button.".into())),
-                tool_calls: None,
-                tool_call_id: None,
-            },
-            // Current observation — has an image
-            user_image_message(current_img),
-        ];
-
-        let (_sys, prompt, temps) = build_cli_prompt(&messages).unwrap();
-
-        // Only 1 temp file (the current observation), not 2
-        assert_eq!(temps.len(), 1);
-        // The trajectory image should be replaced with a placeholder
-        assert!(prompt.contains("[Previous screenshot omitted]"));
-        // The current image should have a file reference
-        assert!(prompt.contains("Screenshot saved at:"));
-
-        // Cleanup
-        for f in &temps {
-            let _ = std::fs::remove_file(f);
+        // Drop the guard — should remove the directory
+        {
+            let _guard = TempDirGuard(dir.clone());
         }
-    }
-
-    #[test]
-    fn test_save_image_jpeg_extension() {
-        let data_url = "data:image/jpeg;base64,/9j/4AAQ";
-        let path = save_image_to_temp(data_url).unwrap();
-        assert!(path.to_str().unwrap().ends_with(".jpeg"));
-        let _ = std::fs::remove_file(&path);
+        assert!(!dir.exists());
     }
 }

@@ -26,34 +26,29 @@ No `api_key`, `ANTHROPIC_API_KEY`, or any other key is needed. The provider shel
 
 Each agent loop step:
 
-1. Flattens the message array (system prompt, trajectory, current observation) into a single text prompt
-2. Saves any base64 screenshots to temporary image files in the system temp directory
-3. Runs `claude -p --output-format text` with the prompt piped via stdin
-4. When screenshots are present, passes `--allowedTools Read --max-turns 2` so Claude can view the image file
+1. Creates a temp directory and saves all trajectory screenshots and accessibility trees as numbered files (e.g., `step_001_screenshot.png`, `step_001_a11y.txt`)
+2. Builds a structured prompt with the system prompt embedded inline (in `<system-instructions>` tags) and an explicit file manifest listing each observation file by exact path
+3. Runs `claude -p --output-format text --allowedTools Read` with `--max-turns` scaled to the number of files
+4. Claude reads the observation files in order via the Read tool, gaining full visual context of the trajectory
 5. Returns the text response to the agent loop
-6. Cleans up temporary files
+6. Cleans up the temp directory (via RAII guard, even on timeout/cancellation)
 
 ## Limitations
 
 ### Latency overhead per step
 
-Each step spawns a new `claude` process. This adds roughly 2-5 seconds of overhead per step compared to direct API calls. For a 15-step test, expect an additional 30-75 seconds of wall-clock time.
+Each step spawns a new `claude` process and Claude reads observation files via tool calls. Expect ~15-20 seconds per step. For a 10-step test, that's roughly 3-4 minutes of LLM time.
 
 ### No conversation state between steps
 
-The CLI provider operates in single-shot mode (`claude -p`). There is no persistent conversation session between agent steps. The full sliding window context is rebuilt and passed as a single prompt each step. This means:
+The CLI provider operates in single-shot mode (`claude -p`). There is no persistent conversation session between agent steps. The full sliding window context is rebuilt each step. This means:
 
 - The model sees flattened text rather than structured multi-turn messages
-- Previous screenshots from the trajectory are described in text, not re-sent as images — only the **current** screenshot is passed as an actual image file
 - Token efficiency may be slightly worse than native API calls with proper message arrays
-
-### Image handling requires an extra turn
-
-When a screenshot is present, the provider uses `--max-turns 2` and `--allowedTools Read` so Claude can read the temp image file. This adds one extra tool-use round-trip per step compared to the API providers, which embed images directly in the request.
 
 ### No tool-use passthrough
 
-The `tools` parameter from the agent loop is ignored. The provider only uses Claude Code's built-in `Read` tool for viewing screenshots. This is fine for the standard PyAutoGUI-based agent loop, which doesn't use LLM tool calling.
+The `tools` parameter from the agent loop is ignored. The provider only uses Claude Code's built-in `Read` tool for viewing observation files. This is fine for the standard PyAutoGUI-based agent loop, which doesn't use LLM tool calling.
 
 ### Model selection
 
