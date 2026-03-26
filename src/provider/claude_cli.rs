@@ -458,4 +458,50 @@ mod tests {
         let result = save_image_to_temp("not-a-data-url");
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_only_last_image_saved_in_multi_turn_prompt() {
+        // Simulate a trajectory with 2 observation images + 1 current observation.
+        // Only the LAST image should be saved to a temp file.
+        let old_img = "data:image/png;base64,iVBORw0KGgo=";
+        let current_img = "data:image/png;base64,iVBORw0KGgo=";
+
+        let messages = vec![
+            system_message("System prompt."),
+            user_message("## Task\n\nDo something."),
+            // Previous observation (trajectory) — has an image
+            user_image_message(old_img),
+            // Previous agent response
+            ChatMessage {
+                role: "assistant".into(),
+                content: Some(serde_json::Value::String("I clicked the button.".into())),
+                tool_calls: None,
+                tool_call_id: None,
+            },
+            // Current observation — has an image
+            user_image_message(current_img),
+        ];
+
+        let (_sys, prompt, temps) = build_cli_prompt(&messages).unwrap();
+
+        // Only 1 temp file (the current observation), not 2
+        assert_eq!(temps.len(), 1);
+        // The trajectory image should be replaced with a placeholder
+        assert!(prompt.contains("[Previous screenshot omitted]"));
+        // The current image should have a file reference
+        assert!(prompt.contains("Screenshot saved at:"));
+
+        // Cleanup
+        for f in &temps {
+            let _ = std::fs::remove_file(f);
+        }
+    }
+
+    #[test]
+    fn test_save_image_jpeg_extension() {
+        let data_url = "data:image/jpeg;base64,/9j/4AAQ";
+        let path = save_image_to_temp(data_url).unwrap();
+        assert!(path.to_str().unwrap().ends_with(".jpeg"));
+        let _ = std::fs::remove_file(&path);
+    }
 }
