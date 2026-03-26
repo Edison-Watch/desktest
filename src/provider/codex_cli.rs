@@ -150,10 +150,7 @@ impl LlmProvider for CodexCliProvider {
                     if stdout.is_empty() {
                         String::new()
                     } else {
-                        format!(
-                            "\nstdout: {}",
-                            stdout.chars().take(500).collect::<String>()
-                        )
+                        format!("\nstdout: {}", stdout.chars().take(500).collect::<String>())
                     },
                 )));
             }
@@ -161,9 +158,7 @@ impl LlmProvider for CodexCliProvider {
             // 5. Read response from the output file written by `-o`.
             let result = tokio::fs::read_to_string(&output_file)
                 .await
-                .map_err(|e| {
-                    AppError::Agent(format!("Failed to read codex output file: {e}"))
-                })?
+                .map_err(|e| AppError::Agent(format!("Failed to read codex output file: {e}")))?
                 .trim()
                 .to_string();
 
@@ -520,11 +515,12 @@ mod tests {
 
         // Verify screenshot file exists
         assert!(result.screenshot_paths[0].exists());
-        assert!(result
-            .screenshot_paths[0]
-            .to_str()
-            .unwrap()
-            .ends_with("step_001_screenshot.png"));
+        assert!(
+            result.screenshot_paths[0]
+                .to_str()
+                .unwrap()
+                .ends_with("step_001_screenshot.png")
+        );
 
         let _ = std::fs::remove_dir_all(&result.temp_dir);
     }
@@ -711,11 +707,7 @@ mod tests {
             .filter_map(|e| e.ok())
             .collect();
         assert_eq!(entries.len(), 1);
-        assert!(entries[0]
-            .file_name()
-            .to_str()
-            .unwrap()
-            .ends_with(".png"));
+        assert!(entries[0].file_name().to_str().unwrap().ends_with(".png"));
 
         let _ = std::fs::remove_dir_all(&result.temp_dir);
     }
