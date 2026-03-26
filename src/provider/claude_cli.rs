@@ -155,15 +155,32 @@ impl LlmProvider for ClaudeCliProvider {
 ///
 /// Extracts the system prompt separately (for `--append-system-prompt`),
 /// flattens user/assistant messages into a single prompt string, and saves
-/// any embedded base64 images to temp files.
+/// only the **last** screenshot to a temp file (the current observation).
+/// Earlier trajectory screenshots are omitted to avoid confusion — with
+/// `--max-turns 2`, Claude only has time to read one image reliably.
 ///
 /// Returns `(system_prompt, prompt_text, temp_file_paths)`.
 fn build_cli_prompt(messages: &[ChatMessage]) -> Result<(String, String, Vec<PathBuf>), AppError> {
     let mut system_parts = Vec::new();
-    let mut sections = Vec::new();
     let mut temp_files = Vec::new();
 
-    for msg in messages {
+    // First pass: find the index of the last user message that contains images.
+    // This is the current observation; earlier images are from the trajectory.
+    let last_image_idx = messages
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, msg)| {
+            msg.role == "user" && {
+                let (_, images) = extract_text_and_images(msg);
+                !images.is_empty()
+            }
+        })
+        .map(|(i, _)| i);
+
+    // Second pass: build the prompt sections.
+    let mut sections = Vec::new();
+    for (idx, msg) in messages.iter().enumerate() {
         match msg.role.as_str() {
             "system" => {
                 if let Some(text) = extract_text(msg) {
@@ -174,21 +191,28 @@ fn build_cli_prompt(messages: &[ChatMessage]) -> Result<(String, String, Vec<Pat
                 let (text, images) = extract_text_and_images(msg);
                 let mut section = String::new();
 
-                for data_url in &images {
-                    let path = match save_image_to_temp(data_url) {
-                        Ok(p) => p,
-                        Err(e) => {
-                            // Clean up any files already created before propagating
-                            cleanup_temp_files(&temp_files);
-                            return Err(e);
+                if !images.is_empty() {
+                    if Some(idx) == last_image_idx {
+                        // Current observation — save the image to a temp file
+                        for data_url in &images {
+                            let path = match save_image_to_temp(data_url) {
+                                Ok(p) => p,
+                                Err(e) => {
+                                    cleanup_temp_files(&temp_files);
+                                    return Err(e);
+                                }
+                            };
+                            section.push_str(&format!(
+                                "Screenshot saved at: {}\n\
+                                 Please read this image file to see the current desktop state.\n\n",
+                                path.display()
+                            ));
+                            temp_files.push(path);
                         }
-                    };
-                    section.push_str(&format!(
-                        "Screenshot saved at: {}\n\
-                         Please read this image file to see the current desktop state.\n\n",
-                        path.display()
-                    ));
-                    temp_files.push(path);
+                    } else {
+                        // Trajectory image — omit, only include text
+                        section.push_str("[Previous screenshot omitted]\n\n");
+                    }
                 }
 
                 if !text.is_empty() {
