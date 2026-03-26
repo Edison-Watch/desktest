@@ -175,7 +175,7 @@ if (HAS_RECORDING) {
 function badgeClass(result) {
   if (!result) return 'fail';
   if (result === 'success') return 'success';
-  if (result === 'evaluation_passed') return 'done';
+  if (result === 'evaluation_passed') return 'pass';
   if (result === 'done') return 'done';
   if (result.startsWith('error') || result === 'fail' || result === 'evaluation_error') return 'error';
   if (result === 'evaluation_failed') return 'fail';
