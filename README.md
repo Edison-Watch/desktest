@@ -63,12 +63,24 @@ Use desktest as the eyes for your coding agent. You watch the test live, then ha
 
 `--monitor` is designed for human eyes (real-time web dashboard), while `logs` is designed for agent consumption (structured terminal output). Together they close the loop between observing a failure and fixing it.
 
+## Claude Code Integration
+
+Desktest can use the **Claude Code CLI** as an LLM provider, letting you run tests with your existing Claude Code subscription — no separate API key needed:
+
+```bash
+desktest run task.json --provider claude-cli
+```
+
+Under the hood, each agent step shells out to `claude -p`, saves trajectory screenshots and accessibility trees as files, and instructs Claude to read them via its Read tool. This gives the model full visual context across the sliding window, matching API-based providers.
+
+See [docs/claude-cli-provider.md](docs/claude-cli-provider.md) for setup and details.
+
 ## Requirements
 
 **To run tests:**
 - Linux or macOS host
 - Docker daemon running (Docker Desktop, OrbStack, Colima, etc.)
-- An LLM API key (OpenAI, Anthropic, or compatible) — not needed for `--replay` mode
+- An LLM API key (OpenAI, Anthropic, or compatible), **or** [Claude Code](https://claude.ai/code) installed (`--provider claude-cli`) — not needed for `--replay` mode
 
 **To build from source (optional):**
 - Rust toolchain (`cargo`)
@@ -142,7 +154,7 @@ Options:
   --artifacts-dir <DIR>      Directory for trajectory logs, screenshots, and a11y snapshots
   --qa                       Enable QA mode: agent reports app bugs during testing
   --with-bash                Allow the agent to run bash commands inside the container (disabled by default)
-  --provider <PROVIDER>      LLM provider: anthropic, openai, openrouter, cerebras, gemini, custom
+  --provider <PROVIDER>      LLM provider: anthropic, openai, openrouter, cerebras, gemini, claude-cli, custom
   --model <MODEL>            LLM model name (overrides config file)
   --api-key <KEY>            API key for the LLM provider (prefer env vars to avoid shell history exposure)
 ```
