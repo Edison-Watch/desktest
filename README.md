@@ -145,6 +145,7 @@ Options:
   --api-key <KEY>            API key for the LLM provider (prefer env vars to avoid shell history exposure)
 ```
 
+<a id="task-definition"></a>
 <details>
 <summary><strong>Task Definition</strong></summary>
 
