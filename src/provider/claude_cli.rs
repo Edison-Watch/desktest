@@ -16,6 +16,18 @@ use crate::error::AppError;
 /// Atomic counter for unique temp file names.
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// RAII guard that deletes temp files on drop, ensuring cleanup even when
+/// the future is externally cancelled (e.g., by the agent loop's step_timeout).
+struct TempFileGuard(Vec<PathBuf>);
+
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        for path in &self.0 {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
 /// Provider that delegates to the Claude Code CLI (`claude -p`).
 pub struct ClaudeCliProvider;
 
@@ -51,11 +63,15 @@ impl LlmProvider for ClaudeCliProvider {
             // 1. Parse messages into system prompt, user prompt, and temp image files
             let (system_prompt, prompt_text, temp_files) = build_cli_prompt(messages)?;
             let has_images = !temp_files.is_empty();
+            let image_count = temp_files.len();
+            // RAII guard ensures temp files are cleaned up even if the future
+            // is cancelled by an external timeout (e.g., step_timeout).
+            let _guard = TempFileGuard(temp_files);
 
             info!(
                 "Claude CLI request: {} messages, {} images",
                 messages.len(),
-                temp_files.len(),
+                image_count,
             );
 
             // 2. Build command
@@ -109,9 +125,6 @@ impl LlmProvider for ClaudeCliProvider {
                 .map_err(|e| AppError::Agent(format!("Claude CLI process error: {e}")))
             }
             .await;
-
-            // Always clean up temp files, even on error paths
-            cleanup_temp_files(&temp_files);
 
             let output = output?;
             let elapsed = start.elapsed();
