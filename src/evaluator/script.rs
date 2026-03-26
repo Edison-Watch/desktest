@@ -156,7 +156,10 @@ fn parse_replay_steps(output: &str) -> Vec<ReplayStep> {
         }
     }
 
-    // Attach action codes to their corresponding steps
+    // Attach action codes to their corresponding steps.
+    // Note: `remove` pops the value, so if a step number appears more than once
+    // only the first ReplayStep gets the code. This is fine because the generated
+    // script emits each step marker exactly once (codify deduplicates in advance).
     for step in &mut steps {
         step.action_code = action_codes.remove(&step.step);
     }
@@ -233,4 +236,45 @@ async fn write_replay_trajectory(
         "Wrote replay trajectory with {} steps",
         steps.len()
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_replay_steps_with_action_code() {
+        use base64::Engine;
+        let code = "pyautogui.click(100, 200)";
+        let b64 = base64::engine::general_purpose::STANDARD.encode(code);
+        let output = format!("REPLAY_STEP_DONE:1:some thought\nREPLAY_ACTION:1:{b64}\n");
+        let steps = parse_replay_steps(&output);
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].step, 1);
+        assert_eq!(steps[0].thought, "some thought");
+        assert_eq!(steps[0].action_code.as_deref(), Some(code));
+    }
+
+    #[test]
+    fn test_parse_replay_steps_without_action_marker() {
+        let output = "REPLAY_STEP_DONE:1:click button\nREPLAY_COMPLETE\n";
+        let steps = parse_replay_steps(output);
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].step, 1);
+        assert!(steps[0].action_code.is_none());
+    }
+
+    #[test]
+    fn test_parse_replay_steps_multiline_action_code() {
+        use base64::Engine;
+        let code = "import pyautogui\npyautogui.click(100, 200)\npyautogui.press('enter')";
+        let b64 = base64::engine::general_purpose::STANDARD.encode(code);
+        let output = format!(
+            "REPLAY_STEP_DONE:1:step one\nREPLAY_ACTION:1:{b64}\nREPLAY_STEP_DONE:2:step two\nREPLAY_COMPLETE\n"
+        );
+        let steps = parse_replay_steps(&output);
+        assert_eq!(steps.len(), 2);
+        assert_eq!(steps[0].action_code.as_deref(), Some(code));
+        assert!(steps[1].action_code.is_none());
+    }
 }
