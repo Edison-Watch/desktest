@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 pub mod anthropic;
+pub mod claude_cli;
 pub mod custom;
 pub mod http_base;
 pub mod openai;
@@ -108,6 +109,7 @@ pub fn user_image_message(data_url: &str) -> ChatMessage {
 /// - "openrouter": OpenRouter (OpenAI-compatible, auto-sets base URL)
 /// - "cerebras": Cerebras (OpenAI-compatible, auto-sets base URL)
 /// - "gemini": Google Gemini (OpenAI-compatible, auto-sets base URL)
+/// - "claude-cli": Claude Code CLI (uses local `claude` binary, no API key needed)
 /// - "custom": OpenAI-compatible API with configurable base_url
 ///
 /// API key resolution order:
@@ -120,6 +122,11 @@ pub fn create_provider(
     model: &str,
     base_url: &str,
 ) -> Result<Box<dyn LlmProvider>, AppError> {
+    // Claude CLI provider uses local CLI authentication — no API key needed.
+    if provider_name == "claude-cli" {
+        return Ok(Box::new(claude_cli::ClaudeCliProvider::new()?));
+    }
+
     let resolved_key = resolve_api_key(api_key, provider_name)?;
 
     // Treat any known default URL as "no custom URL was set" so that switching
@@ -183,7 +190,7 @@ pub fn create_provider(
             Ok(Box::new(client))
         }
         other => Err(AppError::Config(format!(
-            "Unknown provider '{other}'. Supported: anthropic, openai, openrouter, cerebras, gemini, custom"
+            "Unknown provider '{other}'. Supported: anthropic, openai, openrouter, cerebras, gemini, claude-cli, custom"
         ))),
     }
 }
@@ -377,6 +384,21 @@ mod tests {
             "https://api.anthropic.com",
         );
         assert!(provider.is_ok());
+    }
+
+    #[test]
+    fn test_create_provider_claude_cli() {
+        // This test verifies the factory routes to ClaudeCliProvider.
+        // It may fail if `claude` is not installed, which is expected —
+        // the error should be a Config error, not "Unknown provider".
+        let result = create_provider("claude-cli", "", "ignored", "ignored");
+        match result {
+            Ok(_) => {} // claude binary is installed
+            Err(AppError::Config(msg)) => {
+                assert!(msg.contains("Claude Code CLI not found"));
+            }
+            Err(other) => panic!("Expected Config error, got: {other}"),
+        }
     }
 
     #[test]

@@ -28,7 +28,11 @@ pub async fn check_docker() -> Result<bollard::Docker, AppError> {
 ///
 /// Delegates to `provider::resolve_api_key` so the resolution logic lives
 /// in one place and can't drift between preflight and runtime.
+/// Skips the check for providers that don't need an API key (e.g., claude-cli).
 pub fn check_api_key(config: &Config) -> Result<(), AppError> {
+    if config.provider == "claude-cli" {
+        return Ok(());
+    }
     provider::resolve_api_key(&config.api_key, &config.provider).map(|_| ())
 }
 
@@ -75,21 +79,45 @@ pub async fn run_doctor(config: &Config) -> bool {
         }
     }
 
+    // Claude CLI binary check (replaces API key check for this provider)
+    if config.provider == "claude-cli" {
+        print!("Claude CLI ..... ");
+        let _ = std::io::stdout().flush();
+        let cli_ok = std::process::Command::new("claude")
+            .arg("--version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if cli_ok {
+            println!("ok");
+        } else {
+            println!("NOT FOUND");
+            println!("  Install Claude Code from https://claude.ai/code");
+            all_ok = false;
+        }
+    }
+
     // API key check
     print!("API key ({}) ... ", config.provider);
     let _ = std::io::stdout().flush();
-    match provider::resolve_api_key_with_source(
-        &config.api_key,
-        &config.provider,
-        config.api_key_source,
-    ) {
-        Ok((_key, source)) => {
-            println!("ok (from {source})");
-        }
-        Err(e) => {
-            println!("MISSING");
-            println!("  {e}");
-            all_ok = false;
+    if config.provider == "claude-cli" {
+        println!("ok (not needed — uses Claude Code CLI auth)");
+    } else {
+        match provider::resolve_api_key_with_source(
+            &config.api_key,
+            &config.provider,
+            config.api_key_source,
+        ) {
+            Ok((_key, source)) => {
+                println!("ok (from {source})");
+            }
+            Err(e) => {
+                println!("MISSING");
+                println!("  {e}");
+                all_ok = false;
+            }
         }
     }
 

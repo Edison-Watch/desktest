@@ -77,7 +77,7 @@ pub struct Cli {
 
     /// LLM provider (overrides config file)
     #[arg(long, global = true, value_parser = clap::builder::PossibleValuesParser::new([
-        "anthropic", "openai", "openrouter", "cerebras", "gemini", "custom"
+        "anthropic", "openai", "openrouter", "cerebras", "gemini", "claude-cli", "custom"
     ]))]
     pub provider: Option<String>,
 
