@@ -361,7 +361,11 @@ fn assemble_prompt(
 // ---------------------------------------------------------------------------
 
 /// Save a base64-encoded screenshot to the temp directory.
-fn save_screenshot(temp_dir: &std::path::Path, step: usize, data_url: &str) -> Result<PathBuf, AppError> {
+fn save_screenshot(
+    temp_dir: &std::path::Path,
+    step: usize,
+    data_url: &str,
+) -> Result<PathBuf, AppError> {
     let base64_data = data_url
         .split(',')
         .nth(1)
@@ -386,7 +390,11 @@ fn save_screenshot(temp_dir: &std::path::Path, step: usize, data_url: &str) -> R
 }
 
 /// Save accessibility tree text to the temp directory.
-fn save_a11y_tree(temp_dir: &std::path::Path, step: usize, text: &str) -> Result<PathBuf, AppError> {
+fn save_a11y_tree(
+    temp_dir: &std::path::Path,
+    step: usize,
+    text: &str,
+) -> Result<PathBuf, AppError> {
     let path = temp_dir.join(format!("step_{step:03}_a11y.txt"));
     std::fs::write(&path, text.as_bytes())
         .map_err(|e| AppError::Agent(format!("Failed to write a11y tree: {e}")))?;
