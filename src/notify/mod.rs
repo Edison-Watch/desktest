@@ -92,12 +92,14 @@ pub fn build_pipeline(config: &Config) -> NotifierPipeline {
     // Slack: env var takes precedence over config
     let slack_url = std::env::var("DESKTEST_SLACK_WEBHOOK_URL")
         .ok()
+        .filter(|s| !s.is_empty())
         .or_else(|| {
             config
                 .integrations
                 .slack
                 .as_ref()
                 .and_then(|s| s.webhook_url.clone())
+                .filter(|s| !s.is_empty())
         });
 
     if let Some(url) = slack_url {
