@@ -36,12 +36,14 @@ impl SlackNotifier {
         // Truncate the summary to fit within that budget.
         let header_text = {
             let prefix = format!("\u{1f41b} {} \u{2014} ", event.bug_id);
-            let max_summary = 150usize.saturating_sub(prefix.chars().count());
+            let prefix_len = prefix.chars().count();
+            // Reserve 1 char for the ellipsis when truncation is needed.
+            let max_summary = 150usize.saturating_sub(prefix_len + 1);
             let truncated: String = event.summary.chars().take(max_summary).collect();
             if truncated.len() < event.summary.len() {
                 format!("{prefix}{truncated}\u{2026}")
             } else {
-                format!("{prefix}{truncated}")
+                format!("{prefix}{}", event.summary)
             }
         };
 
