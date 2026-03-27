@@ -32,12 +32,25 @@ impl SlackNotifier {
 
     /// Build a Slack Block Kit payload for a bug event.
     fn build_payload(&self, event: &BugEvent) -> Value {
+        // Slack header blocks have a 150-character limit on plain_text.
+        // Truncate the summary to fit within that budget.
+        let header_text = {
+            let prefix = format!("\u{1f41b} {} \u{2014} ", event.bug_id);
+            let max_summary = 150usize.saturating_sub(prefix.chars().count());
+            let truncated: String = event.summary.chars().take(max_summary).collect();
+            if truncated.len() < event.summary.len() {
+                format!("{prefix}{truncated}\u{2026}")
+            } else {
+                format!("{prefix}{truncated}")
+            }
+        };
+
         let mut blocks = vec![
             json!({
                 "type": "header",
                 "text": {
                     "type": "plain_text",
-                    "text": format!("\u{1f41b} {} — {}", event.bug_id, event.summary),
+                    "text": header_text,
                     "emoji": true
                 }
             }),
