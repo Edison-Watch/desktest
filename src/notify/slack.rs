@@ -19,8 +19,12 @@ pub struct SlackNotifier {
 
 impl SlackNotifier {
     pub fn new(webhook_url: String, channel: Option<String>) -> Self {
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .unwrap_or_default();
         Self {
-            client: Client::new(),
+            client,
             webhook_url,
             channel,
         }
@@ -53,10 +57,14 @@ impl SlackNotifier {
         ];
 
         // Truncate description for Slack's 3000-char block text limit.
-        let desc = if event.description.len() > 2900 {
-            format!("{}… _(truncated)_", &event.description[..2900])
-        } else {
-            event.description.clone()
+        // Use chars().take() for safe Unicode truncation (consistent with bug_report.rs).
+        let desc = {
+            let truncated: String = event.description.chars().take(2900).collect();
+            if truncated.len() < event.description.len() {
+                format!("{truncated}… _(truncated)_")
+            } else {
+                event.description.clone()
+            }
         };
 
         blocks.push(json!({
