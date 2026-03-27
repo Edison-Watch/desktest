@@ -21,6 +21,7 @@ Desktest is a CLI tool for automated E2E testing of Linux desktop apps using LLM
 ```bash
 desktest run task.json                          # Run a single test (headless)
 desktest run task.json --monitor                # Run with live web dashboard at http://localhost:7860
+desktest run task.json --monitor --monitor-bind-addr 0.0.0.0  # Expose dashboard for remote access
 desktest run task.json --monitor --with-bash    # Live + let agent use bash for debugging
 desktest run task.json --record --verbose       # Record video + full LLM logs
 desktest run task.json --resolution 1280x720    # Custom resolution
@@ -160,6 +161,7 @@ Shows every step with full detail (thought + action code + result).
 | `--record` | Enable video recording (produces recording.mp4) |
 | `--monitor` | Enable live monitoring web dashboard |
 | `--monitor-port <PORT>` | Port for dashboard (default: 7860) |
+| `--monitor-bind-addr <ADDR>` | Bind address for dashboard (default: 127.0.0.1, use 0.0.0.0 for remote access) |
 | `--artifacts-dir <DIR>` | Directory for trajectory logs, screenshots, and accessibility tree snapshots (default: ./desktest_artifacts/) |
 | `--with-bash` | Allow agent to run bash commands inside the container (disabled by default — agent can "cheat") |
 | `--qa` | Enable QA bug reporting mode — agent reports app bugs as structured markdown in `bugs/` |
