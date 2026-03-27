@@ -31,6 +31,7 @@ Copy-paste the following prompt into Claude Code (or any coding agent) to instal
 **Extensibility**
 - **Custom Docker images**: bring your own image for apps with complex dependencies
 - **[Attach mode](docs/attach-mode.md)**: connect to an already-running container for integration with external orchestration
+- **[Remote monitoring](docs/remote-monitoring.md)**: access the dashboard and VNC from another machine via SSH or direct network access
 - **QA mode** (`--qa`): agent reports application bugs it encounters as structured markdown reports
 
 ## Developer Workflows

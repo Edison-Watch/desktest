@@ -147,7 +147,8 @@ async fn main() {
                 std::process::exit(e.exit_code());
             }
 
-            let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port, &cli.monitor_bind_addr).await;
+            let monitor_handle =
+                maybe_start_monitor(cli.monitor, cli.monitor_port, &cli.monitor_bind_addr).await;
             let run = RunConfig {
                 debug: cli.debug,
                 verbose: cli.verbose,
@@ -197,7 +198,8 @@ async fn main() {
                 std::process::exit(e.exit_code());
             }
 
-            let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port, &cli.monitor_bind_addr).await;
+            let monitor_handle =
+                maybe_start_monitor(cli.monitor, cli.monitor_port, &cli.monitor_bind_addr).await;
             let run = RunConfig {
                 debug: cli.debug,
                 verbose: cli.verbose,
@@ -265,7 +267,8 @@ async fn main() {
                 std::process::exit(e.exit_code());
             }
 
-            let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port, &cli.monitor_bind_addr).await;
+            let monitor_handle =
+                maybe_start_monitor(cli.monitor, cli.monitor_port, &cli.monitor_bind_addr).await;
             let run = RunConfig {
                 debug: cli.debug,
                 verbose: cli.verbose,
@@ -603,7 +606,8 @@ async fn main() {
                 std::process::exit(e.exit_code());
             }
 
-            let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port, &cli.monitor_bind_addr).await;
+            let monitor_handle =
+                maybe_start_monitor(cli.monitor, cli.monitor_port, &cli.monitor_bind_addr).await;
             let run = RunConfig {
                 debug: cli.debug,
                 verbose: cli.verbose,
@@ -698,7 +702,13 @@ async fn main() {
             // Keep the server handle alive for the duration of the watcher loop;
             // dropping it would abort the server task.
             let monitor_addr = cli.monitor_bind_addr.as_str();
-            let _server = match monitor_server::start_monitor_server(handle.clone(), port, monitor_addr).await {
+            let _server = match monitor_server::start_monitor_server(
+                handle.clone(),
+                port,
+                monitor_addr,
+            )
+            .await
+            {
                 Some(server) => {
                     print_monitor_url(monitor_addr, port);
                     println!(
