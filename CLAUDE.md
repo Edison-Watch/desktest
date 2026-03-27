@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Desktest** is a CLI tool for automated end-to-end testing of Linux desktop applications using LLM-powered agents. It spins up a Docker container with an XFCE desktop (Xvfb + x11vnc), deploys an app (AppImage, folder, or custom Docker image), then runs an OSWorld-style agent loop where the LLM interacts with the app via PyAutoGUI code execution and observes via screenshots + accessibility trees.
 
-**Tech stack:** Rust (edition 2024), Tokio async runtime, Docker (Bollard), multi-model LLM support (OpenAI, Anthropic, OpenRouter, Cerebras, Gemini, custom OpenAI-compatible endpoints, plus CLI-based providers: Claude Code CLI and OpenAI Codex CLI).
+**Tech stack:** Rust (edition 2024), Tokio async runtime, Docker (Bollard), multi-model LLM support (OpenAI, Anthropic, custom OpenAI-compatible endpoints).
 
 ## Build & Run Commands
 
