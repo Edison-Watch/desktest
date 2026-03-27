@@ -91,7 +91,23 @@ pub(super) async fn evaluate_script_replay(
     let passed = exit_code == 0 && has_complete;
 
     // Reconstruct trajectory from step markers in script output
-    let steps = parse_replay_steps(&output);
+    let mut steps = parse_replay_steps(&output);
+    // Backfill action codes from the script source for older replay scripts
+    // that don't emit REPLAY_ACTION markers.
+    if steps.iter().any(|s| s.action_code.is_none()) {
+        let script_source = std::fs::read_to_string(host_path).unwrap_or_else(|e| {
+            warn!("Failed to read script source for action-code backfill: {e}");
+            String::new()
+        });
+        let fallback_codes = extract_action_codes_from_script(&script_source);
+        for step in &mut steps {
+            if step.action_code.is_none() {
+                if let Some(code) = fallback_codes.get(&step.step) {
+                    step.action_code = Some(code.clone());
+                }
+            }
+        }
+    }
     if !steps.is_empty() {
         write_replay_trajectory(session, artifacts_dir, &steps, passed).await;
     }
@@ -164,6 +180,101 @@ fn parse_replay_steps(output: &str) -> Vec<ReplayStep> {
     }
 
     steps
+}
+
+/// Extract action codes from `def step_NNN():` functions in a replay script.
+///
+/// This is a fallback for older replay scripts that don't emit `REPLAY_ACTION` markers.
+/// Parses the Python source, finds each `def step_NNN():` block, skips the docstring,
+/// and collects the remaining indented body as action code.
+fn extract_action_codes_from_script(source: &str) -> std::collections::HashMap<usize, String> {
+    use std::collections::HashMap;
+
+    let mut codes: HashMap<usize, String> = HashMap::new();
+    let lines: Vec<&str> = source.lines().collect();
+    let mut i = 0;
+
+    while i < lines.len() {
+        let line = lines[i];
+        let trimmed = line.trim();
+
+        // Match `def step_NNN():` pattern
+        if let Some(rest) = trimmed.strip_prefix("def step_") {
+            if let Some(num_str) = rest.strip_suffix("():") {
+                if let Ok(step_num) = num_str.parse::<usize>() {
+                    i += 1;
+                    // Skip docstring (triple-quoted, may be single or multi-line)
+                    if i < lines.len() && lines[i].trim().starts_with("\"\"\"") {
+                        if lines[i].trim().ends_with("\"\"\"") && lines[i].trim().len() > 3 {
+                            // Single-line docstring
+                            i += 1;
+                        } else {
+                            // Multi-line docstring: skip until closing """
+                            i += 1;
+                            while i < lines.len() && !lines[i].trim().ends_with("\"\"\"") {
+                                i += 1;
+                            }
+                            i += 1; // skip the closing """ line
+                        }
+                    }
+                    // Skip screenshot comparison lines (from --with-screenshots codify)
+                    while i < lines.len() {
+                        let body = lines[i].trim();
+                        if body.is_empty()
+                            || body.starts_with("# Verify pre-action")
+                            || body.starts_with("time.sleep(0.5)  # Wait for UI")
+                            || body.starts_with("subprocess.run(['scrot'")
+                            || body.starts_with(
+                                "subprocess.run(['python3', '/usr/local/bin/screenshot-compare'",
+                            )
+                            || body.starts_with("'--expected'")
+                        {
+                            i += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    // Collect indented body lines as action code
+                    let mut code_lines = Vec::new();
+                    while i < lines.len() {
+                        let body_line = lines[i];
+                        // Stop at next function def or non-indented line
+                        if !body_line.is_empty()
+                            && !body_line.starts_with(' ')
+                            && !body_line.starts_with('\t')
+                        {
+                            break;
+                        }
+                        // Also stop at blank line followed by non-indented (function boundary)
+                        if body_line.trim().is_empty()
+                            && i + 1 < lines.len()
+                            && !lines[i + 1].starts_with(' ')
+                            && !lines[i + 1].starts_with('\t')
+                            && !lines[i + 1].trim().is_empty()
+                        {
+                            break;
+                        }
+                        code_lines.push(body_line);
+                        i += 1;
+                    }
+                    // Dedent: remove exactly 4 spaces of indentation (codify standard)
+                    let code: String = code_lines
+                        .iter()
+                        .map(|l| l.strip_prefix("    ").unwrap_or(l))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    let code = code.trim_end().to_string();
+                    if !code.is_empty() {
+                        codes.insert(step_num, code);
+                    }
+                    continue;
+                }
+            }
+        }
+        i += 1;
+    }
+
+    codes
 }
 
 /// Copy per-step screenshots from the container and append to trajectory.jsonl.
@@ -272,5 +383,73 @@ mod tests {
         assert_eq!(steps.len(), 2);
         assert_eq!(steps[0].action_code.as_deref(), Some(code));
         assert!(steps[1].action_code.is_none());
+    }
+
+    #[test]
+    fn test_extract_action_codes_basic() {
+        let script = r#"def step_001():
+    """Click the button"""
+    pyautogui.click(100, 200)
+
+def step_002():
+    """Type hello"""
+    pyautogui.typewrite('hello')
+    pyautogui.press('enter')
+
+def main():
+    pass
+"#;
+        let codes = extract_action_codes_from_script(script);
+        assert_eq!(codes.len(), 2);
+        assert_eq!(codes[&1], "pyautogui.click(100, 200)");
+        assert_eq!(
+            codes[&2],
+            "pyautogui.typewrite('hello')\npyautogui.press('enter')"
+        );
+    }
+
+    #[test]
+    fn test_extract_action_codes_multiline_docstring() {
+        let script = r#"def step_001():
+    """This is a longer thought
+    that spans multiple lines"""
+    pyautogui.click(50, 60)
+
+def main():
+    pass
+"#;
+        let codes = extract_action_codes_from_script(script);
+        assert_eq!(codes[&1], "pyautogui.click(50, 60)");
+    }
+
+    #[test]
+    fn test_extract_action_codes_with_screenshot_assertions() {
+        let script = r#"def step_001():
+    """Click button"""
+    # Verify pre-action screen state (threshold: 0.95)
+    time.sleep(0.5)  # Wait for UI to settle
+    subprocess.run(['scrot', '/tmp/_replay_actual.png'], check=True)
+    subprocess.run(['python3', '/usr/local/bin/screenshot-compare',
+        '--expected', '/home/tester/artifacts/step_001.png', '--actual', '/tmp/_replay_actual.png', '--threshold', '0.95'], check=True)
+    pyautogui.click(100, 200)
+
+def main():
+    pass
+"#;
+        let codes = extract_action_codes_from_script(script);
+        assert_eq!(codes[&1], "pyautogui.click(100, 200)");
+    }
+
+    #[test]
+    fn test_extract_action_codes_empty_script() {
+        let codes = extract_action_codes_from_script("");
+        assert!(codes.is_empty());
+    }
+
+    #[test]
+    fn test_extract_action_codes_no_step_functions() {
+        let script = "def main():\n    print('hello')\n";
+        let codes = extract_action_codes_from_script(script);
+        assert!(codes.is_empty());
     }
 }
