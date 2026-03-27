@@ -221,7 +221,9 @@ fn extract_action_codes_from_script(source: &str) -> std::collections::HashMap<u
                             || body.starts_with("# Verify pre-action")
                             || body.starts_with("time.sleep(0.5)  # Wait for UI")
                             || body.starts_with("subprocess.run(['scrot'")
-                            || body.starts_with("subprocess.run(['python3', '/usr/local/bin/screenshot-compare'")
+                            || body.starts_with(
+                                "subprocess.run(['python3', '/usr/local/bin/screenshot-compare'",
+                            )
                             || body.starts_with("'--expected'")
                         {
                             i += 1;
