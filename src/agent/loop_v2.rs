@@ -107,6 +107,7 @@ pub struct AgentLoopV2<'a> {
 
 impl<'a> AgentLoopV2<'a> {
     /// Create a new v2 agent loop.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         client: Box<dyn LlmProvider>,
         session: &'a DockerSession,

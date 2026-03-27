@@ -6,7 +6,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use reqwest::Client;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::{BugEvent, Notifier};
 
@@ -143,8 +143,7 @@ mod tests {
 
     #[test]
     fn test_build_payload_no_channel() {
-        let notifier =
-            SlackNotifier::new("https://hooks.slack.com/test".to_string(), None);
+        let notifier = SlackNotifier::new("https://hooks.slack.com/test".to_string(), None);
         let event = BugEvent {
             bug_id: "BUG-002".to_string(),
             step: 3,
@@ -160,8 +159,7 @@ mod tests {
 
     #[test]
     fn test_build_payload_truncates_long_description() {
-        let notifier =
-            SlackNotifier::new("https://hooks.slack.com/test".to_string(), None);
+        let notifier = SlackNotifier::new("https://hooks.slack.com/test".to_string(), None);
         let long_desc = "x".repeat(3500);
         let event = BugEvent {
             bug_id: "BUG-003".to_string(),

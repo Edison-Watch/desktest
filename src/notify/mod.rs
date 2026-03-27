@@ -28,6 +28,8 @@ pub struct BugEvent {
     /// Full bug description from the agent.
     pub description: String,
     /// Path to the screenshot at time of bug, if available.
+    /// Not yet used by any notifier but reserved for future screenshot uploads.
+    #[expect(dead_code)]
     pub screenshot_path: Option<PathBuf>,
     /// Test identifier (e.g. "gedit-save-file").
     pub test_id: String,
