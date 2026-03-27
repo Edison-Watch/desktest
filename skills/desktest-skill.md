@@ -64,6 +64,10 @@ desktest interactive task.json --step           # Step through agent actions one
 desktest attach task.json --container ID        # Attach to already-running container (requires Docker socket access)
 desktest codify desktest_artifacts/trajectory.jsonl  # Convert trajectory to deterministic replay script
 desktest codify trajectory.jsonl --overwrite task.json  # Generate script + inject replay_script into task JSON
+desktest codify trajectory.jsonl --steps 1,2,5,6       # Only include specific steps
+desktest codify trajectory.jsonl --with-screenshots     # Add screenshot comparison assertions
+desktest codify trajectory.jsonl --with-screenshots --threshold 0.95  # Custom similarity threshold
+desktest codify trajectory.jsonl --delay 1.0            # Custom delay between steps (default: 0.5)
 desktest update                                 # Update desktest to the latest GitHub release
 desktest update --force                         # Force reinstall even if already on latest
 ```
@@ -163,8 +167,41 @@ Shows every step with full detail (thought + action code + result).
 | `--artifacts-dir <DIR>` | Directory for trajectory logs, screenshots, and accessibility tree snapshots (default: ./desktest_artifacts/) |
 | `--with-bash` | Allow agent to run bash commands inside the container (disabled by default — agent can "cheat") |
 | `--qa` | Enable QA bug reporting mode — agent reports app bugs as structured markdown in `bugs/` |
-| `--replay` | Use `replay_script` from task JSON for deterministic execution (no LLM, no API costs). Only on `run` subcommand |
-| `--resolution <WxH>` | Display resolution (default: 1920x1080) |
+| `--replay` | Use `replay_script` from task JSON for deterministic execution (no LLM, no API costs). Works on `run` and `attach` subcommands |
+| `--resolution <WxH>` | Display resolution as WxH or preset (720p, 1080p) (default: 1920x1080) |
+| `--provider <PROVIDER>` | LLM provider: anthropic, openai, openrouter, cerebras, gemini, claude-cli, codex-cli, custom |
+| `--model <MODEL>` | LLM model name (overrides config file) |
+| `--api-key <KEY>` | API key for the LLM provider (prefer env vars to avoid shell history exposure) |
+
+## CLI-Based Providers (No API Key Needed)
+
+Two providers shell out to locally-installed CLI tools instead of calling LLM APIs directly:
+
+### claude-cli — Claude Code CLI
+
+```bash
+desktest run task.json --provider claude-cli
+```
+
+- Uses your existing Claude Code login session (`claude -p`)
+- Screenshots saved to temp files; Claude reads them via its Read tool
+- No API key needed — uses CLI authentication
+- Install: https://claude.ai/code
+- Docs: `docs/claude-cli-provider.md`
+
+### codex-cli — OpenAI Codex CLI
+
+```bash
+desktest run task.json --provider codex-cli
+```
+
+- Uses your existing ChatGPT login or `CODEX_API_KEY`
+- Screenshots passed directly as `-i` flags (native image input — no tool calls needed)
+- Accessibility trees embedded inline in the prompt
+- Install: `npm install -g @openai/codex`
+- Docs: `docs/codex-cli-provider.md`
+
+**Limitations (both):** ~15-20s latency per step, no conversation state between steps, model selection uses CLI's configured model (desktest `model` field ignored). Best for local dev/testing, not CI/CD (unless using API key auth for codex-cli).
 
 ## Exit Codes
 
