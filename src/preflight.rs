@@ -30,7 +30,7 @@ pub async fn check_docker() -> Result<bollard::Docker, AppError> {
 /// in one place and can't drift between preflight and runtime.
 /// Skips the check for providers that don't need an API key (e.g., claude-cli).
 pub fn check_api_key(config: &Config) -> Result<(), AppError> {
-    if config.provider == "claude-cli" {
+    if config.provider == "claude-cli" || config.provider == "codex-cli" {
         return Ok(());
     }
     provider::resolve_api_key(&config.api_key, &config.provider).map(|_| ())
@@ -79,7 +79,7 @@ pub async fn run_doctor(config: &Config) -> bool {
         }
     }
 
-    // Claude CLI binary check (replaces API key check for this provider)
+    // CLI binary check (replaces API key check for CLI-based providers)
     if config.provider == "claude-cli" {
         print!("Claude CLI ..... ");
         let _ = std::io::stdout().flush();
@@ -99,11 +99,32 @@ pub async fn run_doctor(config: &Config) -> bool {
         }
     }
 
+    if config.provider == "codex-cli" {
+        print!("Codex CLI ...... ");
+        let _ = std::io::stdout().flush();
+        let cli_ok = std::process::Command::new("codex")
+            .arg("--version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if cli_ok {
+            println!("ok");
+        } else {
+            println!("NOT FOUND");
+            println!("  Install Codex CLI: npm install -g @openai/codex");
+            all_ok = false;
+        }
+    }
+
     // API key check
     print!("API key ({}) ... ", config.provider);
     let _ = std::io::stdout().flush();
     if config.provider == "claude-cli" {
         println!("ok (not needed — uses Claude Code CLI auth)");
+    } else if config.provider == "codex-cli" {
+        println!("ok (not needed — uses Codex CLI auth / CODEX_API_KEY)");
     } else {
         match provider::resolve_api_key_with_source(
             &config.api_key,

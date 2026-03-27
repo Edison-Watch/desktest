@@ -2,6 +2,7 @@
 
 pub mod anthropic;
 pub mod claude_cli;
+pub mod codex_cli;
 pub mod custom;
 pub mod http_base;
 pub mod openai;
@@ -122,9 +123,12 @@ pub fn create_provider(
     model: &str,
     base_url: &str,
 ) -> Result<Box<dyn LlmProvider>, AppError> {
-    // Claude CLI provider uses local CLI authentication — no API key needed.
+    // CLI providers use local authentication — no API key needed.
     if provider_name == "claude-cli" {
         return Ok(Box::new(claude_cli::ClaudeCliProvider::new()?));
+    }
+    if provider_name == "codex-cli" {
+        return Ok(Box::new(codex_cli::CodexCliProvider::new()?));
     }
 
     let resolved_key = resolve_api_key(api_key, provider_name)?;
@@ -190,7 +194,7 @@ pub fn create_provider(
             Ok(Box::new(client))
         }
         other => Err(AppError::Config(format!(
-            "Unknown provider '{other}'. Supported: anthropic, openai, openrouter, cerebras, gemini, claude-cli, custom"
+            "Unknown provider '{other}'. Supported: anthropic, openai, openrouter, cerebras, gemini, claude-cli, codex-cli, custom"
         ))),
     }
 }
@@ -396,6 +400,21 @@ mod tests {
             Ok(_) => {} // claude binary is installed
             Err(AppError::Config(msg)) => {
                 assert!(msg.contains("Claude Code CLI not found"));
+            }
+            Err(other) => panic!("Expected Config error, got: {other}"),
+        }
+    }
+
+    #[test]
+    fn test_create_provider_codex_cli() {
+        // This test verifies the factory routes to CodexCliProvider.
+        // It may fail if `codex` is not installed, which is expected —
+        // the error should be a Config error, not "Unknown provider".
+        let result = create_provider("codex-cli", "", "ignored", "ignored");
+        match result {
+            Ok(_) => {} // codex binary is installed
+            Err(AppError::Config(msg)) => {
+                assert!(msg.contains("Codex CLI not found"));
             }
             Err(other) => panic!("Expected Config error, got: {other}"),
         }
