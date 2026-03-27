@@ -95,7 +95,10 @@ pub(super) async fn evaluate_script_replay(
     // Backfill action codes from the script source for older replay scripts
     // that don't emit REPLAY_ACTION markers.
     if steps.iter().any(|s| s.action_code.is_none()) {
-        let script_source = std::fs::read_to_string(host_path).unwrap_or_default();
+        let script_source = std::fs::read_to_string(host_path).unwrap_or_else(|e| {
+            warn!("Failed to read script source for action-code backfill: {e}");
+            String::new()
+        });
         let fallback_codes = extract_action_codes_from_script(&script_source);
         for step in &mut steps {
             if step.action_code.is_none() {
