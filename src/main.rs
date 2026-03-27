@@ -57,18 +57,38 @@ fn llm_overrides(cli: &Cli) -> LlmOverrides {
 async fn maybe_start_monitor(
     monitor_enabled: bool,
     monitor_port: u16,
+    monitor_bind_addr: &str,
 ) -> Option<monitor::MonitorHandle> {
     if !monitor_enabled {
         return None;
     }
     let handle = monitor::MonitorHandle::new(32);
-    if let Some(_server) = monitor_server::start_monitor_server(handle.clone(), monitor_port).await
+    if let Some(_server) =
+        monitor_server::start_monitor_server(handle.clone(), monitor_port, monitor_bind_addr).await
     {
-        println!("Monitor dashboard: http://localhost:{}", monitor_port);
+        print_monitor_url(monitor_bind_addr, monitor_port);
         Some(handle)
     } else {
         None
     }
+}
+
+/// Print the monitor dashboard URL and a security warning if bound to a non-loopback address.
+fn print_monitor_url(bind_addr: &str, port: u16) {
+    if bind_addr != "127.0.0.1" && bind_addr != "::1" {
+        eprintln!(
+            "WARNING: Monitor dashboard is bound to {} — \
+             this endpoint has no authentication and is accessible \
+             to anyone who can reach this address.",
+            bind_addr
+        );
+    }
+    let display_addr = if bind_addr == "0.0.0.0" || bind_addr == "::" {
+        format!("localhost:{port}")
+    } else {
+        config::format_host_port(bind_addr, port)
+    };
+    println!("Monitor dashboard: http://{display_addr} (bound to {bind_addr})");
 }
 
 #[tokio::main]
@@ -128,7 +148,8 @@ async fn main() {
                 std::process::exit(e.exit_code());
             }
 
-            let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
+            let monitor_handle =
+                maybe_start_monitor(cli.monitor, cli.monitor_port, &cli.monitor_bind_addr).await;
             let run = RunConfig {
                 debug: cli.debug,
                 verbose: cli.verbose,
@@ -178,7 +199,8 @@ async fn main() {
                 std::process::exit(e.exit_code());
             }
 
-            let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
+            let monitor_handle =
+                maybe_start_monitor(cli.monitor, cli.monitor_port, &cli.monitor_bind_addr).await;
             let run = RunConfig {
                 debug: cli.debug,
                 verbose: cli.verbose,
@@ -246,7 +268,8 @@ async fn main() {
                 std::process::exit(e.exit_code());
             }
 
-            let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
+            let monitor_handle =
+                maybe_start_monitor(cli.monitor, cli.monitor_port, &cli.monitor_bind_addr).await;
             let run = RunConfig {
                 debug: cli.debug,
                 verbose: cli.verbose,
@@ -584,7 +607,8 @@ async fn main() {
                 std::process::exit(e.exit_code());
             }
 
-            let monitor_handle = maybe_start_monitor(cli.monitor, cli.monitor_port).await;
+            let monitor_handle =
+                maybe_start_monitor(cli.monitor, cli.monitor_port, &cli.monitor_bind_addr).await;
             let run = RunConfig {
                 debug: cli.debug,
                 verbose: cli.verbose,
@@ -678,9 +702,16 @@ async fn main() {
             let handle = monitor::MonitorHandle::new(256);
             // Keep the server handle alive for the duration of the watcher loop;
             // dropping it would abort the server task.
-            let _server = match monitor_server::start_monitor_server(handle.clone(), port).await {
+            let monitor_addr = cli.monitor_bind_addr.as_str();
+            let _server = match monitor_server::start_monitor_server(
+                handle.clone(),
+                port,
+                monitor_addr,
+            )
+            .await
+            {
                 Some(server) => {
-                    println!("Monitor dashboard: http://localhost:{}", port);
+                    print_monitor_url(monitor_addr, port);
                     println!(
                         "Watching {} for phase directories (Ctrl+C to stop)",
                         watch_dir.display()
