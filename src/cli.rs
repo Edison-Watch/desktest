@@ -63,6 +63,10 @@ pub struct Cli {
     #[arg(long, default_value_t = 7860, global = true)]
     pub monitor_port: u16,
 
+    /// Bind address for the monitoring dashboard (default: 127.0.0.1, use 0.0.0.0 for remote access)
+    #[arg(long, default_value = "127.0.0.1", global = true)]
+    pub monitor_bind_addr: String,
+
     /// Directory for trajectory logs, screenshots, and accessibility tree snapshots (default: ./desktest_artifacts/)
     #[arg(long, global = true)]
     pub artifacts_dir: Option<std::path::PathBuf>,

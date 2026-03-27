@@ -19,7 +19,7 @@ use crate::monitor::MonitorHandle;
 ///
 /// Binds the port synchronously (before spawning) so the caller knows immediately
 /// whether the server started successfully. Returns `None` if the port is unavailable.
-pub async fn start_monitor_server(handle: MonitorHandle, port: u16) -> Option<JoinHandle<()>> {
+pub async fn start_monitor_server(handle: MonitorHandle, port: u16, bind_addr: &str) -> Option<JoinHandle<()>> {
     let dashboard_html = build_live_dashboard();
 
     let state_handle = handle.clone();
@@ -31,9 +31,7 @@ pub async fn start_monitor_server(handle: MonitorHandle, port: u16) -> Option<Jo
             get(move || async move { state_handler(state_handle).await }),
         );
 
-    // Localhost only — no auth on this endpoint. Unlike VNC (which has vnc_bind_addr),
-    // there is no config override for the monitor bind address yet.
-    let listener = match tokio::net::TcpListener::bind(format!("127.0.0.1:{port}")).await {
+    let listener = match tokio::net::TcpListener::bind(format!("{bind_addr}:{port}")).await {
         Ok(l) => l,
         Err(e) => {
             warn!("Failed to bind monitor server on port {port}: {e}");
