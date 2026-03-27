@@ -31,7 +31,7 @@ pub async fn start_monitor_server(handle: MonitorHandle, port: u16, bind_addr: &
             get(move || async move { state_handler(state_handle).await }),
         );
 
-    let listener = match tokio::net::TcpListener::bind(format!("{bind_addr}:{port}")).await {
+    let listener = match tokio::net::TcpListener::bind(crate::config::format_host_port(bind_addr, port)).await {
         Ok(l) => l,
         Err(e) => {
             warn!("Failed to bind monitor server on port {port}: {e}");

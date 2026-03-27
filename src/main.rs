@@ -65,19 +65,29 @@ async fn maybe_start_monitor(
     if let Some(_server) =
         monitor_server::start_monitor_server(handle.clone(), monitor_port, monitor_bind_addr).await
     {
-        println!(
-            "Monitor dashboard: http://{}:{}",
-            if monitor_bind_addr == "0.0.0.0" {
-                "localhost"
-            } else {
-                monitor_bind_addr
-            },
-            monitor_port
-        );
+        print_monitor_url(monitor_bind_addr, monitor_port);
         Some(handle)
     } else {
         None
     }
+}
+
+/// Print the monitor dashboard URL and a security warning if bound to a non-loopback address.
+fn print_monitor_url(bind_addr: &str, port: u16) {
+    if bind_addr != "127.0.0.1" && bind_addr != "::1" {
+        eprintln!(
+            "WARNING: Monitor dashboard is bound to {} — \
+             this endpoint has no authentication and is accessible \
+             to anyone who can reach this address.",
+            bind_addr
+        );
+    }
+    let display_addr = if bind_addr == "0.0.0.0" || bind_addr == "::0" {
+        format!("localhost:{port}")
+    } else {
+        config::format_host_port(bind_addr, port)
+    };
+    println!("Monitor dashboard: http://{display_addr} (bound to {bind_addr})");
 }
 
 #[tokio::main]
@@ -690,11 +700,7 @@ async fn main() {
             let monitor_addr = cli.monitor_bind_addr.as_str();
             let _server = match monitor_server::start_monitor_server(handle.clone(), port, monitor_addr).await {
                 Some(server) => {
-                    println!(
-                        "Monitor dashboard: http://{}:{}",
-                        if monitor_addr == "0.0.0.0" { "localhost" } else { monitor_addr },
-                        port
-                    );
+                    print_monitor_url(monitor_addr, port);
                     println!(
                         "Watching {} for phase directories (Ctrl+C to stop)",
                         watch_dir.display()
