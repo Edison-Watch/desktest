@@ -402,6 +402,17 @@ async fn run_interactive_step_inner(
     loop_config.test_id = task_def.id.clone();
     loop_config.redactor = redactor.cloned();
     let full_instruction = task_def.full_instruction();
+    let notifier = if run.qa {
+        let pipeline = crate::notify::build_pipeline(config);
+        if pipeline.is_empty() {
+            None
+        } else {
+            Some(pipeline)
+        }
+    } else {
+        None
+    };
+
     let mut agent_loop = agent::loop_v2::AgentLoopV2::new(
         llm_client,
         session,
@@ -410,6 +421,7 @@ async fn run_interactive_step_inner(
         loop_config,
         recording.as_ref(),
         None, // no monitor in interactive step mode
+        notifier,
     );
 
     let agent_loop_result = agent_loop.run_step_by_step().await;

@@ -87,6 +87,27 @@ pub struct Config {
 
     #[serde(default)]
     pub electron: bool,
+
+    /// Notification integrations (Slack, etc.).
+    #[serde(default)]
+    pub integrations: IntegrationsConfig,
+}
+
+/// Configuration for notification integrations.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct IntegrationsConfig {
+    /// Slack webhook integration.
+    #[serde(default)]
+    pub slack: Option<SlackConfig>,
+}
+
+/// Slack Incoming Webhook configuration.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SlackConfig {
+    /// Webhook URL. Can also be set via `DESKTEST_SLACK_WEBHOOK_URL` env var.
+    pub webhook_url: Option<String>,
+    /// Channel override (optional — the webhook URL already targets a default channel).
+    pub channel: Option<String>,
 }
 
 impl Config {
@@ -111,6 +132,7 @@ impl Config {
             entrypoint: None,
             startup_timeout_seconds: default_timeout(),
             electron: false,
+            integrations: IntegrationsConfig::default(),
         }
     }
 

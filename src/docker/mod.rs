@@ -307,6 +307,7 @@ mod tests {
             entrypoint: None,
             startup_timeout_seconds: 30,
             electron: false,
+            integrations: Default::default(),
         }
     }
 
