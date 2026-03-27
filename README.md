@@ -32,6 +32,7 @@ Copy-paste the following prompt into Claude Code (or any coding agent) to instal
 - **Custom Docker images**: bring your own image for apps with complex dependencies
 - **[Attach mode](docs/attach-mode.md)**: connect to an already-running container for integration with external orchestration
 - **QA mode** (`--qa`): agent reports application bugs it encounters as structured markdown reports
+- **Slack notifications**: send QA bug reports to Slack channels via Incoming Webhooks
 
 ## Developer Workflows
 
@@ -263,6 +264,23 @@ When `--qa` is enabled:
 - The agent continues its task after reporting — multiple bugs can be found per run
 - Bug count is included in `results.json` and the test output
 
+### Slack Notifications
+
+Optionally send bug reports to Slack as they're discovered. Add an `integrations` section to your config JSON:
+
+```json
+{
+  "integrations": {
+    "slack": {
+      "webhook_url": "https://hooks.slack.com/services/T.../B.../xxx",
+      "channel": "#qa-bugs"
+    }
+  }
+}
+```
+
+Or set the `DESKTEST_SLACK_WEBHOOK_URL` environment variable (takes precedence over config). The `channel` field is optional — webhooks already target a default channel. Notifications are fire-and-forget and never block the test.
+
 ## Architecture
 
 <details>
@@ -352,6 +370,7 @@ desktest_artifacts/
 | `GEMINI_API_KEY` | Gemini API key |
 | `CODEX_API_KEY` | Codex CLI API key (alternative to ChatGPT login) |
 | `LLM_API_KEY` | Fallback API key for any provider |
+| `DESKTEST_SLACK_WEBHOOK_URL` | Slack Incoming Webhook URL for QA bug notifications (overrides config) |
 | `GITHUB_TOKEN` | GitHub token (used by `desktest update`) |
 
 </details>

@@ -316,3 +316,29 @@ The `secrets` field lets you pass credentials without hardcoding them in the tas
 - Bug count is tracked in `AgentOutcome` and `results.json`
 - Works with all modes: `run`, `suite`, `attach`, `interactive`
 - Bug reports are scoped to actual app bugs, NOT PyAutoGUI/infrastructure failures
+
+### Slack Notifications (QA Mode)
+
+When QA mode finds a bug, desktest can send notifications to a Slack channel via Incoming Webhooks. Notifications are fire-and-forget — they never block the agent loop or fail the test.
+
+**Configuration** (in config.json):
+```json
+{
+  "integrations": {
+    "slack": {
+      "webhook_url": "https://hooks.slack.com/services/T.../B.../xxx",
+      "channel": "#qa-bugs"
+    }
+  }
+}
+```
+
+Or via environment variable (takes precedence over config):
+```bash
+export DESKTEST_SLACK_WEBHOOK_URL="https://hooks.slack.com/services/T.../B.../xxx"
+```
+
+- `webhook_url`: Slack Incoming Webhook URL (required to enable Slack notifications)
+- `channel`: Channel override (optional — the webhook already targets a default channel)
+- Notifications include: bug ID, test name, step number, and bug description
+- The `integrations` config section is optional — existing configs without it continue to work unchanged

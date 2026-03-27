@@ -101,11 +101,13 @@ pub struct AgentLoopV2<'a> {
     pub(super) monitor: Option<MonitorHandle>,
     pub(super) test_id: String,
     pub(super) bug_reporter: Option<crate::bug_report::BugReporter>,
+    pub(super) notifier: Option<crate::notify::NotifierPipeline>,
     pub(super) redactor: Option<Redactor>,
 }
 
 impl<'a> AgentLoopV2<'a> {
     /// Create a new v2 agent loop.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         client: Box<dyn LlmProvider>,
         session: &'a DockerSession,
@@ -114,6 +116,7 @@ impl<'a> AgentLoopV2<'a> {
         config: AgentLoopV2Config,
         recording: Option<&'a Recording>,
         monitor: Option<MonitorHandle>,
+        notifier: Option<crate::notify::NotifierPipeline>,
     ) -> Self {
         let test_id = config.test_id.clone();
         let redactor = config.redactor.clone();
@@ -158,6 +161,7 @@ impl<'a> AgentLoopV2<'a> {
             monitor,
             test_id,
             bug_reporter,
+            notifier,
             redactor,
         }
     }
@@ -723,6 +727,23 @@ impl<'a> AgentLoopV2<'a> {
                 ) {
                     Ok(bug_id) => {
                         info!("Bug reported: {bug_id} at step {step_index}");
+
+                        // Send notification to configured integrations
+                        if let Some(ref notifier) = self.notifier {
+                            let summary = description
+                                .lines()
+                                .next()
+                                .unwrap_or("No summary")
+                                .to_string();
+                            notifier.notify_all(crate::notify::BugEvent {
+                                bug_id,
+                                step: step_index,
+                                summary,
+                                description: description.clone(),
+                                screenshot_path: observation.screenshot_path.clone(),
+                                test_id: self.test_id.clone(),
+                            });
+                        }
                     }
                     Err(e) => {
                         warn!("Failed to write bug report: {e}");

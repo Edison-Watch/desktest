@@ -12,6 +12,7 @@ mod logs;
 mod monitor;
 mod monitor_server;
 mod monitor_watcher;
+mod notify;
 mod observation;
 mod orchestration;
 mod preflight;
