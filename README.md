@@ -63,24 +63,32 @@ Use desktest as the eyes for your coding agent. You watch the test live, then ha
 
 `--monitor` is designed for human eyes (real-time web dashboard), while `logs` is designed for agent consumption (structured terminal output). Together they close the loop between observing a failure and fixing it.
 
-## Claude Code Integration
+## CLI-Based Providers (No API Key Needed)
 
-Desktest can use the **Claude Code CLI** as an LLM provider, letting you run tests with your existing Claude Code subscription — no separate API key needed:
+Desktest can shell out to locally-installed coding agent CLIs instead of calling LLM APIs directly:
+
+### Claude Code CLI
 
 ```bash
 desktest run task.json --provider claude-cli
 ```
 
-Under the hood, each agent step shells out to `claude -p`, saves trajectory screenshots and accessibility trees as files, and instructs Claude to read them via its Read tool. This gives the model full visual context across the sliding window, matching API-based providers.
+Uses your existing Claude Code subscription. Each step shells out to `claude -p`, saves trajectory screenshots and accessibility trees as files, and instructs Claude to read them via its Read tool. See [docs/claude-cli-provider.md](docs/claude-cli-provider.md).
 
-See [docs/claude-cli-provider.md](docs/claude-cli-provider.md) for setup and details.
+### OpenAI Codex CLI
+
+```bash
+desktest run task.json --provider codex-cli
+```
+
+Uses your existing ChatGPT login or `CODEX_API_KEY`. Screenshots are passed directly as `-i` flags (native image input), and accessibility trees are embedded inline in the prompt. See [docs/codex-cli-provider.md](docs/codex-cli-provider.md).
 
 ## Requirements
 
 **To run tests:**
 - Linux or macOS host
 - Docker daemon running (Docker Desktop, OrbStack, Colima, etc.)
-- An LLM API key (OpenAI, Anthropic, or compatible), **or** [Claude Code](https://claude.ai/code) installed (`--provider claude-cli`) — not needed for `--replay` mode
+- An LLM API key (OpenAI, Anthropic, or compatible), **or** a CLI-based provider: [Claude Code](https://claude.ai/code) (`--provider claude-cli`) or [Codex CLI](https://github.com/openai/codex) (`--provider codex-cli`) — not needed for `--replay` mode
 
 **To build from source (optional):**
 - Rust toolchain (`cargo`)
@@ -154,7 +162,7 @@ Options:
   --artifacts-dir <DIR>      Directory for trajectory logs, screenshots, and a11y snapshots
   --qa                       Enable QA mode: agent reports app bugs during testing
   --with-bash                Allow the agent to run bash commands inside the container (disabled by default)
-  --provider <PROVIDER>      LLM provider: anthropic, openai, openrouter, cerebras, gemini, claude-cli, custom
+  --provider <PROVIDER>      LLM provider: anthropic, openai, openrouter, cerebras, gemini, claude-cli, codex-cli, custom
   --model <MODEL>            LLM model name (overrides config file)
   --api-key <KEY>            API key for the LLM provider (prefer env vars to avoid shell history exposure)
 ```
@@ -342,6 +350,7 @@ desktest_artifacts/
 | `OPENROUTER_API_KEY` | OpenRouter API key |
 | `CEREBRAS_API_KEY` | Cerebras API key |
 | `GEMINI_API_KEY` | Gemini API key |
+| `CODEX_API_KEY` | Codex CLI API key (alternative to ChatGPT login) |
 | `LLM_API_KEY` | Fallback API key for any provider |
 | `GITHUB_TOKEN` | GitHub token (used by `desktest update`) |
 
