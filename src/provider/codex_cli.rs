@@ -223,6 +223,10 @@ fn build_codex_prompt(messages: &[ChatMessage]) -> Result<PromptResult, AppError
     let _ = std::fs::remove_dir_all(&temp_dir);
     std::fs::create_dir_all(&temp_dir)
         .map_err(|e| AppError::Agent(format!("Failed to create temp dir: {e}")))?;
+    // Early cleanup guard: if any operation below fails (e.g., save_screenshot
+    // on bad base64), the guard's Drop cleans up the temp directory. On success,
+    // we move the guard into PromptResult so it lives as long as the caller needs.
+    let mut cleanup_guard = Some(TempDirGuard(temp_dir.clone()));
 
     let mut system_parts = Vec::new();
     let mut prompt_sections: Vec<String> = Vec::new();
@@ -297,11 +301,12 @@ fn build_codex_prompt(messages: &[ChatMessage]) -> Result<PromptResult, AppError
     let system_prompt = system_parts.join("\n");
     let prompt_text = assemble_prompt(&system_prompt, &prompt_sections, &observations);
 
+    // Move the cleanup guard into PromptResult — the caller now owns cleanup.
+    let guard = cleanup_guard.take().unwrap();
     Ok(PromptResult {
         prompt_text,
         screenshot_paths,
-        // The guard owns the temp_dir and will clean it up when dropped.
-        _guard: TempDirGuard(temp_dir.clone()),
+        _guard: guard,
         temp_dir,
     })
 }
