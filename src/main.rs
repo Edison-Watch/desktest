@@ -82,7 +82,7 @@ fn print_monitor_url(bind_addr: &str, port: u16) {
             bind_addr
         );
     }
-    let display_addr = if bind_addr == "0.0.0.0" || bind_addr == "::0" {
+    let display_addr = if bind_addr == "0.0.0.0" || bind_addr == "::" {
         format!("localhost:{port}")
     } else {
         config::format_host_port(bind_addr, port)
