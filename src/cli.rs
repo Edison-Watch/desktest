@@ -95,7 +95,7 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub api_key: Option<String>,
 
-    /// Timeout in seconds for artifact collection (default: 120). If collection exceeds this, a warning is logged and the process exits with the evaluation result.
+    /// Timeout in seconds for artifact collection (default: 120, 0 = no limit). If collection exceeds this, a warning is logged and the process exits with the evaluation result.
     #[arg(long, global = true, default_value_t = 120)]
     pub artifacts_timeout: u64,
 

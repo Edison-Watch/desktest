@@ -183,6 +183,13 @@ pub(crate) async fn maybe_collect_artifacts(
         return;
     }
 
+    // 0 means no timeout (unlimited) — just await directly
+    if run.artifacts_timeout_secs == 0 {
+        info!("Collecting artifacts (no timeout)...");
+        let _ = artifacts::collect_artifacts(session, artifacts_dir).await;
+        return;
+    }
+
     info!(
         "Collecting artifacts (timeout: {}s)...",
         run.artifacts_timeout_secs
