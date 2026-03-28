@@ -7,6 +7,7 @@ use crate::error::AppError;
 ///
 /// All methods correspond to operations that are environment-agnostic:
 /// executing commands, transferring files, and lifecycle management.
+#[allow(dead_code)]
 pub trait Session: Send + Sync {
     /// Execute a command and return stdout.
     async fn exec(&self, cmd: &[&str]) -> Result<String, AppError>;
