@@ -183,9 +183,17 @@ async fn maybe_collect_artifacts(
         return;
     }
 
-    info!("Collecting artifacts (timeout: {}s)...", run.artifacts_timeout_secs);
+    info!(
+        "Collecting artifacts (timeout: {}s)...",
+        run.artifacts_timeout_secs
+    );
     let timeout = Duration::from_secs(run.artifacts_timeout_secs);
-    match tokio::time::timeout(timeout, artifacts::collect_artifacts(session, artifacts_dir)).await {
+    match tokio::time::timeout(
+        timeout,
+        artifacts::collect_artifacts(session, artifacts_dir),
+    )
+    .await
+    {
         Ok(_) => {}
         Err(_) => {
             tracing::warn!(
