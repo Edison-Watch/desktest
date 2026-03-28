@@ -41,6 +41,8 @@ pub(crate) struct RunConfig {
     pub bash_enabled: bool,
     pub no_recording: bool,
     pub qa: bool,
+    pub artifacts_timeout_secs: u64,
+    pub no_artifacts: bool,
 }
 
 /// Groups the core references that every orchestration inner function needs.
@@ -170,6 +172,46 @@ pub(crate) async fn resolve_image_name<'a>(
     Ok(custom_image)
 }
 
+/// Collect artifacts with timeout handling, or skip entirely if `--no-artifacts`.
+pub(crate) async fn maybe_collect_artifacts(
+    session: &crate::session::SessionKind,
+    artifacts_dir: &std::path::Path,
+    run: &RunConfig,
+) {
+    if run.no_artifacts {
+        info!("Skipping artifact collection (--no-artifacts)");
+        return;
+    }
+
+    // 0 means no timeout (unlimited) — just await directly
+    if run.artifacts_timeout_secs == 0 {
+        info!("Collecting artifacts (no timeout)...");
+        let _ = artifacts::collect_artifacts(session, artifacts_dir).await;
+        return;
+    }
+
+    info!(
+        "Collecting artifacts (timeout: {}s)...",
+        run.artifacts_timeout_secs
+    );
+    let timeout = Duration::from_secs(run.artifacts_timeout_secs);
+    match tokio::time::timeout(
+        timeout,
+        artifacts::collect_artifacts(session, artifacts_dir),
+    )
+    .await
+    {
+        Ok(_) => {}
+        Err(_) => {
+            tracing::warn!(
+                "Artifact collection timed out after {}s — skipping remaining artifacts. \
+                 Use --artifacts-timeout to increase or --no-artifacts to skip.",
+                run.artifacts_timeout_secs
+            );
+        }
+    }
+}
+
 /// Run a test from a task definition file.
 ///
 /// This is the new task-based flow: load task → create container → wait for desktop →
@@ -254,9 +296,8 @@ pub(crate) async fn run_task(
         r = run_task_inner(&ctx, run, monitor.as_ref(), start, Some(&redactor)) => r,
     };
 
-    // Always collect artifacts and clean up
-    info!("Collecting artifacts...");
-    let _ = artifacts::collect_artifacts(&session, &artifacts_dir).await;
+    // Collect artifacts (with timeout) and clean up
+    maybe_collect_artifacts(&session, &artifacts_dir, &run).await;
 
     info!("Cleaning up container...");
     let _ = session.cleanup().await;
@@ -990,8 +1031,7 @@ pub(crate) async fn run_attach(
     };
 
     // Collect artifacts but do NOT clean up the container (we don't own it)
-    info!("Collecting artifacts...");
-    let _ = artifacts::collect_artifacts(&session, &artifacts_dir).await;
+    maybe_collect_artifacts(&session, &artifacts_dir, &run).await;
 
     finalize_run(
         result,

@@ -157,6 +157,8 @@ async fn main() {
                 bash_enabled: cli.with_bash || cli.qa,
                 no_recording: !cli.record,
                 qa: cli.qa,
+                artifacts_timeout_secs: cli.artifacts_timeout,
+                no_artifacts: cli.no_artifacts,
             };
 
             let result = orchestration::run_task(
@@ -208,6 +210,8 @@ async fn main() {
                 bash_enabled: cli.with_bash || cli.qa,
                 no_recording: !cli.record,
                 qa: cli.qa,
+                artifacts_timeout_secs: cli.artifacts_timeout,
+                no_artifacts: cli.no_artifacts,
             };
 
             let result = suite::run_suite(
@@ -277,6 +281,8 @@ async fn main() {
                 bash_enabled: cli.with_bash || cli.qa,
                 no_recording: !cli.record,
                 qa: cli.qa,
+                artifacts_timeout_secs: cli.artifacts_timeout,
+                no_artifacts: cli.no_artifacts,
             };
 
             let result = orchestration::run_attach(
@@ -334,6 +340,8 @@ async fn main() {
                 bash_enabled: cli.with_bash || cli.qa,
                 no_recording: !cli.record,
                 qa: cli.qa,
+                artifacts_timeout_secs: cli.artifacts_timeout,
+                no_artifacts: cli.no_artifacts,
             };
             let result = interactive::run_interactive(
                 task_def,
@@ -616,6 +624,8 @@ async fn main() {
                 bash_enabled: cli.with_bash || cli.qa,
                 no_recording: !cli.record,
                 qa: cli.qa,
+                artifacts_timeout_secs: cli.artifacts_timeout,
+                no_artifacts: cli.no_artifacts,
             };
 
             let result = orchestration::run_task(

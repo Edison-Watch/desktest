@@ -94,6 +94,14 @@ pub struct Cli {
     /// Note: prefer env vars (ANTHROPIC_API_KEY, OPENROUTER_API_KEY, etc.) to avoid exposing secrets in shell history and process listings
     #[arg(long, global = true)]
     pub api_key: Option<String>,
+
+    /// Timeout in seconds for artifact collection (default: 120, 0 = no limit). If collection exceeds this, a warning is logged and the process exits with the evaluation result.
+    #[arg(long, global = true, default_value_t = 120)]
+    pub artifacts_timeout: u64,
+
+    /// Skip artifact collection entirely (exit immediately after evaluation)
+    #[arg(long, default_value_t = false, global = true)]
+    pub no_artifacts: bool,
 }
 
 #[derive(Subcommand, Debug)]

@@ -3,14 +3,13 @@ use std::time::{Duration, Instant};
 use tracing::info;
 
 use crate::agent;
-use crate::artifacts;
 use crate::config::Config;
 use crate::docker;
 use crate::error::{AgentOutcome, AppError};
 use crate::evaluator;
 use crate::orchestration::{
     RunConfig, TaskRunResult, build_agent_loop_config, format_evaluation_reasoning,
-    print_validation_results, resolve_image_name, run_task,
+    maybe_collect_artifacts, print_validation_results, resolve_image_name, run_task,
 };
 use crate::provider;
 use crate::readiness;
@@ -122,14 +121,13 @@ async fn run_interactive_pause(
     };
 
     // Always clean up
-    info!("Collecting artifacts...");
     let artifacts_dir = match artifacts_dir_override {
         Some(dir) => dir,
         None => std::env::current_dir()
             .map_err(|e| AppError::Infra(format!("Cannot get cwd: {e}")))?
             .join("desktest_artifacts"),
     };
-    let _ = artifacts::collect_artifacts(&session, &artifacts_dir).await;
+    maybe_collect_artifacts(&session, &artifacts_dir, &run).await;
 
     info!("Cleaning up container...");
     let _ = session.cleanup().await;
@@ -287,8 +285,7 @@ async fn run_interactive_step(
     };
 
     // Collect artifacts and clean up
-    info!("Collecting artifacts...");
-    let _ = artifacts::collect_artifacts(&session, &artifacts_dir).await;
+    maybe_collect_artifacts(&session, &artifacts_dir, &run).await;
     info!("Cleaning up container...");
     let _ = session.cleanup().await;
 
