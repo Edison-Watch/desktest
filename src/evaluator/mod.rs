@@ -182,14 +182,10 @@ async fn evaluate_metric(
 /// `script_path`, etc.
 pub(super) fn validate_host_path(path: &str, field_name: &str) -> Result<(), AppError> {
     let p = std::path::Path::new(path);
-    let canonical = std::fs::canonicalize(p).map_err(|e| {
-        AppError::Config(format!(
-            "Cannot resolve {field_name} '{path}': {e}"
-        ))
-    })?;
-    let cwd = std::env::current_dir().map_err(|e| {
-        AppError::Infra(format!("Cannot determine working directory: {e}"))
-    })?;
+    let canonical = std::fs::canonicalize(p)
+        .map_err(|e| AppError::Config(format!("Cannot resolve {field_name} '{path}': {e}")))?;
+    let cwd = std::env::current_dir()
+        .map_err(|e| AppError::Infra(format!("Cannot determine working directory: {e}")))?;
     let cwd_canonical = std::fs::canonicalize(&cwd).unwrap_or(cwd);
     if !canonical.starts_with(&cwd_canonical) {
         return Err(AppError::Config(format!(
