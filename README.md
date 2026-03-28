@@ -31,6 +31,7 @@ Copy-paste the following prompt into Claude Code (or any coding agent) to instal
 **Extensibility**
 - **Custom Docker images**: bring your own image for apps with complex dependencies
 - **[Attach mode](docs/attach-mode.md)**: connect to an already-running container for integration with external orchestration
+- **[CI integration](docs/ci.md)**: run tests in GitHub Actions, Cirrus CI, EC2 Mac, and other CI environments
 - **[Remote monitoring](docs/remote-monitoring.md)**: access the dashboard and VNC from another machine via SSH or direct network access
 - **QA mode** (`--qa`): agent reports application bugs it encounters as structured markdown reports
 - **Slack notifications**: send QA bug reports to Slack channels via Incoming Webhooks
@@ -87,14 +88,33 @@ Uses your existing ChatGPT login or `CODEX_API_KEY`. Screenshots are passed dire
 
 ## Requirements
 
-**To run tests:**
+**To run tests (Linux — default):**
 - Linux or macOS host
 - Docker daemon running (Docker Desktop, OrbStack, Colima, etc.)
 - An LLM API key (OpenAI, Anthropic, or compatible), **or** a CLI-based provider: [Claude Code](https://claude.ai/code) (`--provider claude-cli`) or [Codex CLI](https://github.com/openai/codex) (`--provider codex-cli`) — not needed for `--replay` mode
 
+<details>
+<summary><b>To run tests (macOS apps — planned)</b></summary>
+
+- Apple Silicon Mac (M1 or later) running macOS 13+
+- [Tart](https://github.com/cirruslabs/tart) installed (`brew install cirruslabs/cli/tart`)
+- A Tart golden image with TCC permissions pre-configured (Accessibility + Screen Recording)
+- An LLM API key (same as Linux)
+- **2-VM limit**: Apple's macOS SLA and Virtualization.framework permit a maximum of 2 macOS VMs running simultaneously per physical Mac. This limits parallel test execution for suite runs. See [macOS Support](docs/macos-support.md) for details, including Apple TOS compliance.
+
+</details>
+
+<details>
+<summary><b>To run tests (Windows apps — planned)</b></summary>
+
+- Windows VM support is planned but not yet designed. Expected to use QEMU/libvirt or Hyper-V with Windows VMs, RDP or VNC for display access, and UI Automation APIs for accessibility. Details TBD.
+
+</details>
+
 **To build from source (optional):**
 - Rust toolchain (`cargo`)
 - Git
+- Xcode Command Line Tools (for macOS a11y helper binary — macOS only)
 
 Run `desktest doctor` to verify your setup.
 
@@ -206,6 +226,9 @@ See `examples/` for more examples including folder deploys and custom Docker ima
 | `folder` | Deploy a directory with an entrypoint script |
 | `docker_image` | Use a pre-built custom Docker image |
 | `vnc_attach` | Attach to an existing running desktop (see [Attach Mode](docs/attach-mode.md)) |
+| `macos_tart` | **(Planned)** macOS app in a Tart VM (see [macOS Support](docs/macos-support.md)) |
+| `macos_native` | **(Planned)** macOS app on host desktop, no VM isolation (see [macOS Support](docs/macos-support.md)) |
+| `windows` | **(Planned)** Windows app in a VM — details TBD |
 
 > **Electron apps**: Add `"electron": true` to your app config to use the `desktest-desktop:electron` image with Node.js pre-installed. See [examples/ELECTRON_QUICKSTART.md](examples/ELECTRON_QUICKSTART.md).
 
