@@ -718,7 +718,6 @@ impl<'a> AgentLoopV2<'a> {
 
             // Capture new observation
             current_observation = self.capture_observation_for_step(step_index).await?;
-            execution_elapsed += step_start.elapsed();
 
             // Check early exit condition against fresh post-action observation
             if let Some(ref early_exit) = self.config.early_exit {
@@ -740,6 +739,9 @@ impl<'a> AgentLoopV2<'a> {
                     });
                 }
             }
+
+            // Track elapsed time after early exit check so LlmJudge time is counted
+            execution_elapsed += step_start.elapsed();
         }
     }
 
