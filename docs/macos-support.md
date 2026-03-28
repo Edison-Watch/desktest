@@ -97,7 +97,7 @@ Many widely-used open source projects perform macOS UI automation without any kn
 | Accessibility tree | pyatspi / AT-SPI2 (mature) | AXUIElement via Swift helper (limited) |
 | Action execution | PyAutoGUI via X11 | PyAutoGUI via Quartz/CoreGraphics |
 | Screenshots | scrot (X11) | screencapture (built-in) |
-| Video recording | ffmpeg x11grab | ffmpeg avfoundation |
+| Video recording | ffmpeg x11grab | screencapture -V (built-in) |
 | App deployment | Copy into container | Pre-installed in VM image or `open -a` |
 | Security boundary | Docker container (non-root user) | VM boundary (stronger) |
 | Headless operation | Native (Xvfb) | Requires VM (no headless macOS desktop) |
