@@ -93,15 +93,23 @@ Uses your existing ChatGPT login or `CODEX_API_KEY`. Screenshots are passed dire
 - Docker daemon running (Docker Desktop, OrbStack, Colima, etc.)
 - An LLM API key (OpenAI, Anthropic, or compatible), **or** a CLI-based provider: [Claude Code](https://claude.ai/code) (`--provider claude-cli`) or [Codex CLI](https://github.com/openai/codex) (`--provider codex-cli`) — not needed for `--replay` mode
 
-**To run tests (macOS apps — planned):**
+<details>
+<summary><b>To run tests (macOS apps — planned)</b></summary>
+
 - Apple Silicon Mac (M1 or later) running macOS 13+
 - [Tart](https://github.com/cirruslabs/tart) installed (`brew install cirruslabs/cli/tart`)
 - A Tart golden image with TCC permissions pre-configured (Accessibility + Screen Recording)
 - An LLM API key (same as Linux)
 - **2-VM limit**: Apple's macOS SLA and Virtualization.framework permit a maximum of 2 macOS VMs running simultaneously per physical Mac. This limits parallel test execution for suite runs. See [macOS Support](docs/macos-support.md) for details, including Apple TOS compliance.
 
-**To run tests (Windows apps — planned):**
+</details>
+
+<details>
+<summary><b>To run tests (Windows apps — planned)</b></summary>
+
 - Windows VM support is planned but not yet designed. Expected to use QEMU/libvirt or Hyper-V with Windows VMs, RDP or VNC for display access, and UI Automation APIs for accessibility. Details TBD.
+
+</details>
 
 **To build from source (optional):**
 - Rust toolchain (`cargo`)
