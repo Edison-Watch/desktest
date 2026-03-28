@@ -174,7 +174,7 @@ pub(crate) async fn resolve_image_name<'a>(
 
 /// Collect artifacts with timeout handling, or skip entirely if `--no-artifacts`.
 pub(crate) async fn maybe_collect_artifacts(
-    session: &docker::DockerSession,
+    session: &crate::session::SessionKind,
     artifacts_dir: &std::path::Path,
     run: &RunConfig,
 ) {
