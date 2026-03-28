@@ -1,13 +1,13 @@
 use std::time::Duration;
 
 use super::MetricResult;
-use crate::docker::DockerSession;
 use crate::error::AppError;
+use crate::session::{Session, SessionKind};
 use crate::task::MatchMode;
 
 /// command_output: Run command in container, check stdout.
 pub(super) async fn evaluate_command_output(
-    session: &DockerSession,
+    session: &SessionKind,
     command: &str,
     expected: &str,
     match_mode: &MatchMode,
@@ -73,7 +73,7 @@ pub(super) async fn evaluate_command_output(
 
 /// file_exists: Check if a file exists in the container.
 pub(super) async fn evaluate_file_exists(
-    session: &DockerSession,
+    session: &SessionKind,
     path: &str,
     should_not_exist: bool,
     eval_timeout: Duration,
@@ -125,7 +125,7 @@ pub(super) async fn evaluate_file_exists(
 
 /// exit_code: Run command and check exit code.
 pub(super) async fn evaluate_exit_code(
-    session: &DockerSession,
+    session: &SessionKind,
     command: &str,
     expected: i32,
     eval_timeout: Duration,

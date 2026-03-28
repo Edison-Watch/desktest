@@ -2,8 +2,8 @@ use std::path::Path;
 
 use tracing::{debug, info, warn};
 
-use crate::docker::DockerSession;
 use crate::error::AppError;
+use crate::session::{Session, SessionKind};
 
 /// Path inside the container where ffmpeg writes the recording.
 const CONTAINER_RECORDING_PATH: &str = "/tmp/recording.mp4";
@@ -25,7 +25,7 @@ impl Recording {
     /// Uses x11grab to capture the Xvfb display at `:99`.
     /// The recording runs as a detached process and is stopped with `stop()`.
     pub async fn start(
-        session: &DockerSession,
+        session: &SessionKind,
         display_width: u32,
         display_height: u32,
     ) -> Result<Self, AppError> {
@@ -101,7 +101,7 @@ impl Recording {
     /// Stop the ffmpeg recording by sending SIGINT.
     ///
     /// SIGINT causes ffmpeg to finalize the MP4 file properly (moov atom written).
-    pub async fn stop(&self, session: &DockerSession) {
+    pub async fn stop(&self, session: &SessionKind) {
         if !self.started {
             debug!("Recording was not started, nothing to stop");
             return;
@@ -151,7 +151,7 @@ impl Recording {
     /// best-effort.
     pub async fn update_caption(
         &self,
-        session: &DockerSession,
+        session: &SessionKind,
         step: usize,
         thought: Option<&str>,
         action_code: &[String],
@@ -185,7 +185,7 @@ impl Recording {
     /// Returns the local path to the recording file, or None if no recording was made.
     pub async fn collect(
         &self,
-        session: &DockerSession,
+        session: &SessionKind,
         artifacts_dir: &Path,
     ) -> Option<std::path::PathBuf> {
         if !self.started {

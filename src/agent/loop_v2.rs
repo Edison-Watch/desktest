@@ -12,13 +12,13 @@ use tracing::{debug, info, warn};
 use crate::agent::context::{ContextManager, TrajectoryTurn};
 use crate::agent::llm_retry::{extract_reasoning, extract_text_content};
 use crate::agent::pyautogui::{self, SpecialCommand};
-use crate::docker::DockerSession;
 use crate::error::{AgentOutcome, AppError};
 use crate::monitor::{MonitorEvent, MonitorHandle};
 use crate::observation::{self, Observation, ObservationConfig};
 use crate::provider::{ChatMessage, LlmProvider};
 use crate::recording::Recording;
 use crate::redact::Redactor;
+use crate::session::SessionKind;
 use crate::task::{EarlyExitCondition, EarlyExitConfig};
 use crate::trajectory::{StepData, TrajectoryLogger};
 
@@ -96,7 +96,7 @@ pub struct AgentLoopV2<'a> {
     // Fields are pub(super) to allow the split impl block in llm_retry.rs
     // to access them directly without additional accessors.
     pub(super) client: Box<dyn LlmProvider>,
-    pub(super) session: &'a DockerSession,
+    pub(super) session: &'a SessionKind,
     pub(super) artifacts_dir: PathBuf,
     pub(super) context: ContextManager,
     pub(super) config: AgentLoopV2Config,
@@ -114,7 +114,7 @@ impl<'a> AgentLoopV2<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         client: Box<dyn LlmProvider>,
-        session: &'a DockerSession,
+        session: &'a SessionKind,
         artifacts_dir: PathBuf,
         instruction: &str,
         config: AgentLoopV2Config,

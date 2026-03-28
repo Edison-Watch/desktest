@@ -14,6 +14,7 @@ use crate::provider;
 use crate::readiness;
 use crate::recording;
 use crate::results;
+use crate::session::{Session, SessionKind};
 use crate::setup;
 use crate::task;
 
@@ -46,7 +47,7 @@ pub(crate) struct RunConfig {
 struct TaskContext<'a> {
     task_def: &'a task::TaskDefinition,
     config: &'a Config,
-    session: &'a docker::DockerSession,
+    session: &'a SessionKind,
     artifacts_dir: &'a std::path::Path,
 }
 
@@ -235,6 +236,8 @@ pub(crate) async fn run_task(
         } => r?,
     };
 
+    let session = SessionKind::Docker(session);
+
     let ctx = TaskContext {
         task_def: &task_def,
         config: &config,
@@ -369,7 +372,10 @@ async fn run_task_inner(
     // 1b. Validate custom image dependencies (after desktop is ready so X11-dependent imports work)
     let is_docker_image = matches!(task_def.app, task::AppConfig::DockerImage { .. });
     if is_docker_image {
-        session.validate_custom_image().await?;
+        let docker = session
+            .as_docker()
+            .expect("Docker session required for custom image validation");
+        docker.validate_custom_image().await?;
     }
 
     // 2. Deploy app (before setup steps, so setup can reference deployed files)
@@ -378,7 +384,10 @@ async fn run_task_inner(
         String::new()
     } else {
         info!("Deploying app...");
-        session.deploy_app(config).await?
+        let docker = session
+            .as_docker()
+            .expect("Docker session required for app deployment");
+        docker.deploy_app(config).await?
     };
 
     // 3. Run setup steps from task definition (after deploy, before app launch)
@@ -435,7 +444,10 @@ async fn run_task_inner(
 
         let is_appimage = matches!(config.app_type, crate::config::AppType::Appimage);
         info!("Launching app: {app_path}");
-        session
+        let docker = session
+            .as_docker()
+            .expect("Docker session required for app launch");
+        docker
             .launch_app(&app_path, is_appimage, config.electron)
             .await?;
 
@@ -787,7 +799,7 @@ async fn run_eval_loop(
 /// timing if no explicit override is set.
 pub(crate) async fn build_agent_loop_config(
     task_def: &task::TaskDefinition,
-    session: &docker::DockerSession,
+    session: &SessionKind,
     config: &Config,
     run: RunConfig,
 ) -> agent::loop_v2::AgentLoopV2Config {
@@ -959,6 +971,7 @@ pub(crate) async fn run_attach(
     // Attach to existing container (no lifecycle management)
     info!("Attaching to container '{container}'...");
     let session = docker::DockerSession::attach(container).await?;
+    let session = SessionKind::Docker(session);
 
     let ctx = TaskContext {
         task_def: &task_def,

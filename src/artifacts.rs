@@ -6,6 +6,7 @@ use tracing::{debug, warn};
 
 use crate::docker::DockerSession;
 use crate::error::AppError;
+use crate::session::{Session, SessionKind};
 
 /// Collect artifacts from the container into the host artifacts directory.
 ///
@@ -16,7 +17,7 @@ use crate::error::AppError;
 /// - Xvfb / x11vnc / xfce4 logs
 /// - Docker container logs
 pub async fn collect_artifacts(
-    session: &DockerSession,
+    session: &SessionKind,
     artifacts_dir: &Path,
 ) -> Result<(), AppError> {
     std::fs::create_dir_all(artifacts_dir)
@@ -88,8 +89,10 @@ pub async fn collect_artifacts(
         _ => debug!("No dmesg output to collect"),
     }
 
-    // Capture container logs via Docker API
-    collect_docker_logs(session, artifacts_dir).await;
+    // Capture container logs via Docker API (Docker-specific)
+    if let Some(docker) = session.as_docker() {
+        collect_docker_logs(docker, artifacts_dir).await;
+    }
 
     Ok(())
 }

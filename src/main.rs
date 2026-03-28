@@ -22,6 +22,7 @@ mod recording;
 mod redact;
 mod results;
 mod review;
+mod session;
 mod setup;
 mod suite;
 mod task;

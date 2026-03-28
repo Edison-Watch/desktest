@@ -16,6 +16,7 @@ use crate::provider;
 use crate::readiness;
 use crate::recording;
 use crate::results;
+use crate::session::{Session, SessionKind};
 use crate::setup;
 use crate::task;
 
@@ -109,6 +110,7 @@ async fn run_interactive_pause(
             docker::DockerSession::create(&config, effective_image, extra_env).await
         } => r?,
     };
+    let session = SessionKind::Docker(session);
 
     let result = tokio::select! {
         biased;
@@ -138,7 +140,7 @@ async fn run_interactive_pause(
 async fn run_interactive_pause_inner(
     task_def: &task::TaskDefinition,
     config: &Config,
-    session: &docker::DockerSession,
+    session: &SessionKind,
     timeout: Duration,
     debug: bool,
     _no_recording: bool,
@@ -151,7 +153,10 @@ async fn run_interactive_pause_inner(
     // 1b. Validate custom image dependencies (after desktop is ready)
     let is_docker_image = matches!(task_def.app, task::AppConfig::DockerImage { .. });
     if is_docker_image {
-        session.validate_custom_image().await?;
+        let docker = session
+            .as_docker()
+            .expect("Docker session required for custom image validation");
+        docker.validate_custom_image().await?;
     }
 
     // 2. Deploy app (before setup steps, so setup can reference deployed files)
@@ -160,7 +165,10 @@ async fn run_interactive_pause_inner(
         String::new()
     } else {
         info!("Deploying app...");
-        session.deploy_app(config).await?
+        let docker = session
+            .as_docker()
+            .expect("Docker session required for app deployment");
+        docker.deploy_app(config).await?
     };
 
     // 3. Run setup steps (after deploy, before app launch)
@@ -185,7 +193,10 @@ async fn run_interactive_pause_inner(
     } else {
         let is_appimage = matches!(config.app_type, crate::config::AppType::Appimage);
         info!("Launching app: {app_path}");
-        session
+        let docker = session
+            .as_docker()
+            .expect("Docker session required for app launch");
+        docker
             .launch_app(&app_path, is_appimage, config.electron)
             .await?;
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
@@ -199,13 +210,16 @@ async fn run_interactive_pause_inner(
         );
     }
 
+    let docker = session
+        .as_docker()
+        .expect("Docker session required for container info");
     println!(
         "\nInteractive mode: container is running with task '{}'.",
         task_def.id
     );
     println!("  Instruction: {}", task_def.instruction);
-    println!("  Container ID: {}", session.container_id);
-    println!("  docker exec -it {} bash", session.container_id);
+    println!("  Container ID: {}", docker.container_id);
+    println!("  docker exec -it {} bash", docker.container_id);
     println!("\nPress Ctrl+C to stop and clean up.");
 
     // Wait forever until Ctrl+C
@@ -258,6 +272,7 @@ async fn run_interactive_step(
             docker::DockerSession::create(&config, effective_image, extra_env).await
         } => r?,
     };
+    let session = SessionKind::Docker(session);
 
     let test_id = task_def.id.clone();
     let timeout = Duration::from_secs(config.startup_timeout_seconds);
@@ -305,7 +320,7 @@ async fn run_interactive_step(
 async fn run_interactive_step_inner(
     task_def: &task::TaskDefinition,
     config: &Config,
-    session: &docker::DockerSession,
+    session: &SessionKind,
     artifacts_dir: &std::path::Path,
     timeout: Duration,
     run: RunConfig,
@@ -320,7 +335,10 @@ async fn run_interactive_step_inner(
     // 1b. Validate custom image dependencies (after desktop is ready)
     let is_docker_image = matches!(task_def.app, task::AppConfig::DockerImage { .. });
     if is_docker_image {
-        session.validate_custom_image().await?;
+        let docker = session
+            .as_docker()
+            .expect("Docker session required for custom image validation");
+        docker.validate_custom_image().await?;
     }
 
     // 2. Deploy app (before setup steps, so setup can reference deployed files)
@@ -329,7 +347,10 @@ async fn run_interactive_step_inner(
         String::new()
     } else {
         info!("Deploying app...");
-        session.deploy_app(config).await?
+        let docker = session
+            .as_docker()
+            .expect("Docker session required for app deployment");
+        docker.deploy_app(config).await?
     };
 
     // 3. Run setup steps (after deploy, before app launch)
@@ -358,7 +379,10 @@ async fn run_interactive_step_inner(
         let baseline_windows = readiness::get_stable_window_list(session).await?;
         let is_appimage = matches!(config.app_type, crate::config::AppType::Appimage);
         info!("Launching app: {app_path}");
-        session
+        let docker = session
+            .as_docker()
+            .expect("Docker session required for app launch");
+        docker
             .launch_app(&app_path, is_appimage, config.electron)
             .await?;
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
