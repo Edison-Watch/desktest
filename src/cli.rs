@@ -104,7 +104,7 @@ pub struct Cli {
     pub no_artifacts: bool,
 
     /// Glob patterns to exclude from home directory artifact collection (repeatable).
-    /// Defaults: node_modules, .cache, .npm, .electron, GPU Cache, ShaderCache.
+    /// Defaults: node_modules, .cache, .npm, .electron, .nvm, GPU Cache, GPUCache, ShaderCache.
     /// Use --artifacts-exclude=none to disable all default excludes.
     #[arg(long, global = true)]
     pub artifacts_exclude: Vec<String>,

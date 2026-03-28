@@ -160,6 +160,15 @@ async fn collect_home_filtered(
             .map_err(|e| AppError::Infra(format!("Tar path error: {e}")))?
             .to_path_buf();
 
+        // Skip symlinks and hard links to prevent directory escape attacks
+        if matches!(
+            entry.header().entry_type(),
+            tar::EntryType::Symlink | tar::EntryType::Link
+        ) {
+            debug!("Skipping symlink/link entry: {}", path.display());
+            continue;
+        }
+
         // Strip the first component ("tester/")
         let components: Vec<_> = path.components().collect();
         if components.len() <= 1 {

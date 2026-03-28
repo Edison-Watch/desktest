@@ -113,8 +113,13 @@ fn resolve_artifacts_exclude(user: &[String]) -> Vec<String> {
             .map(|s| (*s).to_string())
             .collect();
     }
-    if user.len() == 1 && user[0].eq_ignore_ascii_case("none") {
-        return Vec::new();
+    if user.iter().any(|s| s.eq_ignore_ascii_case("none")) {
+        // "none" anywhere in the list → disable defaults; keep any other patterns
+        return user
+            .iter()
+            .filter(|s| !s.eq_ignore_ascii_case("none"))
+            .cloned()
+            .collect();
     }
     user.to_vec()
 }
