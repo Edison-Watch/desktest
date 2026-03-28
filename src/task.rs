@@ -444,6 +444,39 @@ fn apply_secrets_to_metric(
     Ok(())
 }
 
+fn apply_secrets_to_early_exit(
+    early_exit: &mut EarlyExitConfig,
+    resolved: &HashMap<String, String>,
+    defined: &HashMap<String, SecretDef>,
+) -> Result<(), AppError> {
+    match &mut early_exit.condition {
+        EarlyExitCondition::FileCompare {
+            actual_path,
+            expected_path,
+            ..
+        } => {
+            *actual_path = substitute_secrets(actual_path, resolved, defined)?;
+            *expected_path = substitute_secrets(expected_path, resolved, defined)?;
+        }
+        EarlyExitCondition::CommandOutput {
+            command, expected, ..
+        } => {
+            *command = substitute_secrets(command, resolved, defined)?;
+            *expected = substitute_secrets(expected, resolved, defined)?;
+        }
+        EarlyExitCondition::FileExists { path, .. } => {
+            *path = substitute_secrets(path, resolved, defined)?;
+        }
+        EarlyExitCondition::ExitCode { command, .. } => {
+            *command = substitute_secrets(command, resolved, defined)?;
+        }
+        EarlyExitCondition::LlmJudge { prompt } => {
+            *prompt = substitute_secrets(prompt, resolved, defined)?;
+        }
+    }
+    Ok(())
+}
+
 fn apply_secrets_to_app(
     app: &mut AppConfig,
     resolved: &HashMap<String, String>,
@@ -583,6 +616,9 @@ impl TaskDefinition {
             for metric in &mut evaluator.metrics {
                 apply_secrets_to_metric(metric, resolved, &self.secrets)?;
             }
+        }
+        if let Some(early_exit) = &mut self.early_exit {
+            apply_secrets_to_early_exit(early_exit, resolved, &self.secrets)?;
         }
         Ok(())
     }
