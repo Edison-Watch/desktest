@@ -128,7 +128,7 @@ For automated CI environments, you can pre-grant permissions by modifying the TC
 4. Insert permission grants:
 
 ```bash
-# Grant Accessibility to Terminal and Python
+# Grant Accessibility and Screen Recording to Terminal
 sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" \
   "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) \
    VALUES ('kTCCServiceAccessibility', 'com.apple.Terminal', 0, 2, 0, 1);"
@@ -136,7 +136,21 @@ sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" \
 sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" \
   "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) \
    VALUES ('kTCCServiceScreenCapture', 'com.apple.Terminal', 0, 2, 0, 1);"
+
+# Grant Accessibility and Screen Recording to Python (required for PyAutoGUI)
+# Adjust the path to match your Python installation in the golden image
+PYTHON_PATH="/usr/local/bin/python3"
+
+sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" \
+  "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) \
+   VALUES ('kTCCServiceAccessibility', '${PYTHON_PATH}', 1, 2, 0, 1);"
+
+sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" \
+  "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) \
+   VALUES ('kTCCServiceScreenCapture', '${PYTHON_PATH}', 1, 2, 0, 1);"
 ```
+
+> **Note**: `client_type` is `0` for bundle IDs (e.g., `com.apple.Terminal`) and `1` for absolute paths (e.g., `/usr/local/bin/python3`). If Python is installed via Homebrew, the path may be `/opt/homebrew/bin/python3`.
 
 5. Optionally re-enable SIP: `csrutil enable` (from Recovery)
 6. Save the VM as the golden image: `tart push golden-image ghcr.io/yourorg/macos-test:latest`
