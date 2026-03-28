@@ -68,11 +68,14 @@ macos_native_task:
   install_script: curl -fsSL https://raw.githubusercontent.com/Edison-Watch/desktest/master/install.sh | sh
   test_script: desktest suite tests/macos-native/
 
-# macos_tart mode (requires bare-metal runner for nested VM)
+# macos_tart mode (requires self-hosted bare-metal Apple Silicon runner)
+# macos_instance runs inside a Cirrus-managed VM, which does NOT support
+# nested macOS virtualization on M1/M2. Use a persistent worker instead.
 macos_tart_task:
-  # Requires a self-hosted Cirrus Runner on bare-metal Apple Silicon
-  macos_instance:
-    image: ghcr.io/yourorg/macos-runner:latest
+  persistent_worker:
+    labels:
+      os: darwin
+      arch: arm64
   install_script: |
     brew install cirruslabs/cli/tart
     curl -fsSL https://raw.githubusercontent.com/Edison-Watch/desktest/master/install.sh | sh
