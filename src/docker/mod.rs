@@ -111,7 +111,19 @@ impl DockerSession {
 
         // No SYS_ADMIN or /dev/fuse needed — AppImages are launched with
         // --appimage-extract-and-run (see deploy.rs), which bypasses FUSE entirely.
-        let mut host_config = HostConfig::default();
+        let mem = config
+            .container_memory_bytes
+            .unwrap_or(4 * 1024 * 1024 * 1024);
+        let mut host_config = HostConfig {
+            // Resource limits: prevent runaway processes (e.g. from LLM-generated
+            // code) from consuming all host resources. Configurable via config JSON
+            // with these defaults.
+            memory: Some(mem),
+            memory_swap: Some(mem), // No swap (equal to memory limit)
+            nano_cpus: Some(config.container_nano_cpus.unwrap_or(4_000_000_000)),
+            pids_limit: Some(config.container_pids_limit.unwrap_or(512)),
+            ..Default::default()
+        };
 
         let mut exposed_ports = std::collections::HashMap::new();
 
@@ -307,6 +319,9 @@ mod tests {
             entrypoint: None,
             startup_timeout_seconds: 30,
             electron: false,
+            container_memory_bytes: None,
+            container_nano_cpus: None,
+            container_pids_limit: None,
             integrations: Default::default(),
         }
     }

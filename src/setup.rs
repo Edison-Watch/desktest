@@ -232,6 +232,9 @@ mod tests {
             entrypoint: None,
             startup_timeout_seconds: 30,
             electron: false,
+            container_memory_bytes: None,
+            container_nano_cpus: None,
+            container_pids_limit: None,
             integrations: Default::default(),
         };
         let session = DockerSession::create(&config, None, None).await.unwrap();
@@ -266,6 +269,9 @@ mod tests {
             entrypoint: None,
             startup_timeout_seconds: 30,
             electron: false,
+            container_memory_bytes: None,
+            container_nano_cpus: None,
+            container_pids_limit: None,
             integrations: Default::default(),
         };
         let session = DockerSession::create(&config, None, None).await.unwrap();
@@ -308,6 +314,9 @@ mod tests {
             entrypoint: None,
             startup_timeout_seconds: 30,
             electron: false,
+            container_memory_bytes: None,
+            container_nano_cpus: None,
+            container_pids_limit: None,
             integrations: Default::default(),
         };
         let session = DockerSession::create(&config, None, None).await.unwrap();
@@ -343,6 +352,9 @@ mod tests {
             entrypoint: None,
             startup_timeout_seconds: 30,
             electron: false,
+            container_memory_bytes: None,
+            container_nano_cpus: None,
+            container_pids_limit: None,
             integrations: Default::default(),
         };
         let session = DockerSession::create(&config, None, None).await.unwrap();
@@ -378,6 +390,9 @@ mod tests {
             entrypoint: None,
             startup_timeout_seconds: 30,
             electron: false,
+            container_memory_bytes: None,
+            container_nano_cpus: None,
+            container_pids_limit: None,
             integrations: Default::default(),
         };
         let session = DockerSession::create(&config, None, None).await.unwrap();

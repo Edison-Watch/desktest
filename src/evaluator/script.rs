@@ -27,11 +27,13 @@ pub(super) async fn evaluate_script_replay(
             "Replay script not found: {script_path}"
         )));
     }
+    super::validate_host_path(script_path, "script_path")?;
 
     // Copy expected screenshots into container (for --with-screenshots scripts)
     if let Some(dir) = screenshots_dir {
         let dir_path = std::path::Path::new(dir);
         if dir_path.exists() {
+            super::validate_host_path(dir, "screenshots_dir")?;
             tokio::time::timeout(eval_timeout, session.copy_into(dir_path, "/home/tester/"))
                 .await
                 .map_err(|_| {

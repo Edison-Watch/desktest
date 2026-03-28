@@ -12,9 +12,9 @@ Items identified during a security audit (2026-03-23). Prioritized by impact.
 
 - **Container network egress restrictions**: Add an option (e.g., `--no-network` or a config field) to disable outbound network access inside containers. Especially important for CI use cases where LLM-generated code runs inside the container with full internet access.
 
-- **Path traversal in evaluators**: `expected_path` in `file_compare` and `script_path` in `script_replay` are read directly from task JSON without validation. Canonicalize paths and verify they stay within the project/working directory before reading.
+- ~~**Path traversal in evaluators**~~: Done — `expected_path`, `script_path`, and `screenshots_dir` are now canonicalized and validated to stay within the working directory before reading.
 
-- **Path traversal in tar extraction**: `docker/transfer.rs` `copy_from()` strips the first tar component but doesn't reject `..` sequences or absolute paths in remaining components. A compromised container could write files outside the intended destination.
+- ~~**Path traversal in tar extraction**~~: Done — `copy_from()` now rejects tar entries containing `..` or absolute path components after stripping the Docker wrapper directory.
 
 - **Sanitize API error responses**: `provider/http_base.rs` and `provider/anthropic.rs` include raw error bodies in error messages. These could leak sensitive info into logs or artifacts. Truncate and sanitize before logging.
 
@@ -22,7 +22,7 @@ Items identified during a security audit (2026-03-23). Prioritized by impact.
 
 ### Medium Priority
 
-- **Container resource limits**: Add default memory/CPU/PID limits to container creation. A runaway process (or malicious LLM-generated code) can currently consume all host resources.
+- ~~**Container resource limits**~~: Done — containers now default to 4 GB memory (no swap), 4 CPU cores, and 512 PIDs.
 
 - **Prompt injection awareness**: Raw accessibility tree text, bash output, and error feedback are interpolated directly into LLM prompts (`agent/context.rs`). A malicious application could embed prompt injection payloads in its UI text or command output. Consider structured delimiters or content-length limits.
 

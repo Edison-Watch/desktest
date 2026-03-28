@@ -176,6 +176,34 @@ pub(crate) async fn evaluate_metric(
     }
 }
 
+/// Validate that a host path from task JSON doesn't escape outside the current
+/// working directory. Canonicalizes the path and checks it starts with cwd.
+/// This prevents task JSON from reading arbitrary files via `expected_path`,
+/// `script_path`, etc.
+///
+/// NOTE: There is an inherent TOCTOU gap between this check and the
+/// subsequent file read. This is acceptable because the host filesystem
+/// is assumed to be under operator control; the threat model is
+/// untrusted *path values* in task JSON, not concurrent filesystem
+/// manipulation.
+pub(super) fn validate_host_path(path: &str, field_name: &str) -> Result<(), AppError> {
+    let p = std::path::Path::new(path);
+    let canonical = std::fs::canonicalize(p)
+        .map_err(|e| AppError::Config(format!("Cannot resolve {field_name} '{path}': {e}")))?;
+    let cwd = std::env::current_dir()
+        .map_err(|e| AppError::Infra(format!("Cannot determine working directory: {e}")))?;
+    let cwd_canonical = std::fs::canonicalize(&cwd).unwrap_or(cwd);
+    if !canonical.starts_with(&cwd_canonical) {
+        return Err(AppError::Config(format!(
+            "{field_name} '{}' resolves to '{}' which is outside the working directory '{}'",
+            path,
+            canonical.display(),
+            cwd_canonical.display()
+        )));
+    }
+    Ok(())
+}
+
 /// Get the type name for a metric (for logging/reporting).
 fn metric_type_name(metric: &MetricConfig) -> &'static str {
     match metric {
