@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use tracing::debug;
 
-use crate::docker::DockerSession;
+use crate::session::{Session, SessionKind};
 use crate::error::AppError;
 
 /// Wait for the XFCE desktop to be ready inside the container.
@@ -12,7 +12,7 @@ use crate::error::AppError;
 /// Checks for the sentinel file written by entrypoint.sh and verifies
 /// that scrot can capture a screenshot (meaning X display is functional).
 pub async fn wait_for_desktop(
-    session: &DockerSession,
+    session: &SessionKind,
     timeout: Duration,
     debug_mode: bool,
 ) -> Result<(), AppError> {
@@ -54,7 +54,7 @@ pub async fn wait_for_desktop(
 }
 
 /// Get the current list of visible X window IDs.
-pub async fn get_window_list(session: &DockerSession) -> Result<Vec<String>, AppError> {
+pub async fn get_window_list(session: &SessionKind) -> Result<Vec<String>, AppError> {
     let output = session
         .exec(&["xdotool", "search", "--onlyvisible", "--name", ""])
         .await?;
@@ -70,7 +70,7 @@ pub async fn get_window_list(session: &DockerSession) -> Result<Vec<String>, App
 
 /// Get a stable baseline of visible X windows by waiting for the window count
 /// to stop changing. This avoids false positives from XFCE panels still loading.
-pub async fn get_stable_window_list(session: &DockerSession) -> Result<Vec<String>, AppError> {
+pub async fn get_stable_window_list(session: &SessionKind) -> Result<Vec<String>, AppError> {
     let mut last_windows = get_window_list(session).await?;
     let mut stable_count = 0;
     let required_stable = 3; // need 3 consecutive identical readings
@@ -99,7 +99,7 @@ pub async fn get_stable_window_list(session: &DockerSession) -> Result<Vec<Strin
 
 /// Wait for a new X window to appear that wasn't in the baseline list.
 pub async fn wait_for_app_window(
-    session: &DockerSession,
+    session: &SessionKind,
     baseline_windows: &[String],
     timeout: Duration,
     debug_mode: bool,

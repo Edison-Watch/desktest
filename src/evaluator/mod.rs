@@ -8,7 +8,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
-use crate::docker::DockerSession;
+use crate::session::SessionKind;
 use crate::error::AppError;
 use crate::task::{Conjunction, EvaluatorConfig, EvaluatorMode, MetricConfig};
 
@@ -38,7 +38,7 @@ pub struct EvaluationResult {
 /// Evaluates all metrics defined in the evaluator config and combines results
 /// using the specified conjunction (and/or).
 pub async fn run_evaluation(
-    session: &DockerSession,
+    session: &SessionKind,
     evaluator: &EvaluatorConfig,
     artifacts_dir: &Path,
 ) -> Result<EvaluationResult, AppError> {
@@ -109,7 +109,7 @@ pub fn combine_results(results: &[MetricResult], conjunction: &Conjunction) -> b
 
 /// Evaluate a single metric against the container state.
 pub(crate) async fn evaluate_metric(
-    session: &DockerSession,
+    session: &SessionKind,
     metric: &MetricConfig,
     artifacts_dir: &Path,
     eval_timeout: Duration,

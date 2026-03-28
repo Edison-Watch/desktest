@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use tracing::info;
 
-use crate::docker::DockerSession;
 use crate::error::AppError;
+use crate::session::{Session, SessionKind};
 use crate::redact::Redactor;
 use crate::task::SetupStep;
 
@@ -13,7 +13,7 @@ use crate::task::SetupStep;
 /// If any step fails, execution aborts immediately with an `AppError::Infra`
 /// (exit code 3), reporting the failing step index and error.
 pub async fn run_setup_steps(
-    session: &DockerSession,
+    session: &SessionKind,
     steps: &[SetupStep],
     redactor: Option<&Redactor>,
 ) -> Result<(), AppError> {
@@ -40,7 +40,7 @@ pub async fn run_setup_steps(
 
 /// Execute a single setup step.
 async fn run_step(
-    session: &DockerSession,
+    session: &SessionKind,
     step: &SetupStep,
     redactor: Option<&Redactor>,
 ) -> Result<(), AppError> {
@@ -126,6 +126,8 @@ fn step_description(step: &SetupStep) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::docker::DockerSession;
+    use crate::session::SessionKind;
 
     #[test]
     fn test_step_name() {
@@ -237,7 +239,8 @@ mod tests {
             container_pids_limit: None,
             integrations: Default::default(),
         };
-        let session = DockerSession::create(&config, None, None).await.unwrap();
+        let docker_session = DockerSession::create(&config, None, None).await.unwrap();
+        let session = SessionKind::Docker(docker_session);
 
         let steps = vec![SetupStep::Execute {
             command: "echo hello > /tmp/setup_test.txt".into(),
@@ -274,7 +277,8 @@ mod tests {
             container_pids_limit: None,
             integrations: Default::default(),
         };
-        let session = DockerSession::create(&config, None, None).await.unwrap();
+        let docker_session = DockerSession::create(&config, None, None).await.unwrap();
+        let session = SessionKind::Docker(docker_session);
 
         let tmp = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(tmp.path(), b"setup copy test").unwrap();
@@ -319,7 +323,8 @@ mod tests {
             container_pids_limit: None,
             integrations: Default::default(),
         };
-        let session = DockerSession::create(&config, None, None).await.unwrap();
+        let docker_session = DockerSession::create(&config, None, None).await.unwrap();
+        let session = SessionKind::Docker(docker_session);
 
         let start = std::time::Instant::now();
         let steps = vec![SetupStep::Sleep { seconds: 0.5 }];
@@ -357,7 +362,8 @@ mod tests {
             container_pids_limit: None,
             integrations: Default::default(),
         };
-        let session = DockerSession::create(&config, None, None).await.unwrap();
+        let docker_session = DockerSession::create(&config, None, None).await.unwrap();
+        let session = SessionKind::Docker(docker_session);
 
         let steps = vec![SetupStep::Copy {
             src: "/nonexistent/file/that/does/not/exist".into(),
@@ -395,7 +401,8 @@ mod tests {
             container_pids_limit: None,
             integrations: Default::default(),
         };
-        let session = DockerSession::create(&config, None, None).await.unwrap();
+        let docker_session = DockerSession::create(&config, None, None).await.unwrap();
+        let session = SessionKind::Docker(docker_session);
 
         let steps = vec![
             SetupStep::Execute {

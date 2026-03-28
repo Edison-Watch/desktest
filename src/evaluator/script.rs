@@ -4,7 +4,7 @@ use std::time::Duration;
 use tracing::{info, warn};
 
 use super::MetricResult;
-use crate::docker::DockerSession;
+use crate::session::{Session, SessionKind};
 use crate::error::AppError;
 use crate::trajectory::{TrajectoryEntry, TrajectoryLogger, chrono_iso8601_now};
 
@@ -15,7 +15,7 @@ use crate::trajectory::{TrajectoryEntry, TrajectoryLogger, chrono_iso8601_now};
 /// Also reconstructs a trajectory from per-step markers emitted by the replay script,
 /// copying screenshots from the container and writing `trajectory.jsonl` to `artifacts_dir`.
 pub(super) async fn evaluate_script_replay(
-    session: &DockerSession,
+    session: &SessionKind,
     script_path: &str,
     screenshots_dir: Option<&str>,
     artifacts_dir: &Path,
@@ -284,7 +284,7 @@ fn extract_action_codes_from_script(source: &str) -> std::collections::HashMap<u
 /// Uses `TrajectoryLogger::new_append` so that multiple `ScriptReplay` metrics
 /// in the same evaluator accumulate entries rather than truncating previous ones.
 async fn write_replay_trajectory(
-    session: &DockerSession,
+    session: &SessionKind,
     artifacts_dir: &Path,
     steps: &[ReplayStep],
     replay_passed: bool,

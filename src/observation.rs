@@ -7,8 +7,8 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
-use crate::docker::DockerSession;
 use crate::error::AppError;
+use crate::session::{Session, SessionKind};
 
 /// The type of observation to capture after each action.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Deserialize, Serialize)]
@@ -70,7 +70,7 @@ const SCREENSHOT_RETRY_INTERVAL: Duration = Duration::from_secs(5);
 /// When configured for both screenshot and a11y tree, captures are run in parallel.
 /// If a11y tree extraction fails, falls back to screenshot-only with a warning.
 pub async fn capture_observation(
-    session: &DockerSession,
+    session: &SessionKind,
     artifacts_dir: &Path,
     step_index: usize,
     config: &ObservationConfig,
@@ -150,7 +150,7 @@ pub async fn capture_observation(
 ///
 /// Returns the local file path and a base64 data URL.
 pub async fn capture_screenshot_with_retry(
-    session: &DockerSession,
+    session: &SessionKind,
     artifacts_dir: &Path,
     step_index: usize,
 ) -> Result<(PathBuf, String), AppError> {
@@ -177,7 +177,7 @@ pub async fn capture_screenshot_with_retry(
 
 /// Single attempt to capture a screenshot from the container.
 async fn capture_screenshot_once(
-    session: &DockerSession,
+    session: &SessionKind,
     artifacts_dir: &Path,
     step_index: usize,
 ) -> Result<(PathBuf, String), AppError> {
@@ -208,7 +208,7 @@ async fn capture_screenshot_once(
 /// The a11y tree is trimmed to `max_tokens` approximate tokens (chars / 4).
 /// Returns empty-string errors as failures (empty tree = no useful data).
 async fn extract_a11y_tree(
-    session: &DockerSession,
+    session: &SessionKind,
     max_tokens: usize,
     a11y_timeout: Duration,
     max_a11y_nodes: usize,
@@ -281,7 +281,7 @@ pub(crate) fn trim_a11y_tree(text: &str, max_tokens: usize) -> String {
 /// wall-clock duration. This is used at startup to adaptively set the a11y
 /// timeout for the agent loop.
 pub async fn probe_a11y_timing(
-    session: &DockerSession,
+    session: &SessionKind,
     max_a11y_nodes: usize,
     max_tokens: usize,
 ) -> Result<Duration, AppError> {

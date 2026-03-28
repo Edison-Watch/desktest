@@ -9,7 +9,7 @@ use std::time::Duration;
 use serde::Deserialize;
 use tracing::{debug, info, warn};
 
-use crate::docker::DockerSession;
+use crate::session::{Session, SessionKind};
 use crate::error::AppError;
 
 /// Default per-code-block execution timeout in seconds.
@@ -243,7 +243,7 @@ fn extract_bug_reports(text: &str) -> Vec<String> {
 
 /// Execute a bash command inside the container and return the result.
 pub async fn execute_bash_code(
-    session: &DockerSession,
+    session: &SessionKind,
     code: &str,
     step_timeout: Option<Duration>,
 ) -> Result<ExecutionResult, AppError> {
@@ -307,7 +307,7 @@ pub async fn execute_bash_code(
 /// Sends the code via stdin to `/usr/local/bin/execute-action` and parses
 /// the structured JSON response.
 pub async fn execute_code(
-    session: &DockerSession,
+    session: &SessionKind,
     code: &str,
     step_timeout: Option<Duration>,
 ) -> Result<ExecutionResult, AppError> {
@@ -405,7 +405,7 @@ fn parse_executor_response(output: &str) -> Result<ExecutionResult, AppError> {
 ///
 /// Returns a `TurnResult` with the combined outcome of all executions.
 pub async fn process_turn(
-    session: &DockerSession,
+    session: &SessionKind,
     llm_response: &str,
     step_timeout: Option<Duration>,
     bash_enabled: bool,

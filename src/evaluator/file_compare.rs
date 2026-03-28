@@ -2,12 +2,12 @@ use std::path::Path;
 use std::time::Duration;
 
 use super::MetricResult;
-use crate::docker::DockerSession;
+use crate::session::{Session, SessionKind};
 use crate::error::AppError;
 
 /// file_compare: Copy file from container, compare against expected file.
 pub(super) async fn evaluate_file_compare(
-    session: &DockerSession,
+    session: &SessionKind,
     actual_path: &str,
     expected_path: &str,
     compare_mode: &crate::task::CompareMode,
@@ -81,7 +81,7 @@ pub(super) async fn evaluate_file_compare(
 
 /// file_compare_semantic: Parse structured files and compare data structures.
 pub(super) async fn evaluate_file_compare_semantic(
-    session: &DockerSession,
+    session: &SessionKind,
     actual_path: &str,
     expected_path: &str,
     format: &crate::task::SemanticFormat,
