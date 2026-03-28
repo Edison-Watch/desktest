@@ -761,13 +761,23 @@ impl<'a> AgentLoopV2<'a> {
         match &early_exit.condition {
             EarlyExitCondition::LlmJudge { prompt } => {
                 let messages = build_judge_messages(prompt, observation);
-                match self.client.chat_completion(&messages, &[]).await {
-                    Ok(response) => {
+                let timeout = self.config.step_timeout;
+                match tokio::time::timeout(timeout, self.client.chat_completion(&messages, &[]))
+                    .await
+                {
+                    Ok(Ok(response)) => {
                         let text = extract_text_content(&response).to_uppercase();
                         Ok(text.trim() == "YES")
                     }
-                    Err(e) => {
+                    Ok(Err(e)) => {
                         warn!("Early exit LLM judge call failed: {e}");
+                        Ok(false)
+                    }
+                    Err(_) => {
+                        warn!(
+                            "Early exit LLM judge call timed out after {}s",
+                            timeout.as_secs()
+                        );
                         Ok(false)
                     }
                 }
