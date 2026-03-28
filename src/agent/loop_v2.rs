@@ -12,13 +12,13 @@ use tracing::{debug, info, warn};
 use crate::agent::context::{ContextManager, TrajectoryTurn};
 use crate::agent::llm_retry::{extract_reasoning, extract_text_content};
 use crate::agent::pyautogui::{self, SpecialCommand};
-use crate::session::SessionKind;
 use crate::error::{AgentOutcome, AppError};
 use crate::monitor::{MonitorEvent, MonitorHandle};
 use crate::observation::{self, Observation, ObservationConfig};
 use crate::provider::{ChatMessage, LlmProvider};
 use crate::recording::Recording;
 use crate::redact::Redactor;
+use crate::session::SessionKind;
 use crate::task::{EarlyExitCondition, EarlyExitConfig};
 use crate::trajectory::{StepData, TrajectoryLogger};
 

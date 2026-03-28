@@ -2,8 +2,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use super::MetricResult;
-use crate::session::{Session, SessionKind};
 use crate::error::AppError;
+use crate::session::{Session, SessionKind};
 
 /// file_compare: Copy file from container, compare against expected file.
 pub(super) async fn evaluate_file_compare(

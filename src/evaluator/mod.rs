@@ -8,8 +8,8 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
-use crate::session::SessionKind;
 use crate::error::AppError;
+use crate::session::SessionKind;
 use crate::task::{Conjunction, EvaluatorConfig, EvaluatorMode, MetricConfig};
 
 /// Default timeout for individual evaluator exec calls (seconds).

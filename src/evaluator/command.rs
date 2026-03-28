@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use super::MetricResult;
-use crate::session::{Session, SessionKind};
 use crate::error::AppError;
+use crate::session::{Session, SessionKind};
 use crate::task::MatchMode;
 
 /// command_output: Run command in container, check stdout.

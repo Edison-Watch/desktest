@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use tracing::debug;
 
-use crate::session::{Session, SessionKind};
 use crate::error::AppError;
+use crate::session::{Session, SessionKind};
 
 /// Wait for the XFCE desktop to be ready inside the container.
 ///

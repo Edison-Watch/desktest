@@ -9,8 +9,8 @@ use std::time::Duration;
 use serde::Deserialize;
 use tracing::{debug, info, warn};
 
-use crate::session::{Session, SessionKind};
 use crate::error::AppError;
+use crate::session::{Session, SessionKind};
 
 /// Default per-code-block execution timeout in seconds.
 const DEFAULT_STEP_TIMEOUT_SECS: u64 = 60;

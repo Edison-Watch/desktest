@@ -4,8 +4,8 @@ use std::time::Duration;
 use tracing::info;
 
 use crate::error::AppError;
-use crate::session::{Session, SessionKind};
 use crate::redact::Redactor;
+use crate::session::{Session, SessionKind};
 use crate::task::SetupStep;
 
 /// Execute a list of setup steps in order inside the container.

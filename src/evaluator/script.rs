@@ -4,8 +4,8 @@ use std::time::Duration;
 use tracing::{info, warn};
 
 use super::MetricResult;
-use crate::session::{Session, SessionKind};
 use crate::error::AppError;
+use crate::session::{Session, SessionKind};
 use crate::trajectory::{TrajectoryEntry, TrajectoryLogger, chrono_iso8601_now};
 
 /// script_replay: Copy a Python script into the container, run it, check for REPLAY_COMPLETE.

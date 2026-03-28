@@ -2,8 +2,8 @@ use std::path::Path;
 
 use tracing::{debug, info, warn};
 
-use crate::session::{Session, SessionKind};
 use crate::error::AppError;
+use crate::session::{Session, SessionKind};
 
 /// Path inside the container where ffmpeg writes the recording.
 const CONTAINER_RECORDING_PATH: &str = "/tmp/recording.mp4";

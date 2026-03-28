@@ -7,7 +7,6 @@ use crate::artifacts;
 use crate::config::Config;
 use crate::docker;
 use crate::error::{AgentOutcome, AppError};
-use crate::session::{Session, SessionKind};
 use crate::evaluator;
 use crate::monitor;
 use crate::observation;
@@ -15,6 +14,7 @@ use crate::provider;
 use crate::readiness;
 use crate::recording;
 use crate::results;
+use crate::session::{Session, SessionKind};
 use crate::setup;
 use crate::task;
 

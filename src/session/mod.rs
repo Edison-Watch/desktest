@@ -15,31 +15,19 @@ pub trait Session: Send + Sync {
     async fn exec_with_exit_code(&self, cmd: &[&str]) -> Result<(String, i64), AppError>;
 
     /// Execute a command with data piped to stdin, return stdout.
-    async fn exec_with_stdin(
-        &self,
-        cmd: &[&str],
-        stdin_data: &[u8],
-    ) -> Result<String, AppError>;
+    async fn exec_with_stdin(&self, cmd: &[&str], stdin_data: &[u8]) -> Result<String, AppError>;
 
     /// Execute a command in the background (detached).
     async fn exec_detached(&self, cmd: &[&str]) -> Result<(), AppError>;
 
     /// Execute a command in the background, redirecting output to a log file.
-    async fn exec_detached_with_log(
-        &self,
-        cmd: &[&str],
-        log_path: &str,
-    ) -> Result<(), AppError>;
+    async fn exec_detached_with_log(&self, cmd: &[&str], log_path: &str) -> Result<(), AppError>;
 
     /// Copy a file or directory from the host into the session environment.
     async fn copy_into(&self, src: &Path, dest_path: &str) -> Result<(), AppError>;
 
     /// Copy a file from the session environment to the host.
-    async fn copy_from(
-        &self,
-        container_path: &str,
-        local_path: &Path,
-    ) -> Result<(), AppError>;
+    async fn copy_from(&self, container_path: &str, local_path: &Path) -> Result<(), AppError>;
 
     /// Stop and clean up the session environment.
     async fn cleanup(&self) -> Result<(), AppError>;
@@ -79,11 +67,7 @@ impl Session for DockerSession {
         self.exec_with_exit_code(cmd).await
     }
 
-    async fn exec_with_stdin(
-        &self,
-        cmd: &[&str],
-        stdin_data: &[u8],
-    ) -> Result<String, AppError> {
+    async fn exec_with_stdin(&self, cmd: &[&str], stdin_data: &[u8]) -> Result<String, AppError> {
         self.exec_with_stdin(cmd, stdin_data).await
     }
 
@@ -91,11 +75,7 @@ impl Session for DockerSession {
         self.exec_detached(cmd).await
     }
 
-    async fn exec_detached_with_log(
-        &self,
-        cmd: &[&str],
-        log_path: &str,
-    ) -> Result<(), AppError> {
+    async fn exec_detached_with_log(&self, cmd: &[&str], log_path: &str) -> Result<(), AppError> {
         self.exec_detached_with_log(cmd, log_path).await
     }
 
@@ -103,11 +83,7 @@ impl Session for DockerSession {
         self.copy_into(src, dest_path).await
     }
 
-    async fn copy_from(
-        &self,
-        container_path: &str,
-        local_path: &Path,
-    ) -> Result<(), AppError> {
+    async fn copy_from(&self, container_path: &str, local_path: &Path) -> Result<(), AppError> {
         self.copy_from(container_path, local_path).await
     }
 
