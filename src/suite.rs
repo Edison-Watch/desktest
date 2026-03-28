@@ -286,10 +286,11 @@ pub async fn run_suite(
         let test_start = Instant::now();
 
         // Run the single test using the existing run_task flow
+        let is_qa = run.qa;
         let result = crate::run_task(
             entry.task_def.clone(),
             run_config.clone(),
-            run,
+            run.clone(),
             test_output_dir.clone(),
             monitor.clone(),
             None,
@@ -308,7 +309,7 @@ pub async fn run_suite(
                     &outcome,
                     eval_result,
                     duration_ms,
-                    run.qa,
+                    is_qa,
                 )
             }
             Err(ref e) => {

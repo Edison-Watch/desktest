@@ -281,7 +281,7 @@ async fn run_interactive_step(
             eprintln!("\nInterrupted (Ctrl+C), cleaning up...");
             Err(AppError::Infra("Interrupted by user".into()))
         }
-        r = run_interactive_step_inner(&task_def, &config, &session, &artifacts_dir, timeout, run, Some(&redactor)) => r,
+        r = run_interactive_step_inner(&task_def, &config, &session, &artifacts_dir, timeout, run.clone(), Some(&redactor)) => r,
     };
 
     // Collect artifacts and clean up
@@ -419,11 +419,12 @@ async fn run_interactive_step_inner(
         &config.api_base_url,
     )?;
 
+    let is_qa = run.qa;
     let mut loop_config = build_agent_loop_config(task_def, session, config, run).await;
     loop_config.test_id = task_def.id.clone();
     loop_config.redactor = redactor.cloned();
     let full_instruction = task_def.full_instruction();
-    let notifier = if run.qa {
+    let notifier = if is_qa {
         let pipeline = crate::notify::build_pipeline(config);
         if pipeline.is_empty() {
             None
