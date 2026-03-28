@@ -429,45 +429,6 @@ impl<'a> AgentLoopV2<'a> {
             self.log_trajectory_entry(&data, &current_observation);
             self.publish_step_event(&data, &current_observation);
 
-            // Check early exit condition (before consuming observation)
-            if let Some(ref early_exit) = self.config.early_exit {
-                if step_index % early_exit.check_every as usize == 0
-                    && self.check_early_exit(&current_observation).await?
-                {
-                    let message = early_exit
-                        .message
-                        .as_deref()
-                        .unwrap_or("Early exit condition met");
-                    let reasoning = format!("{message} (at step {step_index})");
-                    info!("Early exit triggered at step {step_index}: {message}");
-                    let early_data = StepData {
-                        step_index,
-                        response_text: "",
-                        code_blocks: &[],
-                        result: "early_exit",
-                        raw_response: None,
-                        bash_output: None,
-                        error_feedback: None,
-                        action_type: None,
-                    };
-                    self.log_trajectory_entry(&early_data, &current_observation);
-                    self.context.push_turn(TrajectoryTurn {
-                        observation: current_observation,
-                        response_text: response_text.clone(),
-                        error_feedback: turn_result.error_feedback.clone(),
-                        bash_output: turn_result.bash_output.clone(),
-                    });
-                    self.save_conversation_log();
-                    self.publish_test_complete(false, &reasoning, start_time);
-                    return Ok(AgentOutcome {
-                        passed: false,
-                        reasoning,
-                        screenshot_count: step_index,
-                        bugs_found: self.bugs_found(),
-                    });
-                }
-            }
-
             // Record the turn in trajectory
             self.context.push_turn(TrajectoryTurn {
                 observation: current_observation,
@@ -483,6 +444,28 @@ impl<'a> AgentLoopV2<'a> {
 
             // Capture new observation after action(s)
             current_observation = self.capture_observation_for_step(step_index).await?;
+
+            // Check early exit condition against fresh post-action observation
+            if let Some(ref early_exit) = self.config.early_exit {
+                if step_index % early_exit.check_every as usize == 0
+                    && self.check_early_exit(&current_observation).await?
+                {
+                    let message = early_exit
+                        .message
+                        .as_deref()
+                        .unwrap_or("Early exit condition met");
+                    let reasoning = format!("{message} (at step {step_index})");
+                    info!("Early exit triggered at step {step_index}: {message}");
+                    self.save_conversation_log();
+                    self.publish_test_complete(false, &reasoning, start_time);
+                    return Ok(AgentOutcome {
+                        passed: false,
+                        reasoning,
+                        screenshot_count: step_index,
+                        bugs_found: self.bugs_found(),
+                    });
+                }
+            }
         }
     }
 
@@ -726,34 +709,6 @@ impl<'a> AgentLoopV2<'a> {
                 action_type: action_type.as_deref(),
             };
             self.log_trajectory_entry(&data, &current_observation);
-
-            // Check early exit condition (before consuming observation)
-            if let Some(ref early_exit) = self.config.early_exit {
-                if step_index % early_exit.check_every as usize == 0
-                    && self.check_early_exit(&current_observation).await?
-                {
-                    let message = early_exit
-                        .message
-                        .as_deref()
-                        .unwrap_or("Early exit condition met");
-                    let reasoning = format!("{message} (at step {step_index})");
-                    println!("  => Early exit: {message}");
-                    self.context.push_turn(TrajectoryTurn {
-                        observation: current_observation,
-                        response_text: response_text.clone(),
-                        error_feedback: turn_result.error_feedback.clone(),
-                        bash_output: turn_result.bash_output.clone(),
-                    });
-                    self.save_conversation_log();
-                    return Ok(AgentOutcome {
-                        passed: false,
-                        reasoning,
-                        screenshot_count: step_index,
-                        bugs_found: self.bugs_found(),
-                    });
-                }
-            }
-
             self.context.push_turn(TrajectoryTurn {
                 observation: current_observation,
                 response_text: response_text.clone(),
@@ -764,6 +719,27 @@ impl<'a> AgentLoopV2<'a> {
             // Capture new observation
             current_observation = self.capture_observation_for_step(step_index).await?;
             execution_elapsed += step_start.elapsed();
+
+            // Check early exit condition against fresh post-action observation
+            if let Some(ref early_exit) = self.config.early_exit {
+                if step_index % early_exit.check_every as usize == 0
+                    && self.check_early_exit(&current_observation).await?
+                {
+                    let message = early_exit
+                        .message
+                        .as_deref()
+                        .unwrap_or("Early exit condition met");
+                    let reasoning = format!("{message} (at step {step_index})");
+                    println!("  => Early exit: {message}");
+                    self.save_conversation_log();
+                    return Ok(AgentOutcome {
+                        passed: false,
+                        reasoning,
+                        screenshot_count: step_index,
+                        bugs_found: self.bugs_found(),
+                    });
+                }
+            }
         }
     }
 
@@ -786,7 +762,7 @@ impl<'a> AgentLoopV2<'a> {
                 match self.client.chat_completion(&messages, &[]).await {
                     Ok(response) => {
                         let text = extract_text_content(&response).to_uppercase();
-                        Ok(text.contains("YES"))
+                        Ok(text.trim() == "YES")
                     }
                     Err(e) => {
                         warn!("Early exit LLM judge call failed: {e}");
