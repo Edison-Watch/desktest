@@ -180,6 +180,12 @@ async fn evaluate_metric(
 /// working directory. Canonicalizes the path and checks it starts with cwd.
 /// This prevents task JSON from reading arbitrary files via `expected_path`,
 /// `script_path`, etc.
+///
+/// NOTE: There is an inherent TOCTOU gap between this check and the
+/// subsequent file read. This is acceptable because the host filesystem
+/// is assumed to be under operator control; the threat model is
+/// untrusted *path values* in task JSON, not concurrent filesystem
+/// manipulation.
 pub(super) fn validate_host_path(path: &str, field_name: &str) -> Result<(), AppError> {
     let p = std::path::Path::new(path);
     let canonical = std::fs::canonicalize(p)

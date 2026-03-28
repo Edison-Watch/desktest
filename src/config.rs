@@ -88,6 +88,15 @@ pub struct Config {
     #[serde(default)]
     pub electron: bool,
 
+    /// Container memory limit in bytes. Default: 4 GB.
+    pub container_memory_bytes: Option<i64>,
+
+    /// Container CPU limit in nano-CPUs. Default: 4 cores (4_000_000_000).
+    pub container_nano_cpus: Option<i64>,
+
+    /// Container PID limit. Default: 512.
+    pub container_pids_limit: Option<i64>,
+
     /// Notification integrations (Slack, etc.).
     #[serde(default)]
     pub integrations: IntegrationsConfig,
@@ -132,6 +141,9 @@ impl Config {
             entrypoint: None,
             startup_timeout_seconds: default_timeout(),
             electron: false,
+            container_memory_bytes: None,
+            container_nano_cpus: None,
+            container_pids_limit: None,
             integrations: IntegrationsConfig::default(),
         }
     }
