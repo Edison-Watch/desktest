@@ -56,13 +56,26 @@ jobs:
 
 ### Cirrus CI
 
-Cirrus CI offers first-class Tart support via [Cirrus Runners](https://cirrus-runners.app/). Each job gets an ephemeral macOS VM:
+Cirrus CI offers Tart support via [Cirrus Runners](https://cirrus-runners.app/) on self-hosted bare-metal Apple Silicon Macs. Note that `macos_tart` mode requires **bare-metal** runners (not `macos_instance` VMs) because Apple's Virtualization.framework does not support nested macOS virtualization on M1/M2 chips (M3+ with macOS 15+ may support it).
+
+For `macos_native` mode (no nested VM), a standard `macos_instance` works. For `macos_tart` mode, use a self-hosted Cirrus Runner:
 
 ```yaml
-macos_test_task:
+# macos_native mode (runs directly in CI VM, no isolation)
+macos_native_task:
   macos_instance:
     image: ghcr.io/yourorg/macos-test:latest
   install_script: curl -fsSL https://raw.githubusercontent.com/Edison-Watch/desktest/master/install.sh | sh
+  test_script: desktest suite tests/macos-native/
+
+# macos_tart mode (requires bare-metal runner for nested VM)
+macos_tart_task:
+  # Requires a self-hosted Cirrus Runner on bare-metal Apple Silicon
+  macos_instance:
+    image: ghcr.io/yourorg/macos-runner:latest
+  install_script: |
+    brew install cirruslabs/cli/tart
+    curl -fsSL https://raw.githubusercontent.com/Edison-Watch/desktest/master/install.sh | sh
   test_script: desktest suite tests/macos/
 ```
 
@@ -92,7 +105,7 @@ Your CI pipeline needs a pre-built Tart golden image with:
 - macOS with TCC permissions configured (Accessibility + Screen Recording)
 - Python 3 + PyAutoGUI installed
 - The desktest Swift accessibility helper installed
-- SSH configured for desktest connectivity
+- The desktest VM agent installed (auto-started via LaunchAgent)
 - Optionally, the app(s) under test pre-installed
 
 See [macOS Support](macos-support.md) for golden image setup instructions.

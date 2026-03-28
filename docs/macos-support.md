@@ -16,7 +16,7 @@ Docker container                   Tart macOS VM
   PyAutoGUI (X11/python-xlib)        PyAutoGUI (Quartz/CoreGraphics)
   pyatspi (AT-SPI2)                  Swift a11y helper (AXUIElement)
   scrot (screenshot)                 screencapture (screenshot)
-  ffmpeg x11grab (recording)         ffmpeg avfoundation (recording)
+  ffmpeg x11grab (recording)         screencapture -V (recording)
 ```
 
 ### Two Operating Modes
