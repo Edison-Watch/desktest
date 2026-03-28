@@ -1,6 +1,6 @@
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use tracing::{info, warn};
+use tracing::warn;
 
 use super::loop_v2::AgentLoopV2;
 use crate::agent::context::is_context_length_error;
@@ -8,11 +8,8 @@ use crate::error::AppError;
 use crate::observation::Observation;
 use crate::provider::ChatMessage;
 
-/// Retry interval for LLM API transient errors (429, 5xx).
-pub(super) const LLM_RETRY_INTERVAL: Duration = Duration::from_secs(30);
-
-/// Maximum number of LLM API retries on transient errors.
-pub(super) const LLM_MAX_RETRIES: usize = 10;
+/// Maximum exponential backoff before jitter is applied.
+const LLM_RETRY_BACKOFF_CAP: Duration = Duration::from_secs(30);
 
 impl<'a> AgentLoopV2<'a> {
     /// Call the LLM with retry on transient errors (429, 5xx).
@@ -24,20 +21,32 @@ impl<'a> AgentLoopV2<'a> {
         messages: &[ChatMessage],
         current_observation: &Observation,
     ) -> Result<ChatMessage, AppError> {
-        let empty_tools: Vec<serde_json::Value> = vec![];
-        let mut last_err = None;
+        match self.retry_llm_request(messages, "LLM").await {
+            Ok(response) => Ok(response),
+            Err(err) => {
+                let err_str = err.to_string();
+                if !is_context_length_error(&err_str) {
+                    return Err(err);
+                }
 
-        for attempt in 0..=LLM_MAX_RETRIES {
-            if attempt > 0 {
-                info!(
-                    "LLM retry {}/{} after {}s...",
-                    attempt,
-                    LLM_MAX_RETRIES,
-                    LLM_RETRY_INTERVAL.as_secs()
-                );
-                tokio::time::sleep(LLM_RETRY_INTERVAL).await;
+                warn!("Context length exceeded, falling back to minimal messages");
+                self.context.clear_trajectory();
+                let fallback_messages = self.context.build_fallback_messages(current_observation);
+                self.retry_llm_request(&fallback_messages, "Fallback LLM")
+                    .await
             }
+        }
+    }
 
+    async fn retry_llm_request(
+        &mut self,
+        messages: &[ChatMessage],
+        request_label: &str,
+    ) -> Result<ChatMessage, AppError> {
+        let empty_tools: Vec<serde_json::Value> = vec![];
+        let max_retries = self.config.llm_max_retries;
+
+        for attempt in 0..=max_retries {
             let step_result = tokio::time::timeout(
                 self.config.step_timeout,
                 self.client.chat_completion(messages, &empty_tools),
@@ -49,93 +58,73 @@ impl<'a> AgentLoopV2<'a> {
                 Ok(Err(e)) => {
                     let err_str = e.to_string();
 
-                    // Check for context length error — try fallback
                     if is_context_length_error(&err_str) {
-                        warn!("Context length exceeded, falling back to minimal messages");
-                        self.context.clear_trajectory();
-                        let fallback_messages =
-                            self.context.build_fallback_messages(current_observation);
-
-                        // Fallback call with timeout and retry on transient errors
-                        let mut fallback_last_err = None;
-                        for fallback_attempt in 0..=LLM_MAX_RETRIES {
-                            if fallback_attempt > 0 {
-                                warn!(
-                                    "Fallback LLM retry {}/{}...",
-                                    fallback_attempt, LLM_MAX_RETRIES
-                                );
-                                tokio::time::sleep(LLM_RETRY_INTERVAL).await;
-                            }
-
-                            let fallback_result = tokio::time::timeout(
-                                self.config.step_timeout,
-                                self.client
-                                    .chat_completion(&fallback_messages, &empty_tools),
-                            )
-                            .await;
-
-                            match fallback_result {
-                                Ok(Ok(response)) => return Ok(response),
-                                Ok(Err(fb_err)) => {
-                                    if is_transient_error(&fb_err.to_string()) {
-                                        warn!(
-                                            "Transient error on fallback (attempt {fallback_attempt}): {fb_err}"
-                                        );
-                                        fallback_last_err = Some(fb_err);
-                                        continue;
-                                    }
-                                    warn!("Fallback LLM call failed (non-transient): {fb_err}");
-                                    return Err(fb_err);
-                                }
-                                Err(_timeout) => {
-                                    warn!(
-                                        "Fallback LLM call timed out (attempt {fallback_attempt})"
-                                    );
-                                    fallback_last_err = Some(AppError::Agent(format!(
-                                        "Fallback LLM call timed out after {:?}",
-                                        self.config.step_timeout
-                                    )));
-                                    continue;
-                                }
-                            }
-                        }
-
-                        return Err(fallback_last_err.unwrap_or_else(|| {
-                            AppError::Agent("Fallback LLM call exhausted retries".into())
-                        }));
+                        return Err(e);
                     }
 
-                    // Check for transient errors (429, 5xx)
-                    if is_transient_error(&err_str) {
-                        warn!("Transient LLM error (attempt {attempt}): {err_str}");
-                        last_err = Some(e);
-                        continue;
+                    if !is_retryable_error(&err_str) {
+                        return Err(e);
                     }
 
-                    // Non-transient error — fail immediately
-                    return Err(e);
+                    if attempt == max_retries {
+                        warn!(
+                            "{request_label} call exhausted retries after {} retry attempts: {err_str}",
+                            max_retries
+                        );
+                        return Err(e);
+                    }
+
+                    let retry_number = attempt + 1;
+                    let delay = retry_delay(&err_str, retry_number);
+                    warn!(
+                        "{request_label} retry {retry_number}/{max_retries} in {:.2}s after retryable error: {err_str}",
+                        delay.as_secs_f64()
+                    );
+                    tokio::time::sleep(delay).await;
                 }
                 Err(_timeout) => {
+                    let err = AppError::Agent(format!(
+                        "{request_label} call timed out after {:?}",
+                        self.config.step_timeout
+                    ));
+
+                    if attempt == max_retries {
+                        warn!(
+                            "{request_label} call exhausted retries after {} retry attempts: {err}",
+                            max_retries
+                        );
+                        return Err(err);
+                    }
+
+                    let retry_number = attempt + 1;
+                    let delay = retry_delay(&err.to_string(), retry_number);
                     warn!(
-                        "LLM call timed out after {:?} (attempt {attempt})",
-                        self.config.step_timeout
+                        "{request_label} retry {retry_number}/{max_retries} in {:.2}s after timeout: {err}",
+                        delay.as_secs_f64()
                     );
-                    last_err = Some(AppError::Agent(format!(
-                        "LLM call timed out after {:?}",
-                        self.config.step_timeout
-                    )));
-                    continue;
+                    tokio::time::sleep(delay).await;
                 }
             }
         }
 
-        Err(last_err.unwrap_or_else(|| AppError::Agent("LLM call failed after max retries".into())))
+        Err(AppError::Agent(format!(
+            "{request_label} call failed after max retries"
+        )))
     }
 }
 
-/// Check if an error message indicates a transient/retryable error.
-pub(super) fn is_transient_error(err_str: &str) -> bool {
+/// Check if an error message indicates a retryable error.
+pub(super) fn is_retryable_error(err_str: &str) -> bool {
     let lower = err_str.to_lowercase();
+
+    if is_non_retryable_http_error(&lower) {
+        return false;
+    }
+
+    has_retryable_status(&lower) || has_retryable_transport_error(&lower)
+}
+
+fn has_retryable_status(lower: &str) -> bool {
     lower.contains("429")
         || lower.contains("rate limit")
         || lower.contains("too many requests")
@@ -147,15 +136,91 @@ pub(super) fn is_transient_error(err_str: &str) -> bool {
         || lower.contains("error 502")
         || lower.contains("error 503")
         || lower.contains("error 504")
-        // Provider format: "API error (502 Bad Gateway): ..."
         || lower.contains("error (500")
         || lower.contains("error (502")
         || lower.contains("error (503")
         || lower.contains("error (504")
         || lower.contains("server error")
         || lower.contains("internal error")
+        || lower.contains("bad gateway")
+        || lower.contains("service unavailable")
+        || lower.contains("gateway timeout")
         || lower.contains("overloaded")
         || lower.contains("temporarily unavailable")
+}
+
+fn has_retryable_transport_error(lower: &str) -> bool {
+    lower.contains("error sending request")
+        || lower.contains("http request failed")
+        || lower.contains("dns")
+        || lower.contains("lookup address information")
+        || lower.contains("temporary failure in name resolution")
+        || lower.contains("name or service not known")
+        || lower.contains("connection refused")
+        || lower.contains("connection reset")
+        || lower.contains("connection aborted")
+        || lower.contains("connection closed")
+        || lower.contains("timed out")
+        || lower.contains("timeout")
+        || lower.contains("tls handshake")
+        || lower.contains("network unreachable")
+        || lower.contains("connect error")
+}
+
+fn is_non_retryable_http_error(lower: &str) -> bool {
+    lower.contains("401")
+        || lower.contains("unauthorized")
+        || lower.contains("403")
+        || lower.contains("forbidden")
+        || lower.contains("404")
+        || lower.contains("not found")
+}
+
+fn retry_delay(err_str: &str, retry_number: usize) -> Duration {
+    parse_retry_after(err_str).unwrap_or_else(|| exponential_backoff_with_jitter(retry_number))
+}
+
+fn parse_retry_after(err_str: &str) -> Option<Duration> {
+    let lower = err_str.to_lowercase();
+    let marker = "retry-after:";
+    let start = lower.find(marker)? + marker.len();
+    let value = err_str[start..]
+        .trim_start()
+        .split(')')
+        .next()?
+        .trim()
+        .trim_end_matches(';')
+        .trim();
+    if let Ok(seconds) = value.trim_end_matches('s').parse::<u64>() {
+        return Some(Duration::from_secs(seconds));
+    }
+
+    let retry_at = httpdate::parse_http_date(value).ok()?;
+    let now = SystemTime::now();
+    match retry_at.duration_since(now) {
+        Ok(duration) => Some(duration),
+        Err(_) => Some(Duration::from_secs(0)),
+    }
+}
+
+fn exponential_backoff_with_jitter(retry_number: usize) -> Duration {
+    let exponent = retry_number.saturating_sub(1).min(63) as u32;
+    let base_secs = 1u64
+        .checked_shl(exponent)
+        .unwrap_or(u64::MAX)
+        .min(LLM_RETRY_BACKOFF_CAP.as_secs());
+    let base = Duration::from_secs(base_secs);
+    apply_jitter(base)
+}
+
+fn apply_jitter(base: Duration) -> Duration {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.subsec_nanos())
+        .unwrap_or(0);
+    let ratio = f64::from(nanos % 10_001) / 10_000.0;
+    let factor = 0.75 + (ratio * 0.5);
+    Duration::from_secs_f64((base.as_secs_f64() * factor).max(0.0))
 }
 
 /// Extract the text content from a ChatMessage response.
@@ -273,26 +338,26 @@ mod tests {
         assert!(reasoning.contains("Step 3"));
     }
 
-    // --- is_transient_error tests ---
+    // --- retry classification tests ---
 
     #[test]
     fn test_transient_429() {
-        assert!(is_transient_error("429 Too Many Requests"));
+        assert!(is_retryable_error("429 Too Many Requests"));
     }
 
     #[test]
     fn test_transient_rate_limit() {
-        assert!(is_transient_error("Rate limit exceeded, please retry"));
+        assert!(is_retryable_error("Rate limit exceeded, please retry"));
     }
 
     #[test]
     fn test_transient_500() {
-        assert!(is_transient_error("HTTP status 500 Internal Server Error"));
+        assert!(is_retryable_error("HTTP status 500 Internal Server Error"));
     }
 
     #[test]
     fn test_transient_503() {
-        assert!(is_transient_error(
+        assert!(is_retryable_error(
             "error 503 Service Temporarily Unavailable"
         ));
     }
@@ -300,13 +365,13 @@ mod tests {
     #[test]
     fn test_transient_provider_format() {
         // Actual provider error format: "OpenAI API error (502 Bad Gateway): ..."
-        assert!(is_transient_error(
+        assert!(is_retryable_error(
             "Agent error: OpenAI API error (502 Bad Gateway): upstream error"
         ));
-        assert!(is_transient_error(
+        assert!(is_retryable_error(
             "Agent error: Anthropic API error (503 Service Unavailable): overloaded"
         ));
-        assert!(is_transient_error(
+        assert!(is_retryable_error(
             "Agent error: Custom API error (504 Gateway Timeout): timeout"
         ));
     }
@@ -314,23 +379,74 @@ mod tests {
     #[test]
     fn test_not_transient_token_limit() {
         // "4500" should NOT match as a 500 error
-        assert!(!is_transient_error("max_tokens cannot exceed 4500"));
-        assert!(!is_transient_error("context window is 32500 tokens"));
+        assert!(!is_retryable_error("max_tokens cannot exceed 4500"));
+        assert!(!is_retryable_error("context window is 32500 tokens"));
     }
 
     #[test]
     fn test_transient_overloaded() {
-        assert!(is_transient_error("The server is overloaded"));
+        assert!(is_retryable_error("The server is overloaded"));
     }
 
     #[test]
     fn test_not_transient_auth() {
-        assert!(!is_transient_error("401 Unauthorized: Invalid API key"));
+        assert!(!is_retryable_error("401 Unauthorized: Invalid API key"));
     }
 
     #[test]
     fn test_not_transient_bad_request() {
-        assert!(!is_transient_error("400 Bad Request: invalid model"));
+        assert!(!is_retryable_error("400 Bad Request: invalid model"));
+    }
+
+    #[test]
+    fn test_transient_dns_failure() {
+        assert!(is_retryable_error(
+            "HTTP request failed: error sending request for url: dns error: failed to lookup address information"
+        ));
+    }
+
+    #[test]
+    fn test_not_transient_404() {
+        assert!(!is_retryable_error("404 Not Found"));
+    }
+
+    #[test]
+    fn test_retry_after_header_is_parsed() {
+        assert_eq!(
+            parse_retry_after(
+                "Anthropic API error (429 Too Many Requests; retry-after: 12): rate limited"
+            ),
+            Some(Duration::from_secs(12))
+        );
+        assert_eq!(
+            parse_retry_after(
+                "OpenAI API error (429 Too Many Requests; retry-after: 3s): rate limited"
+            ),
+            Some(Duration::from_secs(3))
+        );
+    }
+
+    #[test]
+    fn test_retry_after_http_date_is_parsed() {
+        let future = SystemTime::now() + Duration::from_secs(30);
+        let http_date = httpdate::fmt_http_date(future);
+        let err = format!(
+            "Anthropic API error (429 Too Many Requests; retry-after: {http_date}): rate limited"
+        );
+
+        let parsed = parse_retry_after(&err).unwrap();
+        assert!(parsed <= Duration::from_secs(30));
+        assert!(parsed >= Duration::from_secs(25));
+    }
+
+    #[test]
+    fn test_exponential_backoff_caps_at_30s_before_jitter() {
+        let fifth = exponential_backoff_with_jitter(5);
+        let sixth = exponential_backoff_with_jitter(6);
+        assert!(fifth >= Duration::from_secs_f64(12.0));
+        assert!(fifth <= Duration::from_secs_f64(20.0));
+        assert!(sixth >= Duration::from_secs_f64(22.5));
+        assert!(sixth <= Duration::from_secs_f64(37.5));
     }
 
     // --- extract_text_content edge cases ---

@@ -435,6 +435,7 @@ dependencies = [
  "dotenvy",
  "flate2",
  "futures",
+ "httpdate",
  "predicates",
  "quick-xml",
  "regex",

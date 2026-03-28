@@ -1,5 +1,6 @@
 use std::pin::Pin;
 
+use reqwest::header::RETRY_AFTER;
 use tracing::info;
 
 use super::{ChatMessage, LlmProvider};
@@ -60,6 +61,36 @@ impl HttpProvider {
     pub fn completions_url(&self) -> String {
         format!("{}{}", self.base_url, self.completions_path)
     }
+
+    fn format_transport_error(&self, err: reqwest::Error) -> AppError {
+        AppError::Agent(format!(
+            "HTTP request failed (connect={}, timeout={}, request={}): {}",
+            err.is_connect(),
+            err.is_timeout(),
+            err.is_request(),
+            err
+        ))
+    }
+
+    fn format_api_error(
+        &self,
+        response: reqwest::Response,
+    ) -> Pin<Box<dyn std::future::Future<Output = AppError> + Send>> {
+        let label = self.label.clone();
+        Box::pin(async move {
+            let status = response.status();
+            let retry_after = response
+                .headers()
+                .get(RETRY_AFTER)
+                .and_then(|value| value.to_str().ok())
+                .map(|value| format!("; retry-after: {value}"))
+                .unwrap_or_default();
+            let error_body = response.text().await.unwrap_or_default();
+            AppError::Agent(format!(
+                "{label} API error ({status}{retry_after}): {error_body}"
+            ))
+        })
+    }
 }
 
 impl LlmProvider for HttpProvider {
@@ -110,17 +141,13 @@ impl LlmProvider for HttpProvider {
                 .json(&body)
                 .send()
                 .await
-                .map_err(|e| AppError::Agent(format!("HTTP request failed: {e}")))?;
+                .map_err(|e| self.format_transport_error(e))?;
 
             let elapsed = start.elapsed();
             let status = response.status();
 
             if !status.is_success() {
-                let error_body = response.text().await.unwrap_or_default();
-                return Err(AppError::Agent(format!(
-                    "{} API error ({}): {}",
-                    self.label, status, error_body
-                )));
+                return Err(self.format_api_error(response).await);
             }
 
             let completion: ChatCompletionResponse = response

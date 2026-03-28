@@ -32,6 +32,10 @@ fn default_provider() -> String {
     "anthropic".into()
 }
 
+fn default_llm_max_retries() -> usize {
+    5
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AppType {
@@ -55,6 +59,10 @@ pub struct Config {
 
     #[serde(default = "default_model")]
     pub model: String,
+
+    /// Maximum number of retry attempts for retryable LLM API failures.
+    #[serde(default = "default_llm_max_retries")]
+    pub llm_max_retries: usize,
 
     #[serde(default = "default_base_url")]
     pub api_base_url: String,
@@ -130,6 +138,7 @@ impl Config {
             api_key_source: None,
             provider: default_provider(),
             model: default_model(),
+            llm_max_retries: default_llm_max_retries(),
             api_base_url: default_base_url(),
             display_width: default_width(),
             display_height: default_height(),
@@ -337,6 +346,7 @@ mod tests {
         );
         let config = Config::parse_and_validate(&json).unwrap();
         assert_eq!(config.model, "claude-sonnet-4-5-20250929");
+        assert_eq!(config.llm_max_retries, 5);
         assert_eq!(config.display_width, 1920);
         assert_eq!(config.display_height, 1080);
         assert_eq!(config.vnc_bind_addr, "127.0.0.1");
@@ -537,6 +547,18 @@ mod tests {
         let config = Config::from_task_defaults();
         assert_eq!(config.provider, "anthropic");
         assert_eq!(config.model, "claude-sonnet-4-5-20250929");
+        assert_eq!(config.llm_max_retries, 5);
         assert!(config.api_key.is_empty());
+    }
+
+    #[test]
+    fn test_custom_llm_max_retries() {
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image",
+            "llm_max_retries": 7
+        }"#;
+        let config = Config::parse_and_validate(json).unwrap();
+        assert_eq!(config.llm_max_retries, 7);
     }
 }

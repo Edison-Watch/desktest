@@ -31,6 +31,7 @@ pub(crate) struct LlmOverrides {
     pub provider: Option<String>,
     pub model: Option<String>,
     pub api_key: Option<String>,
+    pub llm_max_retries: Option<usize>,
 }
 
 /// Runtime configuration flags that travel together across orchestration functions.
@@ -44,6 +45,7 @@ pub(crate) struct RunConfig {
     pub artifacts_timeout_secs: u64,
     pub no_artifacts: bool,
     pub artifacts_exclude: Vec<String>,
+    pub llm_max_retries: usize,
 }
 
 /// Groups the core references that every orchestration inner function needs.
@@ -94,6 +96,9 @@ pub(crate) fn load_config_or_defaults(
     if let Some(k) = &llm.api_key {
         config.api_key = k.clone();
         config.api_key_source = Some("--api-key flag");
+    }
+    if let Some(max_retries) = llm.llm_max_retries {
+        config.llm_max_retries = max_retries;
     }
 
     // Warn if the provider was switched but the model still looks like it
@@ -900,6 +905,7 @@ pub(crate) async fn build_agent_loop_config(
         max_steps,
         total_timeout,
         observation_config: obs_config,
+        llm_max_retries: run.llm_max_retries,
         debug: run.debug,
         verbose: run.verbose,
         bash_enabled: run.bash_enabled,
@@ -1487,6 +1493,7 @@ mod tests {
             provider: None,
             model: None,
             api_key: None,
+            llm_max_retries: None,
         }
     }
 
@@ -1537,11 +1544,13 @@ mod tests {
             provider: Some("openrouter".into()),
             model: Some("anthropic/claude-sonnet-4".into()),
             api_key: Some("sk-or-test".into()),
+            llm_max_retries: Some(7),
         };
         let config = load_config_or_defaults(&None, &None, &overrides);
         assert_eq!(config.provider, "openrouter");
         assert_eq!(config.model, "anthropic/claude-sonnet-4");
         assert_eq!(config.api_key, "sk-or-test");
+        assert_eq!(config.llm_max_retries, 7);
     }
 
     #[test]
@@ -1550,6 +1559,7 @@ mod tests {
             provider: Some("gemini".into()),
             model: None,
             api_key: None,
+            llm_max_retries: None,
         };
         let config = load_config_or_defaults(&None, &None, &overrides);
         assert_eq!(config.provider, "gemini");
@@ -1578,6 +1588,7 @@ mod tests {
             provider: Some("openrouter".into()),
             model: None,
             api_key: None,
+            llm_max_retries: None,
         };
         let config = load_config_or_defaults(&Some(config_path), &None, &overrides);
         // Stale anthropic key must be cleared when switching to openrouter
@@ -1601,6 +1612,7 @@ mod tests {
             provider: Some("anthropic".into()),
             model: None,
             api_key: None,
+            llm_max_retries: None,
         };
         let config = load_config_or_defaults(&Some(config_path), &None, &overrides);
         assert_eq!(
@@ -1617,6 +1629,7 @@ mod tests {
             provider: Some("openrouter".into()),
             model: None,
             api_key: Some("sk-or-explicit".into()),
+            llm_max_retries: None,
         };
         let config = load_config_or_defaults(&None, &None, &overrides);
         assert_eq!(config.api_key, "sk-or-explicit");
