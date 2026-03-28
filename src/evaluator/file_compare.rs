@@ -14,6 +14,8 @@ pub(super) async fn evaluate_file_compare(
     artifacts_dir: &Path,
     eval_timeout: Duration,
 ) -> Result<MetricResult, AppError> {
+    super::validate_host_path(expected_path, "expected_path")?;
+
     // Copy the actual file from the container to a temp location
     let temp_actual = artifacts_dir.join("eval_actual_file");
     tokio::time::timeout(eval_timeout, session.copy_from(actual_path, &temp_actual))
@@ -86,6 +88,8 @@ pub(super) async fn evaluate_file_compare_semantic(
     artifacts_dir: &Path,
     eval_timeout: Duration,
 ) -> Result<MetricResult, AppError> {
+    super::validate_host_path(expected_path, "expected_path")?;
+
     // Copy the actual file from the container
     let temp_actual = artifacts_dir.join("eval_semantic_actual");
     tokio::time::timeout(eval_timeout, session.copy_from(actual_path, &temp_actual))

@@ -113,6 +113,28 @@ impl DockerSession {
 
             // Build the destination path by stripping the first component
             let relative: std::path::PathBuf = components[1..].iter().collect();
+
+            // Reject path traversal: ".." components or absolute paths could escape
+            // the destination directory if a compromised container crafts malicious
+            // tar entries.
+            for comp in relative.components() {
+                match comp {
+                    std::path::Component::ParentDir => {
+                        return Err(AppError::Infra(format!(
+                            "Tar entry contains '..' path traversal: {}",
+                            entry_path.display()
+                        )));
+                    }
+                    std::path::Component::RootDir => {
+                        return Err(AppError::Infra(format!(
+                            "Tar entry contains absolute path: {}",
+                            entry_path.display()
+                        )));
+                    }
+                    _ => {}
+                }
+            }
+
             let dest = local_path.join(&relative);
 
             if entry.header().entry_type().is_dir() {

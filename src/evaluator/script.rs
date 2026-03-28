@@ -21,6 +21,8 @@ pub(super) async fn evaluate_script_replay(
     artifacts_dir: &Path,
     eval_timeout: Duration,
 ) -> Result<MetricResult, AppError> {
+    super::validate_host_path(script_path, "script_path")?;
+
     let host_path = std::path::Path::new(script_path);
     if !host_path.exists() {
         return Err(AppError::Config(format!(
@@ -30,6 +32,7 @@ pub(super) async fn evaluate_script_replay(
 
     // Copy expected screenshots into container (for --with-screenshots scripts)
     if let Some(dir) = screenshots_dir {
+        super::validate_host_path(dir, "screenshots_dir")?;
         let dir_path = std::path::Path::new(dir);
         if dir_path.exists() {
             tokio::time::timeout(eval_timeout, session.copy_into(dir_path, "/home/tester/"))
