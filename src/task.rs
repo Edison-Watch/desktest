@@ -77,6 +77,11 @@ pub struct TaskDefinition {
     /// Path to directory containing expected screenshots for replay visual assertions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replay_screenshots_dir: Option<String>,
+
+    /// Optional early exit condition — exit the agent loop early when met (with passed=false).
+    /// The normal evaluator still runs afterward to determine the final verdict.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub early_exit: Option<EarlyExitConfig>,
 }
 
 fn default_timeout() -> u64 {
@@ -271,6 +276,93 @@ pub enum MatchMode {
     Contains,
     Equals,
     Regex,
+}
+
+/// Condition for early exit — either a programmatic check or an LLM judgment.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum EarlyExitCondition {
+    /// Compare a file from the container against an expected file.
+    FileCompare {
+        actual_path: String,
+        expected_path: String,
+        #[serde(default = "default_compare_mode")]
+        compare_mode: CompareMode,
+    },
+    /// Run a command and check stdout.
+    CommandOutput {
+        command: String,
+        expected: String,
+        #[serde(default = "default_match_mode")]
+        match_mode: MatchMode,
+    },
+    /// Check if a file exists (or does not exist) in the container.
+    FileExists {
+        path: String,
+        #[serde(default)]
+        should_not_exist: bool,
+    },
+    /// Run a command and check its exit code.
+    ExitCode { command: String, expected: i32 },
+    /// Use the agent's LLM to evaluate a natural language condition against the
+    /// current screenshot and accessibility tree.
+    LlmJudge { prompt: String },
+}
+
+impl EarlyExitCondition {
+    /// Convert programmatic variants to a `MetricConfig` for evaluation.
+    /// Returns `None` for `LlmJudge` (handled separately).
+    pub fn to_metric_config(&self) -> Option<MetricConfig> {
+        match self {
+            Self::FileCompare {
+                actual_path,
+                expected_path,
+                compare_mode,
+            } => Some(MetricConfig::FileCompare {
+                actual_path: actual_path.clone(),
+                expected_path: expected_path.clone(),
+                compare_mode: compare_mode.clone(),
+            }),
+            Self::CommandOutput {
+                command,
+                expected,
+                match_mode,
+            } => Some(MetricConfig::CommandOutput {
+                command: command.clone(),
+                expected: expected.clone(),
+                match_mode: match_mode.clone(),
+            }),
+            Self::FileExists {
+                path,
+                should_not_exist,
+            } => Some(MetricConfig::FileExists {
+                path: path.clone(),
+                should_not_exist: *should_not_exist,
+            }),
+            Self::ExitCode { command, expected } => Some(MetricConfig::ExitCode {
+                command: command.clone(),
+                expected: *expected,
+            }),
+            Self::LlmJudge { .. } => None,
+        }
+    }
+}
+
+/// Early exit configuration — exit the agent loop early when a condition is met.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct EarlyExitConfig {
+    /// The condition to check each interval.
+    pub condition: EarlyExitCondition,
+    /// Check every N steps (default: 1).
+    #[serde(default = "default_check_every")]
+    pub check_every: u32,
+    /// Optional human-readable message for the early exit reason.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+fn default_check_every() -> u32 {
+    1
 }
 
 /// Replace `{{key}}` placeholders in `text` with values from `resolved`.
@@ -718,6 +810,69 @@ impl TaskDefinition {
                                 "Metric {i} (script_replay): 'script_path' must not be empty."
                             )));
                         }
+                    }
+                }
+            }
+        }
+
+        // Validate early exit config
+        if let Some(early_exit) = &self.early_exit {
+            if early_exit.check_every == 0 {
+                return Err(AppError::Config(
+                    "Early exit 'check_every' must be > 0.".into(),
+                ));
+            }
+
+            match &early_exit.condition {
+                EarlyExitCondition::FileCompare {
+                    actual_path,
+                    expected_path,
+                    ..
+                } => {
+                    if actual_path.is_empty() {
+                        return Err(AppError::Config(
+                            "Early exit file_compare: 'actual_path' must not be empty.".into(),
+                        ));
+                    }
+                    if expected_path.is_empty() {
+                        return Err(AppError::Config(
+                            "Early exit file_compare: 'expected_path' must not be empty.".into(),
+                        ));
+                    }
+                }
+                EarlyExitCondition::CommandOutput {
+                    command, expected, ..
+                } => {
+                    if command.is_empty() {
+                        return Err(AppError::Config(
+                            "Early exit command_output: 'command' must not be empty.".into(),
+                        ));
+                    }
+                    if expected.is_empty() {
+                        return Err(AppError::Config(
+                            "Early exit command_output: 'expected' must not be empty.".into(),
+                        ));
+                    }
+                }
+                EarlyExitCondition::FileExists { path, .. } => {
+                    if path.is_empty() {
+                        return Err(AppError::Config(
+                            "Early exit file_exists: 'path' must not be empty.".into(),
+                        ));
+                    }
+                }
+                EarlyExitCondition::ExitCode { command, .. } => {
+                    if command.is_empty() {
+                        return Err(AppError::Config(
+                            "Early exit exit_code: 'command' must not be empty.".into(),
+                        ));
+                    }
+                }
+                EarlyExitCondition::LlmJudge { prompt } => {
+                    if prompt.is_empty() {
+                        return Err(AppError::Config(
+                            "Early exit llm_judge: 'prompt' must not be empty.".into(),
+                        ));
                     }
                 }
             }
@@ -1655,5 +1810,136 @@ mod tests {
             task.completion_condition.as_deref(),
             Some("Expect {{status}} text")
         );
+    }
+
+    // --- Early exit tests ---
+
+    #[test]
+    fn test_early_exit_command_output_parses() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test-early-exit",
+            "instruction": "Do something",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "early_exit": {
+                "condition": {
+                    "type": "command_output",
+                    "command": "pgrep myapp || echo CRASHED",
+                    "expected": "CRASHED",
+                    "match_mode": "contains"
+                },
+                "check_every": 2,
+                "message": "App crashed"
+            }
+        }"#;
+        let task = TaskDefinition::parse_and_validate(json).unwrap();
+        let early_exit = task.early_exit.unwrap();
+        assert_eq!(early_exit.check_every, 2);
+        assert_eq!(early_exit.message.as_deref(), Some("App crashed"));
+        assert!(matches!(
+            early_exit.condition,
+            EarlyExitCondition::CommandOutput { .. }
+        ));
+    }
+
+    #[test]
+    fn test_early_exit_llm_judge_parses() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test-early-exit-llm",
+            "instruction": "Do something",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "early_exit": {
+                "condition": {
+                    "type": "llm_judge",
+                    "prompt": "Is there a fatal error dialog visible?"
+                },
+                "check_every": 3
+            }
+        }"#;
+        let task = TaskDefinition::parse_and_validate(json).unwrap();
+        let early_exit = task.early_exit.unwrap();
+        assert_eq!(early_exit.check_every, 3);
+        assert!(early_exit.message.is_none());
+        assert!(matches!(
+            early_exit.condition,
+            EarlyExitCondition::LlmJudge { .. }
+        ));
+    }
+
+    #[test]
+    fn test_early_exit_file_exists_parses() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test-early-exit-file",
+            "instruction": "Do something",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "early_exit": {
+                "condition": {
+                    "type": "file_exists",
+                    "path": "/tmp/crash.log"
+                }
+            }
+        }"#;
+        let task = TaskDefinition::parse_and_validate(json).unwrap();
+        let early_exit = task.early_exit.unwrap();
+        assert_eq!(early_exit.check_every, 1); // default
+        assert!(matches!(
+            early_exit.condition,
+            EarlyExitCondition::FileExists { .. }
+        ));
+    }
+
+    #[test]
+    fn test_early_exit_check_every_zero_rejected() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test-bad",
+            "instruction": "Do something",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "early_exit": {
+                "condition": {"type": "file_exists", "path": "/tmp/x"},
+                "check_every": 0
+            }
+        }"#;
+        let err = TaskDefinition::parse_and_validate(json).unwrap_err();
+        assert!(err.to_string().contains("check_every"));
+    }
+
+    #[test]
+    fn test_early_exit_empty_prompt_rejected() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "test-bad",
+            "instruction": "Do something",
+            "app": {"type": "appimage", "path": "/apps/test.AppImage"},
+            "early_exit": {
+                "condition": {"type": "llm_judge", "prompt": ""}
+            }
+        }"#;
+        let err = TaskDefinition::parse_and_validate(json).unwrap_err();
+        assert!(err.to_string().contains("prompt"));
+    }
+
+    #[test]
+    fn test_early_exit_to_metric_config() {
+        let condition = EarlyExitCondition::CommandOutput {
+            command: "echo hi".into(),
+            expected: "hi".into(),
+            match_mode: MatchMode::Contains,
+        };
+        let metric = condition.to_metric_config().unwrap();
+        assert!(matches!(metric, MetricConfig::CommandOutput { .. }));
+
+        let llm = EarlyExitCondition::LlmJudge {
+            prompt: "test".into(),
+        };
+        assert!(llm.to_metric_config().is_none());
+    }
+
+    #[test]
+    fn test_early_exit_not_required() {
+        let task = TaskDefinition::parse_and_validate(minimal_valid_task()).unwrap();
+        assert!(task.early_exit.is_none());
     }
 }

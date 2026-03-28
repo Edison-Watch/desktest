@@ -108,7 +108,7 @@ pub fn combine_results(results: &[MetricResult], conjunction: &Conjunction) -> b
 }
 
 /// Evaluate a single metric against the container state.
-async fn evaluate_metric(
+pub(crate) async fn evaluate_metric(
     session: &DockerSession,
     metric: &MetricConfig,
     artifacts_dir: &Path,

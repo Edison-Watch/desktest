@@ -19,6 +19,7 @@ use crate::observation::{self, Observation, ObservationConfig};
 use crate::provider::{ChatMessage, LlmProvider};
 use crate::recording::Recording;
 use crate::redact::Redactor;
+use crate::task::{EarlyExitCondition, EarlyExitConfig};
 use crate::trajectory::{StepData, TrajectoryLogger};
 
 /// Default maximum number of agent steps per test.
@@ -59,6 +60,8 @@ pub struct AgentLoopV2Config {
     pub test_id: String,
     /// Secret redactor for scrubbing sensitive data from logs.
     pub redactor: Option<Redactor>,
+    /// Optional early exit condition — exit the loop early when met.
+    pub early_exit: Option<EarlyExitConfig>,
 }
 
 impl Default for AgentLoopV2Config {
@@ -77,6 +80,7 @@ impl Default for AgentLoopV2Config {
             display_height: 1080,
             test_id: String::new(),
             redactor: None,
+            early_exit: None,
         }
     }
 }
@@ -425,6 +429,40 @@ impl<'a> AgentLoopV2<'a> {
             self.log_trajectory_entry(&data, &current_observation);
             self.publish_step_event(&data, &current_observation);
 
+            // Check early exit condition (before consuming observation)
+            if let Some(ref early_exit) = self.config.early_exit {
+                if step_index % early_exit.check_every as usize == 0 {
+                    if self.check_early_exit(&current_observation).await? {
+                        let message = early_exit
+                            .message
+                            .as_deref()
+                            .unwrap_or("Early exit condition met");
+                        let reasoning =
+                            format!("{message} (at step {step_index})");
+                        info!("Early exit triggered at step {step_index}: {message}");
+                        let early_data = StepData {
+                            step_index,
+                            response_text: "",
+                            code_blocks: &[],
+                            result: "early_exit",
+                            raw_response: None,
+                            bash_output: None,
+                            error_feedback: None,
+                            action_type: None,
+                        };
+                        self.log_trajectory_entry(&early_data, &current_observation);
+                        self.save_conversation_log();
+                        self.publish_test_complete(false, &reasoning, start_time);
+                        return Ok(AgentOutcome {
+                            passed: false,
+                            reasoning,
+                            screenshot_count: step_index,
+                            bugs_found: self.bugs_found(),
+                        });
+                    }
+                }
+            }
+
             // Record the turn in trajectory
             self.context.push_turn(TrajectoryTurn {
                 observation: current_observation,
@@ -683,6 +721,29 @@ impl<'a> AgentLoopV2<'a> {
                 action_type: action_type.as_deref(),
             };
             self.log_trajectory_entry(&data, &current_observation);
+
+            // Check early exit condition (before consuming observation)
+            if let Some(ref early_exit) = self.config.early_exit {
+                if step_index % early_exit.check_every as usize == 0 {
+                    if self.check_early_exit(&current_observation).await? {
+                        let message = early_exit
+                            .message
+                            .as_deref()
+                            .unwrap_or("Early exit condition met");
+                        let reasoning =
+                            format!("{message} (at step {step_index})");
+                        println!("  => Early exit: {message}");
+                        self.save_conversation_log();
+                        return Ok(AgentOutcome {
+                            passed: false,
+                            reasoning,
+                            screenshot_count: step_index,
+                            bugs_found: self.bugs_found(),
+                        });
+                    }
+                }
+            }
+
             self.context.push_turn(TrajectoryTurn {
                 observation: current_observation,
                 response_text: response_text.clone(),
@@ -693,6 +754,59 @@ impl<'a> AgentLoopV2<'a> {
             // Capture new observation
             current_observation = self.capture_observation_for_step(step_index).await?;
             execution_elapsed += step_start.elapsed();
+        }
+    }
+
+    /// Check the early exit condition against current state.
+    ///
+    /// For programmatic conditions (file_exists, command_output, etc.), delegates to
+    /// `evaluator::evaluate_metric`. For `LlmJudge`, sends the current observation
+    /// to the agent's LLM and checks for a YES/NO answer.
+    ///
+    /// Returns `true` if the condition is met (i.e., should exit early).
+    async fn check_early_exit(
+        &self,
+        observation: &Observation,
+    ) -> Result<bool, AppError> {
+        let early_exit = match &self.config.early_exit {
+            Some(e) => e,
+            None => return Ok(false),
+        };
+
+        match &early_exit.condition {
+            EarlyExitCondition::LlmJudge { prompt } => {
+                let messages = build_judge_messages(prompt, observation);
+                match self.client.chat_completion(&messages, &[]).await {
+                    Ok(response) => {
+                        let text = extract_text_content(&response).to_uppercase();
+                        Ok(text.contains("YES"))
+                    }
+                    Err(e) => {
+                        warn!("Early exit LLM judge call failed: {e}");
+                        Ok(false)
+                    }
+                }
+            }
+            other => {
+                if let Some(metric) = other.to_metric_config() {
+                    let result = crate::evaluator::evaluate_metric(
+                        self.session,
+                        &metric,
+                        &self.artifacts_dir,
+                        Duration::from_secs(30),
+                    )
+                    .await;
+                    match result {
+                        Ok(r) => Ok(r.passed),
+                        Err(e) => {
+                            warn!("Early exit condition check failed: {e}");
+                            Ok(false)
+                        }
+                    }
+                } else {
+                    Ok(false)
+                }
+            }
         }
     }
 
@@ -855,6 +969,79 @@ impl<'a> AgentLoopV2<'a> {
     }
 }
 
+/// Build messages for the LLM judge early exit check.
+fn build_judge_messages(prompt: &str, observation: &Observation) -> Vec<ChatMessage> {
+    use crate::provider::{system_message, user_message};
+
+    let system = system_message(
+        "You are evaluating whether a specific condition is currently met on a desktop screen. \
+         You will be shown a screenshot and/or accessibility tree of the current screen state, \
+         along with a condition to evaluate. \
+         Answer with exactly YES if the condition is met, or NO if it is not. \
+         Do not explain your reasoning — respond with only YES or NO.",
+    );
+
+    let mut messages = vec![system];
+
+    // Build observation content (screenshot + a11y tree)
+    match (
+        &observation.screenshot_data_url,
+        &observation.a11y_tree_text,
+    ) {
+        (Some(data_url), Some(a11y_text)) => {
+            messages.push(ChatMessage {
+                role: "user".into(),
+                content: Some(serde_json::json!([
+                    {
+                        "type": "image_url",
+                        "image_url": { "url": data_url }
+                    },
+                    {
+                        "type": "text",
+                        "text": format!(
+                            "Accessibility tree:\n```\n{}\n```\n\nCondition to evaluate: {}",
+                            a11y_text, prompt
+                        )
+                    }
+                ])),
+                tool_calls: None,
+                tool_call_id: None,
+            });
+        }
+        (Some(data_url), None) => {
+            messages.push(ChatMessage {
+                role: "user".into(),
+                content: Some(serde_json::json!([
+                    {
+                        "type": "image_url",
+                        "image_url": { "url": data_url }
+                    },
+                    {
+                        "type": "text",
+                        "text": format!("Condition to evaluate: {}", prompt)
+                    }
+                ])),
+                tool_calls: None,
+                tool_call_id: None,
+            });
+        }
+        (None, Some(a11y_text)) => {
+            messages.push(user_message(&format!(
+                "Accessibility tree:\n```\n{}\n```\n\nCondition to evaluate: {}",
+                a11y_text, prompt
+            )));
+        }
+        (None, None) => {
+            messages.push(user_message(&format!(
+                "Condition to evaluate: {}",
+                prompt
+            )));
+        }
+    }
+
+    messages
+}
+
 fn serialize_conversation_log(
     messages: &[ChatMessage],
     redactor: Option<&Redactor>,
@@ -934,6 +1121,7 @@ mod tests {
             display_height: 1080,
             test_id: String::new(),
             redactor: None,
+            early_exit: None,
         };
         assert_eq!(config.max_steps, 25);
         assert_eq!(config.step_timeout.as_secs(), 120);

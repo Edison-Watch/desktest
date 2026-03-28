@@ -852,6 +852,7 @@ pub(crate) async fn build_agent_loop_config(
         qa: run.qa,
         display_width: config.display_width,
         display_height: config.display_height,
+        early_exit: task_def.early_exit.clone(),
         ..Default::default()
     }
 }
