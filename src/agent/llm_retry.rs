@@ -174,7 +174,8 @@ fn has_retryable_transport_error(lower: &str) -> bool {
 }
 
 fn is_non_retryable_http_error(lower: &str) -> bool {
-    matches_http_status(lower, 401)
+    matches_http_status(lower, 400)
+        || matches_http_status(lower, 401)
         || matches_http_status(lower, 403)
         || matches_http_status(lower, 404)
 }
@@ -430,6 +431,13 @@ mod tests {
     #[test]
     fn test_not_transient_bad_request() {
         assert!(!is_retryable_error("400 Bad Request: invalid model"));
+    }
+
+    #[test]
+    fn test_bad_request_body_does_not_trigger_transport_retry() {
+        assert!(!is_retryable_error(
+            r#"Agent error: OpenAI API error (400 Bad Request): {"error":{"message":"timeout must be an integer"}}"#
+        ));
     }
 
     #[test]
