@@ -11,7 +11,7 @@ use crate::session::{Session, SessionKind};
 /// Collect artifacts from the container into the host artifacts directory.
 ///
 /// Collects:
-/// - The tester user's home directory contents
+/// - The tester user's home directory contents (filtered by exclude patterns)
 /// - App stdout/stderr log
 /// - Process list at time of collection
 /// - Xvfb / x11vnc / xfce4 logs
@@ -19,13 +19,14 @@ use crate::session::{Session, SessionKind};
 pub async fn collect_artifacts(
     session: &SessionKind,
     artifacts_dir: &Path,
+    excludes: &[String],
 ) -> Result<(), AppError> {
     std::fs::create_dir_all(artifacts_dir)
         .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
 
-    // Collect home directory
+    // Collect home directory (with exclude filtering)
     let home_dest = artifacts_dir.join("home");
-    match session.copy_from("/home/tester", &home_dest).await {
+    match collect_home_filtered(session, &home_dest, excludes).await {
         Ok(()) => debug!("Collected home directory to {}", home_dest.display()),
         Err(e) => warn!("Failed to collect home directory: {e}"),
     }
@@ -93,6 +94,118 @@ pub async fn collect_artifacts(
     if let Some(docker) = session.as_docker() {
         collect_docker_logs(docker, artifacts_dir).await;
     }
+
+    Ok(())
+}
+
+/// Collect the home directory using `tar --exclude` inside the container to skip
+/// large/irrelevant directories (node_modules, caches, etc.) at the source,
+/// avoiding slow multi-hundred-MB transfers over the Docker socket.
+///
+/// Falls back to a plain `copy_from` if no excludes are configured or if the
+/// filtered tar approach fails.
+async fn collect_home_filtered(
+    session: &SessionKind,
+    home_dest: &Path,
+    excludes: &[String],
+) -> Result<(), AppError> {
+    if excludes.is_empty() {
+        // No excludes — use the direct Docker copy path
+        return session.copy_from("/home/tester", home_dest).await;
+    }
+
+    // Build: tar cf /tmp/_desktest_home.tar --exclude=X --exclude=Y -C /home tester
+    let tmp_tar = "/tmp/_desktest_home.tar";
+    let mut cmd_parts = vec!["tar".to_string(), "cf".to_string(), tmp_tar.to_string()];
+    for pattern in excludes {
+        cmd_parts.push(format!("--exclude={pattern}"));
+    }
+    cmd_parts.push("-C".to_string());
+    cmd_parts.push("/home".to_string());
+    cmd_parts.push("tester".to_string());
+
+    let cmd_refs: Vec<&str> = cmd_parts.iter().map(|s| s.as_str()).collect();
+    let (output, exit_code) = session.exec_with_exit_code(&cmd_refs).await?;
+    if exit_code != 0 {
+        debug!(
+            "Filtered tar failed (exit {}): {}; falling back to unfiltered copy",
+            exit_code, output
+        );
+        return session.copy_from("/home/tester", home_dest).await;
+    }
+
+    // Download the filtered tar and extract locally
+    let tar_dest = home_dest.with_extension("tar");
+    let result = session.copy_from(tmp_tar, &tar_dest).await;
+
+    // Clean up the temp tar inside the container (best-effort)
+    let _ = session.exec(&["rm", "-f", tmp_tar]).await;
+
+    result?;
+
+    // Extract the tar locally — it contains a `tester/` root directory
+    std::fs::create_dir_all(home_dest)
+        .map_err(|e| AppError::Infra(format!("Cannot create dir: {e}")))?;
+
+    let tar_file = std::fs::File::open(&tar_dest)
+        .map_err(|e| AppError::Infra(format!("Cannot open tar: {e}")))?;
+    let mut archive = tar::Archive::new(tar_file);
+    for entry in archive
+        .entries()
+        .map_err(|e| AppError::Infra(format!("Tar read error: {e}")))?
+    {
+        let mut entry = entry.map_err(|e| AppError::Infra(format!("Tar entry error: {e}")))?;
+        let path = entry
+            .path()
+            .map_err(|e| AppError::Infra(format!("Tar path error: {e}")))?
+            .to_path_buf();
+
+        // Skip symlinks and hard links to prevent directory escape attacks
+        if matches!(
+            entry.header().entry_type(),
+            tar::EntryType::Symlink | tar::EntryType::Link
+        ) {
+            debug!("Skipping symlink/link entry: {}", path.display());
+            continue;
+        }
+
+        // Strip the first component ("tester/")
+        let components: Vec<_> = path.components().collect();
+        if components.len() <= 1 {
+            continue; // root dir entry
+        }
+        let relative: std::path::PathBuf = components[1..].iter().collect();
+
+        // Path traversal check
+        for comp in relative.components() {
+            match comp {
+                std::path::Component::ParentDir | std::path::Component::RootDir => {
+                    return Err(AppError::Infra(format!(
+                        "Tar entry contains unsafe path: {}",
+                        path.display()
+                    )));
+                }
+                _ => {}
+            }
+        }
+
+        let dest = home_dest.join(&relative);
+        if entry.header().entry_type().is_dir() {
+            std::fs::create_dir_all(&dest)
+                .map_err(|e| AppError::Infra(format!("Cannot create dir: {e}")))?;
+        } else {
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| AppError::Infra(format!("Cannot create dir: {e}")))?;
+            }
+            entry
+                .unpack(&dest)
+                .map_err(|e| AppError::Infra(format!("Unpack error: {e}")))?;
+        }
+    }
+
+    // Remove the intermediate tar file
+    let _ = std::fs::remove_file(&tar_dest);
 
     Ok(())
 }

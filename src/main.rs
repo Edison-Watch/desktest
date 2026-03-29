@@ -92,6 +92,38 @@ fn print_monitor_url(bind_addr: &str, port: u16) {
     println!("Monitor dashboard: http://{display_addr} (bound to {bind_addr})");
 }
 
+/// Default glob patterns excluded from home-directory artifact collection.
+const DEFAULT_ARTIFACTS_EXCLUDES: &[&str] = &[
+    "node_modules",
+    ".cache",
+    ".npm",
+    ".electron",
+    ".nvm",
+    "GPU Cache",
+    "GPUCache",
+    "ShaderCache",
+];
+
+/// Resolve the effective exclude list: user-provided patterns, or defaults.
+/// Pass `--artifacts-exclude=none` to disable all default excludes.
+fn resolve_artifacts_exclude(user: &[String]) -> Vec<String> {
+    if user.is_empty() {
+        return DEFAULT_ARTIFACTS_EXCLUDES
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+    }
+    if user.iter().any(|s| s.eq_ignore_ascii_case("none")) {
+        // "none" anywhere in the list → disable defaults; keep any other patterns
+        return user
+            .iter()
+            .filter(|s| !s.eq_ignore_ascii_case("none"))
+            .cloned()
+            .collect();
+    }
+    user.to_vec()
+}
+
 #[tokio::main]
 async fn main() {
     // Load .env file if present (silently ignored if missing)
@@ -159,6 +191,7 @@ async fn main() {
                 qa: cli.qa,
                 artifacts_timeout_secs: cli.artifacts_timeout,
                 no_artifacts: cli.no_artifacts,
+                artifacts_exclude: resolve_artifacts_exclude(&cli.artifacts_exclude),
             };
 
             let result = orchestration::run_task(
@@ -212,6 +245,7 @@ async fn main() {
                 qa: cli.qa,
                 artifacts_timeout_secs: cli.artifacts_timeout,
                 no_artifacts: cli.no_artifacts,
+                artifacts_exclude: resolve_artifacts_exclude(&cli.artifacts_exclude),
             };
 
             let result = suite::run_suite(
@@ -283,6 +317,7 @@ async fn main() {
                 qa: cli.qa,
                 artifacts_timeout_secs: cli.artifacts_timeout,
                 no_artifacts: cli.no_artifacts,
+                artifacts_exclude: resolve_artifacts_exclude(&cli.artifacts_exclude),
             };
 
             let result = orchestration::run_attach(
@@ -342,6 +377,7 @@ async fn main() {
                 qa: cli.qa,
                 artifacts_timeout_secs: cli.artifacts_timeout,
                 no_artifacts: cli.no_artifacts,
+                artifacts_exclude: resolve_artifacts_exclude(&cli.artifacts_exclude),
             };
             let result = interactive::run_interactive(
                 task_def,
@@ -626,6 +662,7 @@ async fn main() {
                 qa: cli.qa,
                 artifacts_timeout_secs: cli.artifacts_timeout,
                 no_artifacts: cli.no_artifacts,
+                artifacts_exclude: resolve_artifacts_exclude(&cli.artifacts_exclude),
             };
 
             let result = orchestration::run_task(

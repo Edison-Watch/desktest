@@ -102,6 +102,12 @@ pub struct Cli {
     /// Skip artifact collection entirely (exit immediately after evaluation)
     #[arg(long, default_value_t = false, global = true)]
     pub no_artifacts: bool,
+
+    /// Glob patterns to exclude from home directory artifact collection (repeatable).
+    /// Defaults: node_modules, .cache, .npm, .electron, .nvm, GPU Cache, GPUCache, ShaderCache.
+    /// Use --artifacts-exclude=none to disable all default excludes.
+    #[arg(long, global = true)]
+    pub artifacts_exclude: Vec<String>,
 }
 
 #[derive(Subcommand, Debug)]

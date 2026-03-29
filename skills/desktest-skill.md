@@ -30,6 +30,9 @@ desktest suite tests/ --filter gedit            # Filter suite by name
 desktest run task.json --replay                  # Deterministic replay from codified script (no LLM)
 desktest run task.json --qa                     # Run with QA bug reporting mode
 desktest suite tests/ --qa                      # QA mode across a full suite
+desktest run task.json --no-artifacts            # Skip artifact collection entirely
+desktest run task.json --artifacts-exclude=none  # Collect everything (disable default excludes)
+desktest run task.json --artifacts-exclude .config --artifacts-exclude .local  # Custom excludes
 ```
 
 ### Reviewing results
@@ -174,6 +177,9 @@ Shows every step with full detail (thought + action code + result).
 | `--provider <PROVIDER>` | LLM provider: anthropic, openai, openrouter, cerebras, gemini, claude-cli, codex-cli, custom |
 | `--model <MODEL>` | LLM model name (overrides config file) |
 | `--api-key <KEY>` | API key for the LLM provider (prefer env vars to avoid shell history exposure) |
+| `--artifacts-timeout <SECS>` | Timeout for artifact collection (default: 120, 0 = no limit) |
+| `--no-artifacts` | Skip artifact collection entirely (exit immediately after evaluation) |
+| `--artifacts-exclude <GLOB>` | Glob patterns to exclude from home directory artifact collection (repeatable). Defaults: node_modules, .cache, .npm, .electron, .nvm, GPU Cache, GPUCache, ShaderCache. Use `--artifacts-exclude=none` to disable defaults |
 
 ## CLI-Based Providers (No API Key Needed)
 

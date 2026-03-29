@@ -34,7 +34,7 @@ pub(crate) struct LlmOverrides {
 }
 
 /// Runtime configuration flags that travel together across orchestration functions.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct RunConfig {
     pub debug: bool,
     pub verbose: bool,
@@ -43,6 +43,7 @@ pub(crate) struct RunConfig {
     pub qa: bool,
     pub artifacts_timeout_secs: u64,
     pub no_artifacts: bool,
+    pub artifacts_exclude: Vec<String>,
 }
 
 /// Groups the core references that every orchestration inner function needs.
@@ -186,7 +187,7 @@ pub(crate) async fn maybe_collect_artifacts(
     // 0 means no timeout (unlimited) — just await directly
     if run.artifacts_timeout_secs == 0 {
         info!("Collecting artifacts (no timeout)...");
-        let _ = artifacts::collect_artifacts(session, artifacts_dir).await;
+        let _ = artifacts::collect_artifacts(session, artifacts_dir, &run.artifacts_exclude).await;
         return;
     }
 
@@ -197,7 +198,7 @@ pub(crate) async fn maybe_collect_artifacts(
     let timeout = Duration::from_secs(run.artifacts_timeout_secs);
     match tokio::time::timeout(
         timeout,
-        artifacts::collect_artifacts(session, artifacts_dir),
+        artifacts::collect_artifacts(session, artifacts_dir, &run.artifacts_exclude),
     )
     .await
     {
@@ -293,7 +294,7 @@ pub(crate) async fn run_task(
             eprintln!("\nInterrupted (Ctrl+C), cleaning up...");
             Err(AppError::Infra("Interrupted by user".into()))
         }
-        r = run_task_inner(&ctx, run, monitor.as_ref(), start, Some(&redactor)) => r,
+        r = run_task_inner(&ctx, run.clone(), monitor.as_ref(), start, Some(&redactor)) => r,
     };
 
     // Collect artifacts (with timeout) and clean up
@@ -931,11 +932,12 @@ async fn run_agent_loop(
         &config.api_base_url,
     )?;
 
+    let is_qa = run.qa;
     let mut loop_config = build_agent_loop_config(task_def, session, config, run).await;
     loop_config.test_id = task_def.id.clone();
     loop_config.redactor = redactor.cloned();
     let full_instruction = task_def.full_instruction();
-    let notifier = if run.qa {
+    let notifier = if is_qa {
         let pipeline = crate::notify::build_pipeline(config);
         if pipeline.is_empty() {
             None
@@ -1027,7 +1029,7 @@ pub(crate) async fn run_attach(
             eprintln!("\nInterrupted (Ctrl+C)");
             Err(AppError::Infra("Interrupted by user".into()))
         }
-        r = run_attach_inner(&ctx, run, monitor.as_ref(), start, Some(&redactor)) => r,
+        r = run_attach_inner(&ctx, run.clone(), monitor.as_ref(), start, Some(&redactor)) => r,
     };
 
     // Collect artifacts but do NOT clean up the container (we don't own it)
