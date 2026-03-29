@@ -14,9 +14,7 @@ use tokio::sync::Mutex;
 use crate::error::AppError;
 use crate::session::Session;
 
-use self::protocol::{
-    ProtocolClient, Request, RequestType, relative_transfer_path,
-};
+use self::protocol::{ProtocolClient, Request, RequestType, relative_transfer_path};
 
 const TART_SHARED_DIR_NAME: &str = "desktest";
 const DEFAULT_AGENT_READY_TIMEOUT: Duration = Duration::from_secs(120);
@@ -114,9 +112,9 @@ impl TartSession {
         let stage_dir = self.protocol.transfer_stage(&request_id);
         tokio::fs::create_dir_all(&stage_dir).await?;
 
-        let name = src
-            .file_name()
-            .ok_or_else(|| AppError::Infra(format!("Source path has no basename: {}", src.display())))?;
+        let name = src.file_name().ok_or_else(|| {
+            AppError::Infra(format!("Source path has no basename: {}", src.display()))
+        })?;
         let staged_path = stage_dir.join(name);
         copy_path(src, &staged_path)?;
         let relative = relative_transfer_path(&self.shared_dir, &staged_path)?;
@@ -239,13 +237,27 @@ impl Session for TartSession {
             return Err(err);
         }
 
-        let mut entries = std::fs::read_dir(&stage_dir)
-            .map_err(|e| AppError::Infra(format!("Cannot read transfer stage {}: {e}", stage_dir.display())))?;
+        let mut entries = std::fs::read_dir(&stage_dir).map_err(|e| {
+            AppError::Infra(format!(
+                "Cannot read transfer stage {}: {e}",
+                stage_dir.display()
+            ))
+        })?;
         let first_entry = entries
             .next()
             .transpose()
-            .map_err(|e| AppError::Infra(format!("Cannot inspect transfer stage {}: {e}", stage_dir.display())))?
-            .ok_or_else(|| AppError::Infra(format!("Tart transfer stage {} is empty", stage_dir.display())))?;
+            .map_err(|e| {
+                AppError::Infra(format!(
+                    "Cannot inspect transfer stage {}: {e}",
+                    stage_dir.display()
+                ))
+            })?
+            .ok_or_else(|| {
+                AppError::Infra(format!(
+                    "Tart transfer stage {} is empty",
+                    stage_dir.display()
+                ))
+            })?;
 
         let staged_root = first_entry.path();
         if staged_root.is_dir() {
@@ -294,7 +306,9 @@ where
         .args(&args_vec)
         .output()
         .await
-        .map_err(|e| AppError::Infra(format!("Failed to run `tart {}`: {e}", args_vec.join(" "))))?;
+        .map_err(|e| {
+            AppError::Infra(format!("Failed to run `tart {}`: {e}", args_vec.join(" ")))
+        })?;
 
     if output.status.success() {
         return Ok(());
@@ -320,7 +334,11 @@ async fn wait_for_agent_or_exit(
 ) -> Result<(), AppError> {
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
-        if protocol.wait_for_agent_ready(Duration::from_millis(1)).await.is_ok() {
+        if protocol
+            .wait_for_agent_ready(Duration::from_millis(1))
+            .await
+            .is_ok()
+        {
             return Ok(());
         }
 
@@ -585,7 +603,10 @@ mod tests {
         // Wait for the background process to finish
         let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
         while !marker.exists() {
-            assert!(tokio::time::Instant::now() < deadline, "detached process did not finish");
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "detached process did not finish"
+            );
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
         assert_eq!(std::fs::read_to_string(&marker).unwrap().trim(), "ok");
@@ -605,7 +626,9 @@ mod tests {
         // Stage a file in transfers/
         let stage_dir = temp.path().join("transfers").join("rust_copy_in");
         tokio::fs::create_dir_all(&stage_dir).await.unwrap();
-        tokio::fs::write(stage_dir.join("payload.txt"), "from rust").await.unwrap();
+        tokio::fs::write(stage_dir.join("payload.txt"), "from rust")
+            .await
+            .unwrap();
 
         let dest_dir = temp.path().join("vm_dest");
         let response = client

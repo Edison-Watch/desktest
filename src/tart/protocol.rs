@@ -90,11 +90,7 @@ pub struct ProtocolClient {
 
 impl ProtocolClient {
     pub fn new(shared_dir: impl Into<PathBuf>) -> Self {
-        Self::with_timeouts(
-            shared_dir,
-            DEFAULT_REQUEST_TIMEOUT,
-            DEFAULT_POLL_INTERVAL,
-        )
+        Self::with_timeouts(shared_dir, DEFAULT_REQUEST_TIMEOUT, DEFAULT_POLL_INTERVAL)
     }
 
     pub fn with_timeouts(
@@ -407,7 +403,9 @@ mod tests {
         );
 
         // Request file should be cleaned up on timeout
-        let mut entries = tokio::fs::read_dir(temp.path().join("requests")).await.unwrap();
+        let mut entries = tokio::fs::read_dir(temp.path().join("requests"))
+            .await
+            .unwrap();
         assert!(
             entries.next_entry().await.unwrap().is_none(),
             "request file should be cleaned up after timeout"
@@ -514,10 +512,20 @@ mod tests {
             .unwrap();
 
         // Both request and response files should be cleaned up
-        let mut req_entries = tokio::fs::read_dir(temp.path().join("requests")).await.unwrap();
-        assert!(req_entries.next_entry().await.unwrap().is_none(), "request file should be cleaned up");
+        let mut req_entries = tokio::fs::read_dir(temp.path().join("requests"))
+            .await
+            .unwrap();
+        assert!(
+            req_entries.next_entry().await.unwrap().is_none(),
+            "request file should be cleaned up"
+        );
 
-        let mut resp_entries = tokio::fs::read_dir(temp.path().join("responses")).await.unwrap();
-        assert!(resp_entries.next_entry().await.unwrap().is_none(), "response file should be cleaned up");
+        let mut resp_entries = tokio::fs::read_dir(temp.path().join("responses"))
+            .await
+            .unwrap();
+        assert!(
+            resp_entries.next_entry().await.unwrap().is_none(),
+            "response file should be cleaned up"
+        );
     }
 }
