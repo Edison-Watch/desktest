@@ -44,8 +44,15 @@ impl TartSession {
                 // For Electron apps, install npm dependencies if a package.json was deployed
                 if is_electron && src.is_dir() && src.join("package.json").exists() {
                     info!("Installing npm dependencies in {vm_path}...");
-                    self.exec(&["bash", "-lc", &format!("cd {vm_path} && npm install")])
-                        .await?;
+                    self.exec(&[
+                        "bash",
+                        "-lc",
+                        &format!(
+                            "cd {} && npm install",
+                            shell_escape::escape(vm_path.as_str().into())
+                        ),
+                    ])
+                    .await?;
                 }
 
                 info!("Deployed to {vm_path}");
@@ -86,7 +93,7 @@ impl TartSession {
                 .await?;
         } else if let Some(bid) = bundle_id {
             // Launch by bundle identifier
-            let mut cmd = format!("open -b {bid}");
+            let mut cmd = format!("open -b {}", shell_escape::escape(bid.into()));
             if electron {
                 cmd.push_str(" --args --force-renderer-accessibility");
             }

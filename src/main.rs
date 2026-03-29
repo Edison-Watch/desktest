@@ -269,13 +269,14 @@ async fn main() {
                 &cli.resolution,
                 &llm_overrides(&cli),
             );
-            // Skip API key check for suites: tasks are discovered dynamically and
-            // some may be programmatic-only. Each individual run_task call will
-            // check for its own API key requirement.
-            if let Err(e) = preflight::run_preflight(&run_config, false, None).await {
-                eprintln!("Preflight check failed: {e}");
-                eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
-                std::process::exit(e.exit_code());
+            // Infrastructure check (Docker vs Tart) is deferred to individual
+            // run_task calls — suites may contain a mix of Docker and Tart tasks,
+            // and we don't know the app types until tasks are discovered.
+            // Only check the API key here if it can be validated early.
+            if let Err(e) = preflight::check_api_key(&run_config) {
+                // Non-fatal: some tasks may be programmatic-only or use CLI providers.
+                // Individual run_task calls will fail with a clearer error if needed.
+                tracing::debug!("Suite-level API key check: {e}");
             }
 
             let monitor_handle =
