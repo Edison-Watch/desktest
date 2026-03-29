@@ -192,7 +192,9 @@ fn matches_http_status(lower: &str, status: u16) -> bool {
 }
 
 fn retry_delay(err_str: &str, retry_number: usize) -> Duration {
-    parse_retry_after(err_str).unwrap_or_else(|| exponential_backoff_with_jitter(retry_number))
+    parse_retry_after(err_str)
+        .map(|delay| delay.min(LLM_RETRY_BACKOFF_CAP))
+        .unwrap_or_else(|| exponential_backoff_with_jitter(retry_number))
 }
 
 fn parse_retry_after(err_str: &str) -> Option<Duration> {
@@ -483,13 +485,13 @@ mod tests {
     }
 
     #[test]
-    fn test_retry_delay_preserves_retry_after_header() {
+    fn test_retry_delay_caps_retry_after_header() {
         assert_eq!(
             retry_delay(
                 "Anthropic API error (429 Too Many Requests; retry-after: 120): rate limited",
                 1
             ),
-            Duration::from_secs(120)
+            LLM_RETRY_BACKOFF_CAP
         );
     }
 
