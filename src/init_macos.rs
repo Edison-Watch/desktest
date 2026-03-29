@@ -152,9 +152,19 @@ async fn provision_vm(vm_name: &str, with_electron: bool) -> Result<(), AppError
         .spawn()
         .map_err(|e| AppError::Infra(format!("Failed to spawn `tart run`: {e}")))?;
 
-    // Wait for the VM to boot (check for SSH availability via tart ip)
+    // Wait for the VM to boot (check for SSH availability via tart ip).
+    // On failure, clean up the child process and shared dir before returning.
     println!("Waiting for VM to boot...");
-    let vm_ip = wait_for_vm_ip(vm_name, &mut child).await?;
+    let vm_ip = match wait_for_vm_ip(vm_name, &mut child).await {
+        Ok(ip) => ip,
+        Err(e) => {
+            let _ = crate::tart::run_tart_command(["stop", vm_name]).await;
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            let _ = std::fs::remove_dir_all(&shared_dir);
+            return Err(e);
+        }
+    };
     info!("VM booted with IP: {vm_ip}");
 
     // Run the provisioning script via SSH
@@ -162,13 +172,11 @@ async fn provision_vm(vm_name: &str, with_electron: bool) -> Result<(), AppError
     println!("Running provisioning script...");
     let provision_result = run_provision_via_ssh(&vm_ip, &provision_dir).await;
 
-    // Stop the VM regardless of provisioning result
+    // Stop the VM and clean up regardless of provisioning result
     println!("Stopping VM...");
     let _ = crate::tart::run_tart_command(["stop", vm_name]).await;
     let _ = child.kill().await;
     let _ = child.wait().await;
-
-    // Clean up shared dir
     let _ = std::fs::remove_dir_all(&shared_dir);
 
     provision_result
