@@ -42,7 +42,8 @@ const GREY: &str = "\x1b[38;2;155;164;166m";
 const WHITE_BOLD: &str = "\x1b[1;97m";
 const RESET: &str = "\x1b[0m";
 
-fn print_banner(version: &str) {
+/// Print the Hackbox banner and return the box width (for separator alignment).
+fn print_banner(version: &str) -> usize {
     const LOGO_LINES: &[&str] = &[
         " ██████╗ ███████╗███████╗██╗  ██╗████████╗███████╗███████╗████████╗",
         " ██╔══██╗██╔════╝██╔════╝██║ ██╔╝╚══██╔══╝██╔════╝██╔════╝╚══██╔══╝",
@@ -57,13 +58,14 @@ fn print_banner(version: &str) {
         for line in LOGO_LINES {
             println!("{line}");
         }
-        println!("  Desktest CLI v{version} — Playwright for full-computer tests");
+        println!("  Desktest CLI v{version} \u{2014} Playwright for full-computer tests");
         println!();
-        return;
+        return 0;
     }
 
     // Compute the version tagline to measure its width
-    let tagline_plain = format!("  Desktest CLI v{version}");
+    // Note: 1 leading space here — the format adds another ` ` prefix (like logo lines)
+    let tagline_plain = format!(" Desktest CLI v{version}");
     let tagline_suffix = " \u{2014} Playwright for full-computer tests";
     let tagline_len = tagline_plain.chars().count() + tagline_suffix.chars().count();
 
@@ -99,10 +101,10 @@ fn print_banner(version: &str) {
         println!("{CYAN}█{RESET} {line}{}{CYAN}█{RESET}", " ".repeat(padding));
     }
 
-    // Version tagline inside the box
-    let tagline_pad = inner.saturating_sub(tagline_len);
+    // Version tagline inside the box (same ` ` prefix as logo lines)
+    let tagline_pad = inner.saturating_sub(tagline_len + 1); // +1 for the space prefix
     println!(
-        "{CYAN}█{WHITE_BOLD}{tagline_plain}{GREY}{tagline_suffix}{}{CYAN}█{RESET}",
+        "{CYAN}█{RESET} {WHITE_BOLD}{tagline_plain}{GREY}{tagline_suffix}{}{CYAN}█{RESET}",
         " ".repeat(tagline_pad),
     );
 
@@ -110,6 +112,7 @@ fn print_banner(version: &str) {
     println!("{CYAN}{}{RESET}", "▀".repeat(box_width));
 
     println!();
+    box_width
 }
 
 fn setup_logging(debug: bool) {
@@ -215,11 +218,11 @@ async fn main() {
         None => {
             let mut cmd = Cli::command();
             let version = cmd.get_version().unwrap_or("unknown").to_string();
-            print_banner(&version);
-            let is_tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
-            if is_tty {
-                // Thin cyan separator between banner and help
-                println!("{CYAN}  ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─{RESET}");
+            let box_width = print_banner(&version);
+            if box_width > 0 {
+                // Thin cyan dashed separator between banner and help
+                let sep_units = box_width / 2;
+                println!("{CYAN}  {}{RESET}", "─ ".repeat(sep_units));
                 println!();
             }
             if let Err(e) = cmd.print_help() {

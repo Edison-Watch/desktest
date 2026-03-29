@@ -1,27 +1,30 @@
 use clap::{
     Parser, Subcommand,
-    builder::styling::{AnsiColor, Effects, Style, Styles},
+    builder::styling::{Color, Effects, RgbColor, Style, Styles},
 };
 
 use crate::results;
 
-// Brand-aligned clap styles:
+// Brand color: Core Cyan #C3FFFD = RGB(195, 255, 253)
+const BRAND_CYAN: Color = Color::Rgb(RgbColor(195, 255, 253));
+
+// Brand-aligned clap styles (true-color to match banner):
 //   - Headers (Usage:, Commands:, Options:): cyan + bold + underline
 //   - Literals (subcommands, flags): cyan
-//   - Placeholders (<VALUE>): graphene grey
+//   - Placeholders (<VALUE>): dimmed
 //   - Valid values: cyan
 const BRAND_STYLES: Styles = Styles::styled()
     .header(
         Style::new()
-            .fg_color(Some(clap::builder::styling::Color::Ansi(AnsiColor::Cyan)))
+            .fg_color(Some(BRAND_CYAN))
             .effects(Effects::BOLD.insert(Effects::UNDERLINE)),
     )
-    .literal(Style::new().fg_color(Some(clap::builder::styling::Color::Ansi(AnsiColor::Cyan))))
+    .literal(Style::new().fg_color(Some(BRAND_CYAN)))
     .placeholder(Style::new().effects(Effects::DIMMED))
-    .valid(Style::new().fg_color(Some(clap::builder::styling::Color::Ansi(AnsiColor::Cyan))))
+    .valid(Style::new().fg_color(Some(BRAND_CYAN)))
     .usage(
         Style::new()
-            .fg_color(Some(clap::builder::styling::Color::Ansi(AnsiColor::Cyan)))
+            .fg_color(Some(BRAND_CYAN))
             .effects(Effects::BOLD.insert(Effects::UNDERLINE)),
     );
 
@@ -32,19 +35,19 @@ const BRAND_STYLES: Styles = Styles::styled()
     about = "Automated end-to-end testing for Linux desktop apps using LLM-powered agents",
     version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("DESKTEST_GIT_SHA"), ")"),
     after_help = concat!(
-        "\x1b[1;4;36mWORKFLOWS:\x1b[0m\n",
+        "\x1b[1;4;38;2;195;255;253mWORKFLOWS:\x1b[0m\n",
         "  Test authoring (explore \u{2192} codify \u{2192} CI):\n",
-        "    \x1b[36m\u{25b8}\x1b[0m desktest run task.json --monitor          \x1b[2m# 1. Watch the agent explore your app\x1b[0m\n",
-        "    \x1b[36m\u{25b8}\x1b[0m desktest review desktest_artifacts/       \x1b[2m# 2. Inspect the trajectory in a browser\x1b[0m\n",
-        "    \x1b[36m\u{25b8}\x1b[0m desktest codify trajectory.jsonl --overwrite task.json  \x1b[2m# 3. Convert + update task JSON\x1b[0m\n",
-        "    \x1b[36m\u{25b8}\x1b[0m desktest run task.json --replay           \x1b[2m# 4. Deterministic replay (no LLM, no API costs)\x1b[0m\n",
+        "    \x1b[38;2;195;255;253m\u{25b8}\x1b[0m desktest run task.json --monitor          \x1b[2m# 1. Watch the agent explore your app\x1b[0m\n",
+        "    \x1b[38;2;195;255;253m\u{25b8}\x1b[0m desktest review desktest_artifacts/       \x1b[2m# 2. Inspect the trajectory in a browser\x1b[0m\n",
+        "    \x1b[38;2;195;255;253m\u{25b8}\x1b[0m desktest codify trajectory.jsonl --overwrite task.json  \x1b[2m# 3. Convert + update task JSON\x1b[0m\n",
+        "    \x1b[38;2;195;255;253m\u{25b8}\x1b[0m desktest run task.json --replay           \x1b[2m# 4. Deterministic replay (no LLM, no API costs)\x1b[0m\n",
         "\n",
         "  Live monitoring + agent-assisted debugging:\n",
-        "    \x1b[36m\u{25b8}\x1b[0m desktest run task.json --monitor          \x1b[2m# 1. Watch live, spot the failure\x1b[0m\n",
-        "    \x1b[36m\u{25b8}\x1b[0m desktest logs desktest_artifacts/         \x1b[2m# 2. Hand off to your coding agent\x1b[0m\n",
+        "    \x1b[38;2;195;255;253m\u{25b8}\x1b[0m desktest run task.json --monitor          \x1b[2m# 1. Watch live, spot the failure\x1b[0m\n",
+        "    \x1b[38;2;195;255;253m\u{25b8}\x1b[0m desktest logs desktest_artifacts/         \x1b[2m# 2. Hand off to your coding agent\x1b[0m\n",
         "                                              \x1b[2m#    e.g. \"Claude, look at desktest logs and diagnose\"\x1b[0m\n",
         "\n",
-        "\x1b[1;4;36mEXAMPLES:\x1b[0m\n",
+        "\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m\n",
         "  desktest run task.json --config config.json --artifacts-dir ./artifacts\n",
         "  desktest run task.json --monitor --with-bash\n",
         "  desktest suite ./tests --filter gedit\n",
@@ -143,7 +146,7 @@ pub struct Cli {
 pub enum Command {
     /// Validate a task JSON file against the schema without running anything
     #[command(after_help = "\
-\x1b[1;4;36mEXAMPLES:\x1b[0m
+\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m
   desktest validate task.json
   desktest validate tests/gedit-save.json")]
     Validate {
@@ -153,7 +156,7 @@ pub enum Command {
 
     /// Run a single test from a task JSON file
     #[command(after_help = "\
-\x1b[1;4;36mEXAMPLES:\x1b[0m
+\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m
   desktest run task.json                          \x1b[2m# Basic run\x1b[0m
   desktest run task.json --monitor                \x1b[2m# Watch live at http://localhost:7860\x1b[0m
   desktest run task.json --monitor --with-bash    \x1b[2m# Live + let agent use bash for debugging\x1b[0m
@@ -171,7 +174,7 @@ pub enum Command {
 
     /// Run a suite of tests from a directory of task JSON files
     #[command(after_help = "\
-\x1b[1;4;36mEXAMPLES:\x1b[0m
+\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m
   desktest suite ./tests
   desktest suite ./tests --filter gedit
   desktest suite ./tests --config config.json --output ./results")]
@@ -186,7 +189,7 @@ pub enum Command {
 
     /// Start a container with a task for interactive development and debugging
     #[command(after_help = "\
-\x1b[1;4;36mEXAMPLES:\x1b[0m
+\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m
   desktest interactive task.json                   \x1b[2m# Start container, run setup, pause\x1b[0m
   desktest interactive task.json --step            \x1b[2m# Run agent one step at a time\x1b[0m
   desktest interactive task.json --validate-only   \x1b[2m# Skip agent, run evaluation only\x1b[0m
@@ -206,7 +209,7 @@ pub enum Command {
 
     /// Convert a trajectory into a deterministic Python replay script
     #[command(after_help = "\
-\x1b[1;4;36mEXAMPLES:\x1b[0m
+\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m
   desktest codify desktest_artifacts/trajectory.jsonl
   desktest codify desktest_artifacts/trajectory.jsonl --output desktest_replay.py
   desktest codify desktest_artifacts/trajectory.jsonl --steps 1,2,5,6
@@ -242,13 +245,13 @@ pub enum Command {
 
     /// Attach to an existing running container and run a task against it
     #[command(after_help = concat!(
-        "\x1b[1;4;36mPREREQUISITES:\x1b[0m\n",
+        "\x1b[1;4;38;2;195;255;253mPREREQUISITES:\x1b[0m\n",
         "  Docker daemon must be accessible. Desktest uses the Docker API (via the ",
         "socket) to exec into the target container. The user running desktest needs ",
         "Docker socket permissions \u{2014} typically membership in the `docker` group, or ",
         "`sudo chmod 660 /var/run/docker.sock && sudo chown root:docker /var/run/docker.sock` ",
         "for temporary local dev access.\n\n",
-        "\x1b[1;4;36mEXAMPLES:\x1b[0m\n",
+        "\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m\n",
         "  desktest attach task.json --container my-container\n",
         "  desktest attach task.json --container abc123 --config config.json\n",
         "  desktest attach task.json --container my-container --resolution 1280x720\n",
@@ -269,9 +272,9 @@ pub enum Command {
 
     /// Replay a codified Python script inside a container (deprecated: use `desktest run --replay` instead)
     #[command(after_help = concat!(
-        "\x1b[1;4;36mDEPRECATED:\x1b[0m Prefer setting 'replay_script' in your task JSON and using `desktest run --replay`\n",
+        "\x1b[1;4;38;2;195;255;253mDEPRECATED:\x1b[0m Prefer setting 'replay_script' in your task JSON and using `desktest run --replay`\n",
         "for deterministic execution with no LLM and zero API costs.\n\n",
-        "\x1b[1;4;36mEXAMPLES:\x1b[0m\n",
+        "\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m\n",
         "  desktest replay task.json --script desktest_replay.py\n",
         "  desktest replay task.json --script desktest_replay.py --screenshots-dir desktest_artifacts/"
     ))]
@@ -293,7 +296,7 @@ pub enum Command {
         "Prints trajectory steps to stdout as structured text. Designed for CLI ",
         "and agent workflows \u{2014} pipe to grep, jq, or other tools.\n",
         "For an interactive visual viewer, use `desktest review` instead.\n\n",
-        "\x1b[1;4;36mEXAMPLES:\x1b[0m\n",
+        "\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m\n",
         "  desktest logs desktest_artifacts/\n",
         "  desktest logs desktest_artifacts/ --brief\n",
         "  desktest logs desktest_artifacts/ --step 3\n",
@@ -321,7 +324,7 @@ pub enum Command {
     #[command(after_help = concat!(
         "Verifies Docker daemon connectivity, API key availability, and displays ",
         "current configuration. Use this to troubleshoot setup issues.\n\n",
-        "\x1b[1;4;36mEXAMPLES:\x1b[0m\n",
+        "\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m\n",
         "  desktest doctor\n",
         "  desktest doctor --config config.json"
     ))]
@@ -329,7 +332,7 @@ pub enum Command {
 
     /// Update desktest to the latest release from GitHub
     #[command(after_help = "\
-\x1b[1;4;36mEXAMPLES:\x1b[0m
+\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m
   desktest update                \x1b[2m# Update to latest if newer\x1b[0m
   desktest update --force        \x1b[2m# Re-download even if already up to date\x1b[0m")]
     Update {
@@ -343,7 +346,7 @@ pub enum Command {
         "Watches an artifacts directory tree for trajectory files from multiple ",
         "desktest attach/run phases. Each subdirectory with a trajectory.jsonl ",
         "is treated as a separate phase, displayed in a single timeline.\n\n",
-        "\x1b[1;4;36mEXAMPLES:\x1b[0m\n",
+        "\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m\n",
         "  desktest monitor --watch ./artifacts/\n",
         "  desktest monitor --watch ./artifacts/ --monitor-port 8080"
     ))]
@@ -356,7 +359,7 @@ pub enum Command {
     /// Generate an interactive HTML trajectory viewer (best for human review in a browser)
     #[command(after_help = concat!(
         "For a CLI/agent-friendly text view, use `desktest logs` instead.\n\n",
-        "\x1b[1;4;36mEXAMPLES:\x1b[0m\n",
+        "\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m\n",
         "  desktest review desktest_artifacts/\n",
         "  desktest review desktest_artifacts/ --output desktest_review.html\n",
         "  desktest review desktest_artifacts/ --no-open"
