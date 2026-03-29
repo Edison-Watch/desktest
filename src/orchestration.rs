@@ -243,8 +243,7 @@ pub(crate) async fn run_task(
     // Guard: macos_native not yet supported (Phase 5)
     if matches!(task_def.app, task::AppConfig::MacosNative { .. }) {
         return Err(AppError::Config(
-            "MacosNative app type is not yet supported. Use 'macos_tart' for macOS testing."
-                .into(),
+            "MacosNative app type is not yet supported. Use 'macos_tart' for macOS testing.".into(),
         ));
     }
 
@@ -489,8 +488,7 @@ async fn run_task_inner(
     if is_macos {
         // macOS: get baseline, launch, wait for new app window
         info!("Waiting for stable process baseline...");
-        let baseline_procs =
-            crate::tart::readiness::get_stable_gui_process_list(session).await?;
+        let baseline_procs = crate::tart::readiness::get_stable_gui_process_list(session).await?;
 
         let tart = session
             .as_tart()

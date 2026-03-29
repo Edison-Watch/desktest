@@ -215,7 +215,9 @@ async fn main() {
             );
 
             let needs_llm = !*replay && !task_def.is_programmatic_only();
-            if let Err(e) = preflight::run_preflight(&run_config, needs_llm, Some(&task_def.app)).await {
+            if let Err(e) =
+                preflight::run_preflight(&run_config, needs_llm, Some(&task_def.app)).await
+            {
                 eprintln!("Preflight check failed: {e}");
                 eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
                 std::process::exit(e.exit_code());
@@ -343,7 +345,9 @@ async fn main() {
             );
 
             let needs_llm = !*replay && !task_def.is_programmatic_only();
-            if let Err(e) = preflight::run_preflight(&run_config, needs_llm, Some(&task_def.app)).await {
+            if let Err(e) =
+                preflight::run_preflight(&run_config, needs_llm, Some(&task_def.app)).await
+            {
                 eprintln!("Preflight check failed: {e}");
                 eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
                 std::process::exit(e.exit_code());
@@ -406,7 +410,9 @@ async fn main() {
             // run_interactive_step unconditionally creates an LLM provider,
             // so any --step invocation needs an API key regardless of evaluator mode.
             let needs_llm = *step && !*validate_only;
-            if let Err(e) = preflight::run_preflight(&run_config, needs_llm, Some(&task_def.app)).await {
+            if let Err(e) =
+                preflight::run_preflight(&run_config, needs_llm, Some(&task_def.app)).await
+            {
                 eprintln!("Preflight check failed: {e}");
                 eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
                 std::process::exit(e.exit_code());
@@ -690,7 +696,8 @@ async fn main() {
             );
 
             // Replay mode doesn't need LLM
-            if let Err(e) = preflight::run_preflight(&run_config, false, Some(&task_def.app)).await {
+            if let Err(e) = preflight::run_preflight(&run_config, false, Some(&task_def.app)).await
+            {
                 eprintln!("Preflight check failed: {e}");
                 eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
                 std::process::exit(e.exit_code());

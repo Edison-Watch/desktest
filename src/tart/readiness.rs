@@ -104,9 +104,7 @@ pub async fn get_gui_process_list(session: &SessionKind) -> Result<Vec<String>, 
 /// Get a stable baseline of GUI processes by waiting for the list to stabilize.
 ///
 /// Times out after 30 seconds and returns whatever list we have.
-pub async fn get_stable_gui_process_list(
-    session: &SessionKind,
-) -> Result<Vec<String>, AppError> {
+pub async fn get_stable_gui_process_list(session: &SessionKind) -> Result<Vec<String>, AppError> {
     let mut last_procs = get_gui_process_list(session).await?;
     let mut stable_count = 0;
     let required_stable = 3;

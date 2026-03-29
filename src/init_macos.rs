@@ -69,7 +69,9 @@ pub async fn run_init_macos(
     println!("Golden image '{output_image}' is ready!");
     println!();
     println!("Next steps:");
-    println!("  1. Create a task JSON with '\"type\": \"macos_tart\"' and '\"base_image\": \"{output_image}\"'");
+    println!(
+        "  1. Create a task JSON with '\"type\": \"macos_tart\"' and '\"base_image\": \"{output_image}\"'"
+    );
     println!("  2. Run: desktest run your-task.json");
     println!();
     println!("Important: The VM must have Accessibility permissions granted for the");
@@ -143,11 +145,7 @@ async fn provision_vm(vm_name: &str, with_electron: bool) -> Result<(), AppError
     // Run the provisioning script via SSH
     // Tart base images typically have user/password: admin/admin
     println!("Running provisioning script...");
-    let provision_result = run_provision_via_ssh(
-        &vm_ip,
-        &provision_dir,
-    )
-    .await;
+    let provision_result = run_provision_via_ssh(&vm_ip, &provision_dir).await;
 
     // Stop the VM regardless of provisioning result
     println!("Stopping VM...");
@@ -267,10 +265,7 @@ async fn wait_for_vm_ip(vm_name: &str) -> Result<String, AppError> {
 ///
 /// Tart base images use admin/admin credentials by default.
 /// Requires `sshpass` to be installed on the host (checked at startup).
-async fn run_provision_via_ssh(
-    vm_ip: &str,
-    provision_dir: &Path,
-) -> Result<(), AppError> {
+async fn run_provision_via_ssh(vm_ip: &str, provision_dir: &Path) -> Result<(), AppError> {
     let ssh_target = format!("admin@{vm_ip}");
 
     // First, ensure we can SSH in (the VM may take a moment after getting an IP)
@@ -286,12 +281,16 @@ async fn run_provision_via_ssh(
 
         let check = tokio::process::Command::new("sshpass")
             .args([
-                "-p", "admin",
+                "-p",
+                "admin",
                 "ssh",
-                "-o", "StrictHostKeyChecking=no",
-                "-o", "ConnectTimeout=5",
+                "-o",
+                "StrictHostKeyChecking=no",
+                "-o",
+                "ConnectTimeout=5",
                 &ssh_target,
-                "echo", "ready",
+                "echo",
+                "ready",
             ])
             .output()
             .await;
@@ -312,11 +311,14 @@ async fn run_provision_via_ssh(
 
     let mut child = tokio::process::Command::new("sshpass")
         .args([
-            "-p", "admin",
+            "-p",
+            "admin",
             "ssh",
-            "-o", "StrictHostKeyChecking=no",
+            "-o",
+            "StrictHostKeyChecking=no",
             &ssh_target,
-            "bash", "-s",
+            "bash",
+            "-s",
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::inherit())
@@ -330,7 +332,11 @@ async fn run_provision_via_ssh(
         stdin
             .write_all(script_content.as_bytes())
             .await
-            .map_err(|e| AppError::Infra(format!("Failed to write provisioning script to SSH stdin: {e}")))?;
+            .map_err(|e| {
+                AppError::Infra(format!(
+                    "Failed to write provisioning script to SSH stdin: {e}"
+                ))
+            })?;
         // Drop stdin to close it and signal EOF
     }
 
@@ -348,7 +354,6 @@ async fn run_provision_via_ssh(
 
     Ok(())
 }
-
 
 /// Verify that `sshpass` is installed (needed for VM provisioning).
 fn check_sshpass_installed() -> Result<(), AppError> {
@@ -421,8 +426,7 @@ fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<(), AppError> {
     for entry in std::fs::read_dir(src)
         .map_err(|e| AppError::Infra(format!("Cannot read {}: {e}", src.display())))?
     {
-        let entry =
-            entry.map_err(|e| AppError::Infra(format!("Cannot read dir entry: {e}")))?;
+        let entry = entry.map_err(|e| AppError::Infra(format!("Cannot read dir entry: {e}")))?;
         let src_path = entry.path();
         let dest_path = dest.join(entry.file_name());
 

@@ -120,10 +120,7 @@ pub async fn run_doctor(config: &Config) -> bool {
             Ok(()) => {
                 println!("ok");
                 // Try to get version info
-                if let Ok(output) = std::process::Command::new("tart")
-                    .arg("--version")
-                    .output()
-                {
+                if let Ok(output) = std::process::Command::new("tart").arg("--version").output() {
                     if output.status.success() {
                         let version = String::from_utf8_lossy(&output.stdout);
                         let version = version.trim();
