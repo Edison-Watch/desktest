@@ -493,7 +493,7 @@ async fn run_task_inner(
         let tart = session
             .as_tart()
             .expect("Tart session required for macOS app launch");
-        tart.launch_app(&task_def.app).await?;
+        tart.launch_app(&task_def.app, &app_path).await?;
 
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 

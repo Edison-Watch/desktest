@@ -356,15 +356,20 @@ async fn run_provision_via_ssh(vm_ip: &str, provision_dir: &Path) -> Result<(), 
 }
 
 /// Verify that `sshpass` is installed (needed for VM provisioning).
+///
+/// Checks that the binary can be spawned rather than relying on a specific
+/// flag's exit code (`sshpass -V` returns non-zero on some versions).
 fn check_sshpass_installed() -> Result<(), AppError> {
+    // `sshpass` with no args exits 1 but prints usage — a successful spawn
+    // means the binary exists. We only care about spawn failure (not found).
     match std::process::Command::new("sshpass")
-        .arg("-V")
+        .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
     {
-        Ok(status) if status.success() => Ok(()),
-        _ => Err(AppError::Config(
+        Ok(_) => Ok(()), // Binary exists (any exit code is fine)
+        Err(_) => Err(AppError::Config(
             "sshpass is not installed. It is required to provision the macOS VM.\n\
              Install it with: brew install hudochenkov/sshpass/sshpass"
                 .into(),

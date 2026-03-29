@@ -67,10 +67,14 @@ impl TartSession {
 
     /// Launch the macOS app inside the Tart VM.
     ///
-    /// Priority: `launch_cmd` > `bundle_id` > `app_path`.
+    /// Priority: `launch_cmd` > `bundle_id` > `deployed_path` (VM-local) > `app_path` (config).
     /// Electron apps get `--force-renderer-accessibility`.
-    pub async fn launch_app(&self, app: &AppConfig) -> Result<(), AppError> {
-        let (bundle_id, app_path, launch_cmd, electron) = match app {
+    ///
+    /// `deployed_path` is the VM-local path returned by `deploy_app()`. When an app
+    /// was copied from the host into the VM, this differs from the config's `app_path`
+    /// (which is the host-side path). If non-empty, it takes precedence.
+    pub async fn launch_app(&self, app: &AppConfig, deployed_path: &str) -> Result<(), AppError> {
+        let (bundle_id, config_app_path, launch_cmd, electron) = match app {
             AppConfig::MacosTart {
                 bundle_id,
                 app_path,
@@ -84,6 +88,13 @@ impl TartSession {
                 *electron,
             ),
             _ => return Ok(()),
+        };
+
+        // Prefer the deployed VM-local path over the config's host-side path
+        let app_path = if deployed_path.is_empty() {
+            config_app_path
+        } else {
+            Some(deployed_path)
         };
 
         if let Some(cmd) = launch_cmd {
