@@ -72,7 +72,13 @@ pub async fn run_init_macos(
         return Err(e);
     }
 
-    crate::tart::run_tart_command(["delete", &work_vm]).await?;
+    // Best-effort cleanup — the golden image is already saved, so a delete
+    // failure here should not make the command report failure.
+    if let Err(e) = crate::tart::run_tart_command(["delete", &work_vm]).await {
+        tracing::warn!(
+            "Could not delete working VM '{work_vm}': {e} (image saved successfully, manual cleanup may be needed)"
+        );
+    }
 
     println!();
     println!("Golden image '{output_image}' is ready!");
@@ -184,6 +190,7 @@ if ! command -v brew &>/dev/null; then
     NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     eval "$(/opt/homebrew/bin/brew shellenv)"
     echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
+    echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.bash_profile
 fi
 
 # Ensure Python 3 and pip
@@ -227,7 +234,11 @@ fi
             r#"# Install Node.js for Electron testing
 echo "Installing Node.js..."
 brew install node@20 || true
-echo 'export PATH="/opt/homebrew/opt/node@20/bin:$PATH"' >> ~/.zprofile
+# Write PATH to both zsh and bash profiles — deploy_app uses `bash -lc`
+# which sources ~/.bash_profile, not ~/.zprofile.
+NODE_PATH_LINE='export PATH="/opt/homebrew/opt/node@20/bin:$PATH"'
+echo "$NODE_PATH_LINE" >> ~/.zprofile
+echo "$NODE_PATH_LINE" >> ~/.bash_profile
 
 "#,
         );
