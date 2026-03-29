@@ -333,12 +333,9 @@ async fn wait_for_agent_or_exit(
     timeout: Duration,
 ) -> Result<(), AppError> {
     let deadline = tokio::time::Instant::now() + timeout;
+    let sentinel = protocol.paths().agent_ready_path.clone();
     loop {
-        if protocol
-            .wait_for_agent_ready(Duration::from_millis(1))
-            .await
-            .is_ok()
-        {
+        if tokio::fs::try_exists(&sentinel).await.unwrap_or(false) {
             return Ok(());
         }
 

@@ -99,13 +99,16 @@ def main() -> int:
         for request_path in sorted(requests_dir.glob("cmd_*.json")):
             result = handle_request(shared_dir, request_path)
             response_path = responses_dir / request_path.name.replace(".json", ".result.json")
-            tmp_path = response_path.with_suffix(".tmp")
-            tmp_path.write_text(json.dumps(result))
-            tmp_path.rename(response_path)
             try:
-                request_path.unlink()
-            except FileNotFoundError:
-                pass
+                tmp_path = response_path.with_suffix(".tmp")
+                tmp_path.write_text(json.dumps(result))
+                tmp_path.rename(response_path)
+                try:
+                    request_path.unlink()
+                except FileNotFoundError:
+                    pass
+            except Exception as exc:
+                print(f"[vm-agent] ERROR writing response for {request_path.name}: {exc}", file=sys.stderr)
         time.sleep(0.2)
 
 

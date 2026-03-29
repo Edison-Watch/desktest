@@ -152,15 +152,18 @@ impl ProtocolClient {
         loop {
             if tokio::fs::try_exists(&response_path).await? {
                 let bytes = tokio::fs::read(&response_path).await?;
+
+                // Clean up request and response files before parsing so they
+                // don't leak if deserialization fails.
+                let _ = tokio::fs::remove_file(&request_path).await;
+                let _ = tokio::fs::remove_file(&response_path).await;
+
                 let response: Response = serde_json::from_slice(&bytes).map_err(|e| {
                     AppError::Infra(format!(
                         "Failed to parse Tart response {}: {e}",
                         response_path.display()
                     ))
                 })?;
-
-                let _ = tokio::fs::remove_file(&request_path).await;
-                let _ = tokio::fs::remove_file(&response_path).await;
 
                 if let Some(error) = response.error.clone() {
                     return Err(AppError::Infra(format!("Tart VM agent error: {error}")));
