@@ -1,4 +1,7 @@
-use clap::{Parser, Subcommand, builder::styling::{AnsiColor, Effects, Styles, Style}};
+use clap::{
+    Parser, Subcommand,
+    builder::styling::{AnsiColor, Effects, Style, Styles},
+};
 
 use crate::results;
 
@@ -8,11 +11,19 @@ use crate::results;
 //   - Placeholders (<VALUE>): graphene grey
 //   - Valid values: cyan
 const BRAND_STYLES: Styles = Styles::styled()
-    .header(Style::new().fg_color(Some(clap::builder::styling::Color::Ansi(AnsiColor::Cyan))).effects(Effects::BOLD.insert(Effects::UNDERLINE)))
+    .header(
+        Style::new()
+            .fg_color(Some(clap::builder::styling::Color::Ansi(AnsiColor::Cyan)))
+            .effects(Effects::BOLD.insert(Effects::UNDERLINE)),
+    )
     .literal(Style::new().fg_color(Some(clap::builder::styling::Color::Ansi(AnsiColor::Cyan))))
     .placeholder(Style::new().effects(Effects::DIMMED))
     .valid(Style::new().fg_color(Some(clap::builder::styling::Color::Ansi(AnsiColor::Cyan))))
-    .usage(Style::new().fg_color(Some(clap::builder::styling::Color::Ansi(AnsiColor::Cyan))).effects(Effects::BOLD.insert(Effects::UNDERLINE)));
+    .usage(
+        Style::new()
+            .fg_color(Some(clap::builder::styling::Color::Ansi(AnsiColor::Cyan)))
+            .effects(Effects::BOLD.insert(Effects::UNDERLINE)),
+    );
 
 #[derive(Parser, Debug)]
 #[command(

@@ -68,7 +68,11 @@ fn print_banner(version: &str) {
     let tagline_len = tagline_plain.chars().count() + tagline_suffix.chars().count();
 
     // Inner width = max of all content lines (logo + tagline) + 2 for left/right padding
-    let max_logo = LOGO_LINES.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+    let max_logo = LOGO_LINES
+        .iter()
+        .map(|l| l.chars().count())
+        .max()
+        .unwrap_or(0);
     let inner = std::cmp::max(max_logo, tagline_len) + 2; // +2 for 1-char padding each side
     let box_width = inner + 2; // total width including both █ borders
     let tag_width = (box_width * 40) / 100; // 40% of box width per brand spec
@@ -96,11 +100,7 @@ fn print_banner(version: &str) {
     }
 
     // Version tagline inside the box
-    let tagline_pad = if inner > tagline_len {
-        inner - tagline_len
-    } else {
-        0
-    };
+    let tagline_pad = inner.saturating_sub(tagline_len);
     println!(
         "{CYAN}█{WHITE_BOLD}{tagline_plain}{GREY}{tagline_suffix}{}{CYAN}█{RESET}",
         " ".repeat(tagline_pad),
