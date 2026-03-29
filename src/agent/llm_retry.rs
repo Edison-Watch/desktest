@@ -1,7 +1,9 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::sync::LazyLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use regex::Regex;
 use tracing::warn;
 
 use super::loop_v2::AgentLoopV2;
@@ -174,28 +176,29 @@ fn has_retryable_transport_error(lower: &str) -> bool {
 }
 
 fn is_non_retryable_http_error(lower: &str) -> bool {
-    matches_http_status(lower, 400)
-        || matches_http_status(lower, 401)
-        || matches_http_status(lower, 403)
-        || matches_http_status(lower, 404)
-        || matches_http_status(lower, 422)
+    explicit_http_status(lower)
+        .map(|status| (400..500).contains(&status) && !matches!(status, 408 | 425 | 429))
+        .unwrap_or(false)
 }
 
-fn matches_http_status(lower: &str, status: u16) -> bool {
-    let status = status.to_string();
-    lower.contains(&format!("status {status}"))
-        || lower.contains(&format!("error {status}"))
-        || lower.contains(&format!("error ({status}"))
-        || lower.contains(&format!("http {status}"))
-        || lower.contains(&format!("({status} "))
-        || lower.contains(&format!(" {status} "))
-        || lower.ends_with(&format!(" {status}"))
+fn explicit_http_status(lower: &str) -> Option<u16> {
+    static HTTP_STATUS_RE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(
+            r"(?x)(?:\bstatus\s+|\berror\s+\(?|\bhttp\s+|\()(?P<code>[1-5][0-9]{2})(?:\b|\s|\))",
+        )
+        .expect("valid HTTP status regex")
+    });
+
+    HTTP_STATUS_RE
+        .captures(lower)?
+        .name("code")?
+        .as_str()
+        .parse()
+        .ok()
 }
 
 fn retry_delay(err_str: &str, retry_number: usize) -> Duration {
-    parse_retry_after(err_str)
-        .map(|delay| delay.min(LLM_RETRY_BACKOFF_CAP))
-        .unwrap_or_else(|| exponential_backoff_with_jitter(retry_number))
+    parse_retry_after(err_str).unwrap_or_else(|| exponential_backoff_with_jitter(retry_number))
 }
 
 fn parse_retry_after(err_str: &str) -> Option<Duration> {
@@ -455,6 +458,13 @@ mod tests {
     }
 
     #[test]
+    fn test_method_not_allowed_body_does_not_trigger_transport_retry() {
+        assert!(!is_retryable_error(
+            r#"Agent error: OpenAI API error (405 Method Not Allowed): {"error":{"message":"connection timeout is not a valid parameter"}}"#
+        ));
+    }
+
+    #[test]
     fn test_transient_dns_failure() {
         assert!(is_retryable_error(
             "HTTP request failed: error sending request for url: dns error: failed to lookup address information"
@@ -513,13 +523,13 @@ mod tests {
     }
 
     #[test]
-    fn test_retry_delay_caps_retry_after_header() {
+    fn test_retry_delay_preserves_retry_after_header() {
         assert_eq!(
             retry_delay(
                 "Anthropic API error (429 Too Many Requests; retry-after: 120): rate limited",
                 1
             ),
-            LLM_RETRY_BACKOFF_CAP
+            Duration::from_secs(120)
         );
     }
 
