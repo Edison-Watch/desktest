@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::docker::DockerSession;
 use crate::error::AppError;
+use crate::tart::TartSession;
 
 /// Core session trait abstracting the environment (Docker container, Tart VM, native host).
 ///
@@ -39,10 +40,12 @@ pub trait Session: Send + Sync {
 /// Each variant wraps a concrete session implementation. The `Session` trait
 /// is implemented via the `forward_session!` macro which delegates to the
 /// inner type.
+#[allow(dead_code)]
 pub enum SessionKind {
     /// Docker container session (Linux desktop testing).
     Docker(DockerSession),
-    // Tart(TartSession),    — Phase 2
+    /// Tart VM session (macOS desktop testing).
+    Tart(TartSession),
     // Native(NativeSession), — Phase 5
 }
 
@@ -54,6 +57,7 @@ impl SessionKind {
     pub fn as_docker(&self) -> Option<&DockerSession> {
         match self {
             SessionKind::Docker(s) => Some(s),
+            SessionKind::Tart(_) => None,
         }
     }
 }
@@ -133,4 +137,4 @@ macro_rules! forward_session {
     };
 }
 
-forward_session!(Docker);
+forward_session!(Docker, Tart);

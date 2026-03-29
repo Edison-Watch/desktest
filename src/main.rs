@@ -25,6 +25,7 @@ mod review;
 mod session;
 mod setup;
 mod suite;
+mod tart;
 mod task;
 mod trajectory;
 mod update;
