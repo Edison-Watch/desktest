@@ -16,6 +16,9 @@ desktest_replay.py
 desktest_review.html
 *_review.html
 
+# Swift build artifacts (macos/a11y-helper)
+macos/a11y-helper/.build/
+
 # Build artifacts and binaries
 artifacts/
 # Local cross-compile binaries (e.g. desktest-linux-arm64)

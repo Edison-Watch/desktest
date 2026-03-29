@@ -47,7 +47,25 @@ pub struct ObservationConfig {
     pub a11y_timeout: Duration,
     /// Maximum number of a11y tree nodes to extract (0 = unlimited). Default: 10_000.
     pub max_a11y_nodes: usize,
+    /// Command to capture a screenshot to `/tmp/screenshot.png`.
+    /// Default (Linux): `["scrot", "-o", "-p", "/tmp/screenshot.png"]`
+    pub screenshot_cmd: Vec<String>,
+    /// Base command for a11y tree extraction (`--max-nodes N` appended automatically).
+    /// Default (Linux): `["/usr/local/bin/get-a11y-tree"]`
+    pub a11y_cmd: Vec<String>,
 }
+
+/// Default screenshot command for Linux (scrot).
+pub const LINUX_SCREENSHOT_CMD: &[&str] = &["scrot", "-o", "-p", "/tmp/screenshot.png"];
+
+/// Default a11y tree command for Linux (pyatspi-based script).
+pub const LINUX_A11Y_CMD: &[&str] = &["/usr/local/bin/get-a11y-tree"];
+
+/// Screenshot command for macOS (screencapture).
+pub const MACOS_SCREENSHOT_CMD: &[&str] = &["screencapture", "-x", "/tmp/screenshot.png"];
+
+/// A11y tree command for macOS (Swift AXUIElement helper).
+pub const MACOS_A11Y_CMD: &[&str] = &["/usr/local/bin/a11y-helper"];
 
 impl Default for ObservationConfig {
     fn default() -> Self {
@@ -57,6 +75,28 @@ impl Default for ObservationConfig {
             sleep_after_action: 2.0,
             a11y_timeout: Duration::from_secs(15),
             max_a11y_nodes: 10_000,
+            screenshot_cmd: LINUX_SCREENSHOT_CMD
+                .iter()
+                .map(|s| (*s).to_string())
+                .collect(),
+            a11y_cmd: LINUX_A11Y_CMD.iter().map(|s| (*s).to_string()).collect(),
+        }
+    }
+}
+
+impl ObservationConfig {
+    /// Create an `ObservationConfig` with commands appropriate for the session type.
+    pub fn for_session(session: &SessionKind) -> Self {
+        match session {
+            SessionKind::Docker(_) => Self::default(),
+            SessionKind::Tart(_) => Self {
+                screenshot_cmd: MACOS_SCREENSHOT_CMD
+                    .iter()
+                    .map(|s| (*s).to_string())
+                    .collect(),
+                a11y_cmd: MACOS_A11Y_CMD.iter().map(|s| (*s).to_string()).collect(),
+                ..Self::default()
+            },
         }
     }
 }
@@ -86,8 +126,13 @@ pub async fn capture_observation(
 
     match config.observation_type {
         ObservationType::Screenshot => {
-            let (path, data_url) =
-                capture_screenshot_with_retry(session, artifacts_dir, step_index).await?;
+            let (path, data_url) = capture_screenshot_with_retry(
+                session,
+                artifacts_dir,
+                step_index,
+                &config.screenshot_cmd,
+            )
+            .await?;
             Ok(Observation {
                 screenshot_path: Some(path),
                 screenshot_data_url: Some(data_url),
@@ -100,6 +145,7 @@ pub async fn capture_observation(
                 config.max_a11y_tokens,
                 config.a11y_timeout,
                 config.max_a11y_nodes,
+                &config.a11y_cmd,
             )
             .await;
             match a11y_text {
@@ -118,12 +164,18 @@ pub async fn capture_observation(
         ObservationType::ScreenshotA11yTree => {
             // Capture screenshot and a11y tree in parallel
             let (screenshot_result, a11y_result) = tokio::join!(
-                capture_screenshot_with_retry(session, artifacts_dir, step_index),
+                capture_screenshot_with_retry(
+                    session,
+                    artifacts_dir,
+                    step_index,
+                    &config.screenshot_cmd
+                ),
                 extract_a11y_tree(
                     session,
                     config.max_a11y_tokens,
                     config.a11y_timeout,
-                    config.max_a11y_nodes
+                    config.max_a11y_nodes,
+                    &config.a11y_cmd,
                 ),
             );
 
@@ -153,11 +205,12 @@ pub async fn capture_screenshot_with_retry(
     session: &SessionKind,
     artifacts_dir: &Path,
     step_index: usize,
+    screenshot_cmd: &[String],
 ) -> Result<(PathBuf, String), AppError> {
     let mut last_err = None;
 
     for attempt in 1..=SCREENSHOT_MAX_RETRIES {
-        match capture_screenshot_once(session, artifacts_dir, step_index).await {
+        match capture_screenshot_once(session, artifacts_dir, step_index, screenshot_cmd).await {
             Ok(result) => return Ok(result),
             Err(e) => {
                 warn!(
@@ -180,11 +233,11 @@ async fn capture_screenshot_once(
     session: &SessionKind,
     artifacts_dir: &Path,
     step_index: usize,
+    screenshot_cmd: &[String],
 ) -> Result<(PathBuf, String), AppError> {
     // Capture screenshot inside container
-    session
-        .exec(&["scrot", "-o", "-p", "/tmp/screenshot.png"])
-        .await?;
+    let cmd_refs: Vec<&str> = screenshot_cmd.iter().map(|s| s.as_str()).collect();
+    session.exec(&cmd_refs).await?;
 
     // Copy from container to host with step_NNN naming convention
     let local_path = artifacts_dir.join(format!("step_{:03}.png", step_index));
@@ -212,8 +265,9 @@ async fn extract_a11y_tree(
     max_tokens: usize,
     a11y_timeout: Duration,
     max_a11y_nodes: usize,
+    a11y_cmd: &[String],
 ) -> Result<String, AppError> {
-    let mut cmd: Vec<&str> = vec!["/usr/local/bin/get-a11y-tree"];
+    let mut cmd: Vec<&str> = a11y_cmd.iter().map(|s| s.as_str()).collect();
     let max_nodes_str = max_a11y_nodes.to_string();
     if max_a11y_nodes > 0 {
         cmd.push("--max-nodes");
@@ -284,10 +338,11 @@ pub async fn probe_a11y_timing(
     session: &SessionKind,
     max_a11y_nodes: usize,
     max_tokens: usize,
+    a11y_cmd: &[String],
 ) -> Result<Duration, AppError> {
     let start = std::time::Instant::now();
     let probe_timeout = Duration::from_secs(60);
-    let _ = extract_a11y_tree(session, max_tokens, probe_timeout, max_a11y_nodes).await?;
+    let _ = extract_a11y_tree(session, max_tokens, probe_timeout, max_a11y_nodes, a11y_cmd).await?;
     Ok(start.elapsed())
 }
 
@@ -468,12 +523,97 @@ mod tests {
             sleep_after_action: 1.0,
             a11y_timeout: Duration::from_secs(30),
             max_a11y_nodes: 5_000,
+            ..ObservationConfig::default()
         };
         assert_eq!(config.observation_type, ObservationType::Screenshot);
         assert_eq!(config.max_a11y_tokens, 5_000);
         assert_eq!(config.sleep_after_action, 1.0);
         assert_eq!(config.a11y_timeout, Duration::from_secs(30));
         assert_eq!(config.max_a11y_nodes, 5_000);
+    }
+
+    #[test]
+    fn test_observation_config_default_commands() {
+        let config = ObservationConfig::default();
+        assert_eq!(
+            config.screenshot_cmd,
+            vec!["scrot", "-o", "-p", "/tmp/screenshot.png"]
+        );
+        assert_eq!(config.a11y_cmd, vec!["/usr/local/bin/get-a11y-tree"]);
+    }
+
+    #[test]
+    fn test_observation_config_macos_commands() {
+        let macos_screenshot: Vec<String> = MACOS_SCREENSHOT_CMD
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        let macos_a11y: Vec<String> = MACOS_A11Y_CMD.iter().map(|s| (*s).to_string()).collect();
+        assert_eq!(
+            macos_screenshot,
+            vec!["screencapture", "-x", "/tmp/screenshot.png"]
+        );
+        assert_eq!(macos_a11y, vec!["/usr/local/bin/a11y-helper"]);
+    }
+
+    #[test]
+    fn test_screenshot_commands_write_to_same_path() {
+        // Both Linux and macOS screenshot commands must write to /tmp/screenshot.png
+        // so that copy_from picks up the file from the same location.
+        let linux_last = LINUX_SCREENSHOT_CMD.last().unwrap();
+        let macos_last = MACOS_SCREENSHOT_CMD.last().unwrap();
+        assert_eq!(*linux_last, "/tmp/screenshot.png");
+        assert_eq!(*macos_last, "/tmp/screenshot.png");
+    }
+
+    #[test]
+    fn test_for_session_docker_returns_linux_defaults() {
+        // Cannot construct a real DockerSession in a unit test, so verify
+        // that Default (used for Docker) returns Linux commands.
+        let config = ObservationConfig::default();
+        assert_eq!(
+            config.screenshot_cmd,
+            LINUX_SCREENSHOT_CMD
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            config.a11y_cmd,
+            LINUX_A11Y_CMD
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_macos_config_overrides_commands() {
+        // Verify that constructing with macOS commands produces different
+        // values from the Linux default — simulates what for_session(Tart) does.
+        let macos_config = ObservationConfig {
+            screenshot_cmd: MACOS_SCREENSHOT_CMD
+                .iter()
+                .map(|s| (*s).to_string())
+                .collect(),
+            a11y_cmd: MACOS_A11Y_CMD.iter().map(|s| (*s).to_string()).collect(),
+            ..ObservationConfig::default()
+        };
+        let linux_config = ObservationConfig::default();
+
+        // Commands differ
+        assert_ne!(macos_config.screenshot_cmd, linux_config.screenshot_cmd);
+        assert_ne!(macos_config.a11y_cmd, linux_config.a11y_cmd);
+
+        // But non-command fields are identical
+        assert_eq!(macos_config.observation_type, linux_config.observation_type);
+        assert_eq!(macos_config.max_a11y_tokens, linux_config.max_a11y_tokens);
+        assert_eq!(
+            macos_config.sleep_after_action,
+            linux_config.sleep_after_action
+        );
+        assert_eq!(macos_config.a11y_timeout, linux_config.a11y_timeout);
+        assert_eq!(macos_config.max_a11y_nodes, linux_config.max_a11y_nodes);
     }
 
     #[test]

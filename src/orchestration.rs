@@ -617,6 +617,8 @@ async fn run_eval_loop(
                 .iter()
                 .any(|m| matches!(m, task::MetricConfig::ScriptReplay { .. }));
 
+            let eval_screenshot_cmd =
+                observation::ObservationConfig::for_session(session).screenshot_cmd;
             let mut screenshot_count = 0usize;
             let mut trajectory_logger: Option<crate::trajectory::TrajectoryLogger> = if !has_replay
             {
@@ -639,8 +641,13 @@ async fn run_eval_loop(
 
             // Capture pre-evaluation screenshot (non-replay only)
             if !has_replay {
-                if let Ok((path, _)) =
-                    observation::capture_screenshot_with_retry(session, artifacts_dir, 1).await
+                if let Ok((path, _)) = observation::capture_screenshot_with_retry(
+                    session,
+                    artifacts_dir,
+                    1,
+                    &eval_screenshot_cmd,
+                )
+                .await
                 {
                     screenshot_count += 1;
                     if let Some(ref mut tl) = trajectory_logger {
@@ -668,8 +675,13 @@ async fn run_eval_loop(
 
             // Capture post-evaluation screenshot (non-replay only)
             if !has_replay {
-                if let Ok((path, _)) =
-                    observation::capture_screenshot_with_retry(session, artifacts_dir, 2).await
+                if let Ok((path, _)) = observation::capture_screenshot_with_retry(
+                    session,
+                    artifacts_dir,
+                    2,
+                    &eval_screenshot_cmd,
+                )
+                .await
                 {
                     screenshot_count += 1;
                     if let Some(ref mut tl) = trajectory_logger {
@@ -859,7 +871,7 @@ pub(crate) async fn build_agent_loop_config(
 
     let mut obs_config = observation::ObservationConfig {
         max_a11y_nodes,
-        ..observation::ObservationConfig::default()
+        ..observation::ObservationConfig::for_session(session)
     };
 
     // Determine a11y timeout: explicit override or probe
@@ -867,8 +879,13 @@ pub(crate) async fn build_agent_loop_config(
         info!("Using explicit a11y timeout: {secs}s");
         Duration::from_secs(secs)
     } else {
-        match observation::probe_a11y_timing(session, max_a11y_nodes, obs_config.max_a11y_tokens)
-            .await
+        match observation::probe_a11y_timing(
+            session,
+            max_a11y_nodes,
+            obs_config.max_a11y_tokens,
+            &obs_config.a11y_cmd,
+        )
+        .await
         {
             Ok(measured) => {
                 let timeout = measured
