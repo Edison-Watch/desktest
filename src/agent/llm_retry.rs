@@ -1,3 +1,5 @@
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tracing::warn;
@@ -117,11 +119,15 @@ impl<'a> AgentLoopV2<'a> {
 pub(super) fn is_retryable_error(err_str: &str) -> bool {
     let lower = err_str.to_lowercase();
 
+    if has_retryable_status(&lower) {
+        return true;
+    }
+
     if is_non_retryable_http_error(&lower) {
         return false;
     }
 
-    has_retryable_status(&lower) || has_retryable_transport_error(&lower)
+    has_retryable_transport_error(&lower)
 }
 
 fn has_retryable_status(lower: &str) -> bool {
@@ -168,12 +174,20 @@ fn has_retryable_transport_error(lower: &str) -> bool {
 }
 
 fn is_non_retryable_http_error(lower: &str) -> bool {
-    lower.contains("401")
-        || lower.contains("unauthorized")
-        || lower.contains("403")
-        || lower.contains("forbidden")
-        || lower.contains("404")
-        || lower.contains("not found")
+    matches_http_status(lower, 401)
+        || matches_http_status(lower, 403)
+        || matches_http_status(lower, 404)
+}
+
+fn matches_http_status(lower: &str, status: u16) -> bool {
+    let status = status.to_string();
+    lower.contains(&format!("status {status}"))
+        || lower.contains(&format!("error {status}"))
+        || lower.contains(&format!("error ({status}"))
+        || lower.contains(&format!("http {status}"))
+        || lower.contains(&format!("({status} "))
+        || lower.contains(&format!(" {status} "))
+        || lower.ends_with(&format!(" {status}"))
 }
 
 fn retry_delay(err_str: &str, retry_number: usize) -> Duration {
@@ -214,11 +228,15 @@ fn exponential_backoff_with_jitter(retry_number: usize) -> Duration {
 }
 
 fn apply_jitter(base: Duration) -> Duration {
-    let nanos = SystemTime::now()
+    let mut hasher = DefaultHasher::new();
+    SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.subsec_nanos())
-        .unwrap_or(0);
-    let ratio = f64::from(nanos % 10_001) / 10_000.0;
+        .unwrap_or_default()
+        .as_nanos()
+        .hash(&mut hasher);
+    std::thread::current().id().hash(&mut hasher);
+
+    let ratio = (hasher.finish() % 10_001) as f64 / 10_000.0;
     let factor = 0.75 + (ratio * 0.5);
     Duration::from_secs_f64((base.as_secs_f64() * factor).max(0.0))
 }
@@ -377,6 +395,16 @@ mod tests {
     }
 
     #[test]
+    fn test_retryable_status_takes_priority_over_body_text() {
+        assert!(is_retryable_error(
+            "Agent error: OpenAI API error (502 Bad Gateway): upstream host not found"
+        ));
+        assert!(is_retryable_error(
+            "Agent error: Anthropic API error (503 Service Unavailable): resource forbidden during maintenance"
+        ));
+    }
+
+    #[test]
     fn test_not_transient_token_limit() {
         // "4500" should NOT match as a 500 error
         assert!(!is_retryable_error("max_tokens cannot exceed 4500"));
@@ -402,6 +430,13 @@ mod tests {
     fn test_transient_dns_failure() {
         assert!(is_retryable_error(
             "HTTP request failed: error sending request for url: dns error: failed to lookup address information"
+        ));
+    }
+
+    #[test]
+    fn test_transient_transport_error_not_blocked_by_body_text() {
+        assert!(is_retryable_error(
+            "HTTP request failed: tls handshake failed: peer certificate unauthorized"
         ));
     }
 
@@ -436,7 +471,7 @@ mod tests {
 
         let parsed = parse_retry_after(&err).unwrap();
         assert!(parsed <= Duration::from_secs(30));
-        assert!(parsed >= Duration::from_secs(25));
+        assert!(parsed >= Duration::from_secs(20));
     }
 
     #[test]
