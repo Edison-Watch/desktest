@@ -148,7 +148,9 @@ impl ProtocolClient {
 
         let payload = serde_json::to_vec_pretty(request)
             .map_err(|e| AppError::Infra(format!("Failed to serialize Tart request: {e}")))?;
-        tokio::fs::write(&request_path, payload).await?;
+        let tmp_path = request_path.with_extension("tmp");
+        tokio::fs::write(&tmp_path, &payload).await?;
+        tokio::fs::rename(&tmp_path, &request_path).await?;
 
         let deadline = tokio::time::Instant::now() + self.request_timeout;
         loop {

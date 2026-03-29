@@ -21,19 +21,18 @@ def copy_path(src: Path, dest: Path) -> None:
 
 def handle_request(shared_dir: Path, request_path: Path) -> dict:
     started = time.time()
-    payload = json.loads(request_path.read_text())
-    kind = payload["type"]
-    cmd = payload.get("cmd") or []
-    stdin_b64 = payload.get("stdin_b64")
-    src_path = payload.get("src_path")
-    dest_path = payload.get("dest_path")
-    transfer_path = payload.get("transfer_path")
-
     stdout = ""
     exit_code = 0
     error = None
 
     try:
+        payload = json.loads(request_path.read_text())
+        kind = payload["type"]
+        cmd = payload.get("cmd") or []
+        stdin_b64 = payload.get("stdin_b64")
+        src_path = payload.get("src_path")
+        dest_path = payload.get("dest_path")
+        transfer_path = payload.get("transfer_path")
         if kind in {"exec", "exec_exit_code", "exec_stdin"}:
             stdin_data = None
             if stdin_b64 is not None:
@@ -100,7 +99,9 @@ def main() -> int:
         for request_path in sorted(requests_dir.glob("cmd_*.json")):
             result = handle_request(shared_dir, request_path)
             response_path = responses_dir / request_path.name.replace(".json", ".result.json")
-            response_path.write_text(json.dumps(result))
+            tmp_path = response_path.with_suffix(".tmp")
+            tmp_path.write_text(json.dumps(result))
+            tmp_path.rename(response_path)
             try:
                 request_path.unlink()
             except FileNotFoundError:

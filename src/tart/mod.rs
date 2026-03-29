@@ -42,23 +42,41 @@ impl TartSession {
 
         run_tart_command(["clone", base_image, &session.vm_name]).await?;
 
-        let mut child = Command::new("tart")
-            .arg("run")
-            .arg(format!(
-                "--dir={TART_SHARED_DIR_NAME}:{}",
-                session.shared_dir.display()
-            ))
-            .arg(&session.vm_name)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| AppError::Infra(format!("Failed to spawn `tart run`: {e}")))?;
+        // From this point, the cloned VM exists on disk.  If anything below
+        // fails we must delete it, otherwise the clone leaks indefinitely.
+        let result: Result<Child, AppError> = async {
+            let mut child = Command::new("tart")
+                .arg("run")
+                .arg(format!(
+                    "--dir={TART_SHARED_DIR_NAME}:{}",
+                    session.shared_dir.display()
+                ))
+                .arg(&session.vm_name)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| AppError::Infra(format!("Failed to spawn `tart run`: {e}")))?;
 
-        wait_for_agent_or_exit(&session.protocol, &mut child, DEFAULT_AGENT_READY_TIMEOUT).await?;
+            wait_for_agent_or_exit(&session.protocol, &mut child, DEFAULT_AGENT_READY_TIMEOUT)
+                .await?;
 
-        *session.run_child.lock().await = Some(child);
-        Ok(session)
+            Ok(child)
+        }
+        .await;
+
+        match result {
+            Ok(child) => {
+                *session.run_child.lock().await = Some(child);
+                Ok(session)
+            }
+            Err(e) => {
+                // Clean up the leaked clone before propagating the error
+                let _ = run_tart_command(["delete", &session.vm_name]).await;
+                let _ = tokio::fs::remove_dir_all(&session.shared_dir).await;
+                Err(e)
+            }
+        }
     }
 
     fn new(vm_name: String, shared_dir: PathBuf, guest_shared_dir: String) -> Self {
