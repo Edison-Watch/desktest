@@ -62,7 +62,16 @@ pub async fn run_init_macos(
 
     // Delete existing output image if it exists (ignore errors)
     let _ = crate::tart::run_tart_command(["delete", output_image]).await;
-    crate::tart::run_tart_command(["clone", &work_vm, output_image]).await?;
+
+    // Clone the working VM to the output name; clean up work VM on failure
+    // to avoid leaking 10+ GB of disk space.
+    if let Err(e) = crate::tart::run_tart_command(["clone", &work_vm, output_image]).await {
+        eprintln!("Failed to save golden image: {e}");
+        eprintln!("Cleaning up working VM '{work_vm}'...");
+        let _ = crate::tart::run_tart_command(["delete", &work_vm]).await;
+        return Err(e);
+    }
+
     crate::tart::run_tart_command(["delete", &work_vm]).await?;
 
     println!();
