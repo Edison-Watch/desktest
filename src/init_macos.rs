@@ -139,7 +139,7 @@ async fn provision_vm(vm_name: &str, with_electron: bool) -> Result<(), AppError
 
     // Wait for the VM to boot (check for SSH availability via tart ip)
     println!("Waiting for VM to boot...");
-    let vm_ip = wait_for_vm_ip(vm_name).await?;
+    let vm_ip = wait_for_vm_ip(vm_name, &mut child).await?;
     info!("VM booted with IP: {vm_ip}");
 
     // Run the provisioning script via SSH
@@ -233,7 +233,13 @@ echo 'export PATH="/opt/homebrew/opt/node@20/bin:$PATH"' >> ~/.zprofile
 }
 
 /// Wait for the VM to get an IP address (indicates it has booted).
-async fn wait_for_vm_ip(vm_name: &str) -> Result<String, AppError> {
+///
+/// Also checks if the `tart run` child process has exited early — if so,
+/// surfaces the real error immediately instead of waiting for the full timeout.
+async fn wait_for_vm_ip(
+    vm_name: &str,
+    child: &mut tokio::process::Child,
+) -> Result<String, AppError> {
     let timeout = std::time::Duration::from_secs(180);
     let start = std::time::Instant::now();
 
@@ -242,6 +248,16 @@ async fn wait_for_vm_ip(vm_name: &str) -> Result<String, AppError> {
             return Err(AppError::Infra(
                 "Timeout waiting for VM to boot and get an IP address".into(),
             ));
+        }
+
+        // Detect early tart run exit before the timeout fires
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|e| AppError::Infra(format!("Failed to check tart run status: {e}")))?
+        {
+            return Err(AppError::Infra(format!(
+                "`tart run` exited before the VM got an IP address: {status}"
+            )));
         }
 
         let output = tokio::process::Command::new("tart")
