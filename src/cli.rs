@@ -323,6 +323,30 @@ EXAMPLES:
         watch: std::path::PathBuf,
     },
 
+    /// Prepare a macOS golden image for Tart-based testing
+    #[command(after_help = "\
+Pulls a Tart base image, clones it, installs the desktest VM agent, \
+accessibility helper, Python, PyAutoGUI, and saves the result as \
+'desktest-macos:latest'. Requires Apple Silicon Mac with Tart installed.\n\n\
+EXAMPLES:
+  desktest init-macos
+  desktest init-macos --base-image ghcr.io/cirruslabs/macos-sequoia-base:latest
+  desktest init-macos --with-electron
+  desktest init-macos --output-image desktest-macos:custom")]
+    InitMacos {
+        /// Base Tart image to start from (default: ghcr.io/cirruslabs/macos-sequoia-base:latest)
+        #[arg(long, default_value = "ghcr.io/cirruslabs/macos-sequoia-base:latest")]
+        base_image: String,
+
+        /// Name for the output golden image
+        #[arg(long, default_value = "desktest-macos:latest")]
+        output_image: String,
+
+        /// Also install Node.js for Electron app testing
+        #[arg(long, default_value_t = false)]
+        with_electron: bool,
+    },
+
     /// Generate an interactive HTML trajectory viewer (best for human review in a browser)
     #[command(after_help = "\
 For a CLI/agent-friendly text view, use `desktest logs` instead.\n\n\

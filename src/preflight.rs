@@ -1,6 +1,7 @@
 use crate::config::Config;
 use crate::error::AppError;
 use crate::provider;
+use crate::task::AppConfig;
 
 /// Check that the Docker daemon is reachable via the API socket.
 /// Returns the connected client on success for reuse.
@@ -24,6 +25,24 @@ pub async fn check_docker() -> Result<bollard::Docker, AppError> {
     Ok(client)
 }
 
+/// Check that Tart is installed and accessible.
+pub fn check_tart() -> Result<(), AppError> {
+    match std::process::Command::new("tart")
+        .arg("--version")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output()
+    {
+        Ok(output) if output.status.success() => Ok(()),
+        _ => Err(AppError::Config(
+            "Tart is not installed or not in PATH.\n\
+             Install it with: brew install cirruslabs/cli/tart\n\
+             Requires Apple Silicon (M1+) running macOS 13+."
+                .into(),
+        )),
+    }
+}
+
 /// Check that an API key is available for the configured provider.
 ///
 /// Delegates to `provider::resolve_api_key` so the resolution logic lives
@@ -39,8 +58,22 @@ pub fn check_api_key(config: &Config) -> Result<(), AppError> {
 /// Run all preflight checks for commands that need Docker + LLM.
 ///
 /// Skips API key check when `needs_llm` is false (e.g., --replay mode).
-pub async fn run_preflight(config: &Config, needs_llm: bool) -> Result<(), AppError> {
-    let _client = check_docker().await?;
+/// Checks Docker or Tart based on the app config.
+pub async fn run_preflight(
+    config: &Config,
+    needs_llm: bool,
+    app: Option<&AppConfig>,
+) -> Result<(), AppError> {
+    let is_macos = matches!(
+        app,
+        Some(AppConfig::MacosTart { .. } | AppConfig::MacosNative { .. })
+    );
+
+    if is_macos {
+        check_tart()?;
+    } else {
+        let _client = check_docker().await?;
+    }
 
     if needs_llm {
         check_api_key(config)?;
@@ -77,6 +110,35 @@ pub async fn run_doctor(config: &Config) -> bool {
             println!("  {e}");
             all_ok = false;
         }
+    }
+
+    // Tart check (informational — only relevant on macOS Apple Silicon)
+    if cfg!(target_os = "macos") && std::env::consts::ARCH == "aarch64" {
+        print!("Tart VM ......... ");
+        let _ = std::io::stdout().flush();
+        match check_tart() {
+            Ok(()) => {
+                println!("ok");
+                // Try to get version info
+                if let Ok(output) = std::process::Command::new("tart")
+                    .arg("--version")
+                    .output()
+                {
+                    if output.status.success() {
+                        let version = String::from_utf8_lossy(&output.stdout);
+                        let version = version.trim();
+                        if !version.is_empty() {
+                            println!("  {version}");
+                        }
+                    }
+                }
+            }
+            Err(_) => {
+                println!("not installed (optional — needed for macOS testing)");
+            }
+        }
+    } else {
+        println!("Tart VM ......... skipped (requires macOS on Apple Silicon)");
     }
 
     // CLI binary check (replaces API key check for CLI-based providers)
