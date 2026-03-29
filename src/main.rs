@@ -35,7 +35,7 @@ use clap::{CommandFactory, Parser};
 use cli::{Cli, Command};
 use orchestration::{LlmOverrides, RunConfig};
 
-fn print_banner() {
+fn print_banner(version: &str) {
     const LOGO: &str = "\
  ██████╗ ███████╗███████╗██╗  ██╗████████╗███████╗███████╗████████╗
  ██╔══██╗██╔════╝██╔════╝██║ ██╔╝╚══██╔══╝██╔════╝██╔════╝╚══██╔══╝
@@ -43,8 +43,6 @@ fn print_banner() {
  ██║  ██║██╔══╝  ╚════██║██╔═██╗    ██║   ██╔══╝  ╚════██║   ██║
  ██████╔╝███████╗███████║██║  ██╗   ██║   ███████╗███████║   ██║
  ╚═════╝ ╚══════╝╚══════╝╚═╝  ╚═╝   ╚═╝   ╚══════╝╚══════╝   ╚═╝";
-
-    let version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("DESKTEST_GIT_SHA"), ")");
 
     // Use ANSI true-color for #C3FFFD (rgb 195, 255, 253)
     let is_tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
@@ -161,9 +159,12 @@ async fn main() {
     let command = match &cli.command {
         Some(cmd) => cmd,
         None => {
-            print_banner();
             let mut cmd = Cli::command();
-            let _ = cmd.print_help();
+            let version = cmd.get_version().unwrap_or("unknown").to_string();
+            print_banner(&version);
+            if let Err(e) = cmd.print_help() {
+                eprintln!("Error displaying help: {e}");
+            }
             println!();
             std::process::exit(0);
         }
