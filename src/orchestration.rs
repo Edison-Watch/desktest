@@ -617,6 +617,8 @@ async fn run_eval_loop(
                 .iter()
                 .any(|m| matches!(m, task::MetricConfig::ScriptReplay { .. }));
 
+            let eval_screenshot_cmd =
+                observation::ObservationConfig::for_session(session).screenshot_cmd;
             let mut screenshot_count = 0usize;
             let mut trajectory_logger: Option<crate::trajectory::TrajectoryLogger> = if !has_replay
             {
@@ -643,7 +645,7 @@ async fn run_eval_loop(
                     session,
                     artifacts_dir,
                     1,
-                    &observation::ObservationConfig::for_session(session).screenshot_cmd,
+                    &eval_screenshot_cmd,
                 )
                 .await
                 {
@@ -677,7 +679,7 @@ async fn run_eval_loop(
                     session,
                     artifacts_dir,
                     2,
-                    &observation::ObservationConfig::for_session(session).screenshot_cmd,
+                    &eval_screenshot_cmd,
                 )
                 .await
                 {

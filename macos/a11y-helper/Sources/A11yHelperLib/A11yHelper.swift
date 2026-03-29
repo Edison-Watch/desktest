@@ -148,8 +148,12 @@ public func getPosition(_ element: AXUIElement) -> String {
     else {
         return ""
     }
+    let cfValue = value as CFTypeRef
+    guard CFGetTypeID(cfValue) == AXValueGetTypeID() else {
+        return ""
+    }
     var point = CGPoint.zero
-    guard AXValueGetValue(value as! AXValue, .cgPoint, &point) else {
+    guard AXValueGetValue(cfValue as! AXValue, .cgPoint, &point) else {
         return ""
     }
     return "\(Int(point.x)),\(Int(point.y))"
@@ -161,8 +165,12 @@ public func getSize(_ element: AXUIElement) -> String {
     else {
         return ""
     }
+    let cfValue = value as CFTypeRef
+    guard CFGetTypeID(cfValue) == AXValueGetTypeID() else {
+        return ""
+    }
     var size = CGSize.zero
-    guard AXValueGetValue(value as! AXValue, .cgSize, &size) else {
+    guard AXValueGetValue(cfValue as! AXValue, .cgSize, &size) else {
         return ""
     }
     return "\(Int(size.width)),\(Int(size.height))"

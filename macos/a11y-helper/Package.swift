@@ -15,6 +15,9 @@ let package = Package(
             dependencies: ["A11yHelperLib"],
             path: "Sources/A11yHelperCLI"
         ),
+        // NOTE: This is an executableTarget, not a testTarget, because XCTest/Testing
+        // frameworks are unavailable without Xcode (Command Line Tools only).
+        // Run tests with: swift run a11y-helper-tests (NOT swift test)
         .executableTarget(
             name: "a11y-helper-tests",
             dependencies: ["A11yHelperLib"],

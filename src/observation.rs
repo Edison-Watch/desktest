@@ -606,10 +606,7 @@ mod tests {
         assert_ne!(macos_config.a11y_cmd, linux_config.a11y_cmd);
 
         // But non-command fields are identical
-        assert_eq!(
-            macos_config.observation_type,
-            linux_config.observation_type
-        );
+        assert_eq!(macos_config.observation_type, linux_config.observation_type);
         assert_eq!(macos_config.max_a11y_tokens, linux_config.max_a11y_tokens);
         assert_eq!(
             macos_config.sleep_after_action,
