@@ -297,13 +297,9 @@ pub(crate) async fn run_task(
         r = run_task_inner(&ctx, run.clone(), monitor.as_ref(), start, Some(&redactor)) => r,
     };
 
-    // Collect artifacts (with timeout) and clean up
-    maybe_collect_artifacts(&session, &artifacts_dir, &run).await;
-
-    info!("Cleaning up container...");
-    let _ = session.cleanup().await;
-
-    finalize_run(
+    // Write results.json BEFORE artifact collection so the evaluation outcome
+    // is persisted even if artifact collection hangs and the process is killed.
+    let outcome = finalize_run(
         result,
         &task_def,
         &artifacts_dir,
@@ -311,7 +307,15 @@ pub(crate) async fn run_task(
         start,
         run.qa,
         Some(&redactor),
-    )
+    );
+
+    // Collect artifacts (with timeout) and clean up
+    maybe_collect_artifacts(&session, &artifacts_dir, &run).await;
+
+    info!("Cleaning up container...");
+    let _ = session.cleanup().await;
+
+    outcome
 }
 
 /// Shared post-inner logic: save task.json, write results.json, map to outcome.
@@ -1032,10 +1036,9 @@ pub(crate) async fn run_attach(
         r = run_attach_inner(&ctx, run.clone(), monitor.as_ref(), start, Some(&redactor)) => r,
     };
 
-    // Collect artifacts but do NOT clean up the container (we don't own it)
-    maybe_collect_artifacts(&session, &artifacts_dir, &run).await;
-
-    finalize_run(
+    // Write results.json BEFORE artifact collection so the evaluation outcome
+    // is persisted even if artifact collection hangs and the process is killed.
+    let outcome = finalize_run(
         result,
         &task_def,
         &artifacts_dir,
@@ -1043,7 +1046,12 @@ pub(crate) async fn run_attach(
         start,
         run.qa,
         Some(&redactor),
-    )
+    );
+
+    // Collect artifacts but do NOT clean up the container (we don't own it)
+    maybe_collect_artifacts(&session, &artifacts_dir, &run).await;
+
+    outcome
 }
 
 /// Inner logic for attach mode: run setup steps, agent loop, and evaluation.
