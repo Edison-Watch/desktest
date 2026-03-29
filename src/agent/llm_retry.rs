@@ -178,6 +178,7 @@ fn is_non_retryable_http_error(lower: &str) -> bool {
         || matches_http_status(lower, 401)
         || matches_http_status(lower, 403)
         || matches_http_status(lower, 404)
+        || matches_http_status(lower, 422)
 }
 
 fn matches_http_status(lower: &str, status: u16) -> bool {
@@ -198,9 +199,8 @@ fn retry_delay(err_str: &str, retry_number: usize) -> Duration {
 }
 
 fn parse_retry_after(err_str: &str) -> Option<Duration> {
-    let lower = err_str.to_lowercase();
     let marker = "retry-after:";
-    let start = lower.find(marker)? + marker.len();
+    let start = find_ascii_case_insensitive(err_str, marker)? + marker.len();
     let value = err_str[start..]
         .trim_start()
         .split(')')
@@ -218,6 +218,17 @@ fn parse_retry_after(err_str: &str) -> Option<Duration> {
         Ok(duration) => Some(duration),
         Err(_) => Some(Duration::from_secs(0)),
     }
+}
+
+fn find_ascii_case_insensitive(haystack: &str, needle: &str) -> Option<usize> {
+    debug_assert!(needle.is_ascii());
+
+    haystack.char_indices().find_map(|(idx, _)| {
+        haystack[idx..]
+            .get(..needle.len())
+            .filter(|candidate| candidate.eq_ignore_ascii_case(needle))
+            .map(|_| idx)
+    })
 }
 
 fn exponential_backoff_with_jitter(retry_number: usize) -> Duration {
@@ -437,6 +448,13 @@ mod tests {
     }
 
     #[test]
+    fn test_unprocessable_entity_body_does_not_trigger_transport_retry() {
+        assert!(!is_retryable_error(
+            r#"Agent error: Anthropic API error (422 Unprocessable Entity): {"error":{"message":"timeout_ms is not supported"}}"#
+        ));
+    }
+
+    #[test]
     fn test_transient_dns_failure() {
         assert!(is_retryable_error(
             "HTTP request failed: error sending request for url: dns error: failed to lookup address information"
@@ -468,6 +486,16 @@ mod tests {
                 "OpenAI API error (429 Too Many Requests; retry-after: 3s): rate limited"
             ),
             Some(Duration::from_secs(3))
+        );
+    }
+
+    #[test]
+    fn test_retry_after_header_parsing_handles_non_ascii_prefix() {
+        assert_eq!(
+            parse_retry_after(
+                "ẞ Anthropic API error (429 Too Many Requests; RETRY-AFTER: 12): rate limited"
+            ),
+            Some(Duration::from_secs(12))
         );
     }
 
