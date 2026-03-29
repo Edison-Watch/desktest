@@ -29,7 +29,7 @@ EXAMPLES:
 )]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
 
     /// Path to config JSON file (API key, provider, display settings)
     #[arg(long = "config", global = true)]

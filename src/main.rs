@@ -32,9 +32,32 @@ mod update;
 
 pub(crate) use orchestration::run_task;
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use cli::{Cli, Command};
 use orchestration::{LlmOverrides, RunConfig};
+
+fn print_banner(version: &str) {
+    const LOGO: &str = "\
+ ██████╗ ███████╗███████╗██╗  ██╗████████╗███████╗███████╗████████╗
+ ██╔══██╗██╔════╝██╔════╝██║ ██╔╝╚══██╔══╝██╔════╝██╔════╝╚══██╔══╝
+ ██║  ██║█████╗  ███████╗█████╔╝    ██║   █████╗  ███████╗   ██║
+ ██║  ██║██╔══╝  ╚════██║██╔═██╗    ██║   ██╔══╝  ╚════██║   ██║
+ ██████╔╝███████╗███████║██║  ██╗   ██║   ███████╗███████║   ██║
+ ╚═════╝ ╚══════╝╚══════╝╚═╝  ╚═╝   ╚═╝   ╚══════╝╚══════╝   ╚═╝";
+
+    // Use ANSI true-color for #C3FFFD (rgb 195, 255, 253)
+    let is_tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
+    if is_tty {
+        println!("\x1b[38;2;195;255;253m{LOGO}\x1b[0m");
+        println!(
+            "\x1b[38;2;195;255;253m  Desktest CLI v{version}\x1b[0m — Playwright for full-computer tests"
+        );
+    } else {
+        println!("{LOGO}");
+        println!("  Desktest CLI v{version} — Playwright for full-computer tests");
+    }
+    println!();
+}
 
 fn setup_logging(debug: bool) {
     use tracing_subscriber::EnvFilter;
@@ -134,7 +157,21 @@ async fn main() {
     let cli = Cli::parse();
     setup_logging(cli.debug);
 
-    match &cli.command {
+    let command = match &cli.command {
+        Some(cmd) => cmd,
+        None => {
+            let mut cmd = Cli::command();
+            let version = cmd.get_version().unwrap_or("unknown").to_string();
+            print_banner(&version);
+            if let Err(e) = cmd.print_help() {
+                eprintln!("Error displaying help: {e}");
+            }
+            println!();
+            std::process::exit(0);
+        }
+    };
+
+    match command {
         Command::Validate { task } => match task::TaskDefinition::load(task) {
             Ok(task_def) => {
                 println!(
