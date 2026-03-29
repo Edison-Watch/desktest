@@ -1,31 +1,59 @@
-use clap::{Parser, Subcommand};
+use clap::{
+    Parser, Subcommand,
+    builder::styling::{Color, Effects, RgbColor, Style, Styles},
+};
 
 use crate::results;
+
+// Brand color: Core Cyan #C3FFFD = RGB(195, 255, 253)
+const BRAND_CYAN: Color = Color::Rgb(RgbColor(195, 255, 253));
+
+// Brand-aligned clap styles (true-color to match banner):
+//   - Headers (Usage:, Commands:, Options:): cyan + bold + underline
+//   - Literals (subcommands, flags): cyan
+//   - Placeholders (<VALUE>): dimmed
+//   - Valid values: cyan
+const BRAND_STYLES: Styles = Styles::styled()
+    .header(
+        Style::new()
+            .fg_color(Some(BRAND_CYAN))
+            .effects(Effects::BOLD.insert(Effects::UNDERLINE)),
+    )
+    .literal(Style::new().fg_color(Some(BRAND_CYAN)))
+    .placeholder(Style::new().effects(Effects::DIMMED))
+    .valid(Style::new().fg_color(Some(BRAND_CYAN)))
+    .usage(
+        Style::new()
+            .fg_color(Some(BRAND_CYAN))
+            .effects(Effects::BOLD.insert(Effects::UNDERLINE)),
+    );
 
 #[derive(Parser, Debug)]
 #[command(
     name = "desktest",
+    styles = BRAND_STYLES,
     about = "Automated end-to-end testing for Linux desktop apps using LLM-powered agents",
     version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("DESKTEST_GIT_SHA"), ")"),
-    after_help = "\
-WORKFLOWS:
-  Test authoring (explore → codify → CI):
-    desktest run task.json --monitor          # 1. Watch the agent explore your app
-    desktest review desktest_artifacts/       # 2. Inspect the trajectory in a browser
-    desktest codify trajectory.jsonl --overwrite task.json  # 3. Convert + update task JSON
-    desktest run task.json --replay           # 4. Deterministic replay (no LLM, no API costs)
-
-  Live monitoring + agent-assisted debugging:
-    desktest run task.json --monitor          # 1. Watch live, spot the failure
-    desktest logs desktest_artifacts/         # 2. Hand off to your coding agent
-                                              #    e.g. \"Claude, look at desktest logs and diagnose\"
-
-EXAMPLES:
-  desktest run task.json --config config.json --artifacts-dir ./artifacts
-  desktest run task.json --monitor --with-bash
-  desktest suite ./tests --filter gedit
-  desktest interactive task.json
-  desktest validate task.json"
+    after_help = concat!(
+        "\x1b[1;4;38;2;195;255;253mWORKFLOWS:\x1b[0m\n",
+        "  Test authoring (explore \u{2192} codify \u{2192} CI):\n",
+        "    \x1b[38;2;195;255;253m\u{25b8}\x1b[0m desktest run task.json --monitor          \x1b[2m# 1. Watch the agent explore your app\x1b[0m\n",
+        "    \x1b[38;2;195;255;253m\u{25b8}\x1b[0m desktest review desktest_artifacts/       \x1b[2m# 2. Inspect the trajectory in a browser\x1b[0m\n",
+        "    \x1b[38;2;195;255;253m\u{25b8}\x1b[0m desktest codify trajectory.jsonl --overwrite task.json  \x1b[2m# 3. Convert + update task JSON\x1b[0m\n",
+        "    \x1b[38;2;195;255;253m\u{25b8}\x1b[0m desktest run task.json --replay           \x1b[2m# 4. Deterministic replay (no LLM, no API costs)\x1b[0m\n",
+        "\n",
+        "  Live monitoring + agent-assisted debugging:\n",
+        "    \x1b[38;2;195;255;253m\u{25b8}\x1b[0m desktest run task.json --monitor          \x1b[2m# 1. Watch live, spot the failure\x1b[0m\n",
+        "    \x1b[38;2;195;255;253m\u{25b8}\x1b[0m desktest logs desktest_artifacts/         \x1b[2m# 2. Hand off to your coding agent\x1b[0m\n",
+        "                                              \x1b[2m#    e.g. \"Claude, look at desktest logs and diagnose\"\x1b[0m\n",
+        "\n",
+        "\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m\n",
+        "  desktest run task.json --config config.json --artifacts-dir ./artifacts\n",
+        "  desktest run task.json --monitor --with-bash\n",
+        "  desktest suite ./tests --filter gedit\n",
+        "  desktest interactive task.json\n",
+        "  desktest validate task.json"
+    )
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -118,7 +146,7 @@ pub struct Cli {
 pub enum Command {
     /// Validate a task JSON file against the schema without running anything
     #[command(after_help = "\
-EXAMPLES:
+\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m
   desktest validate task.json
   desktest validate tests/gedit-save.json")]
     Validate {
@@ -128,13 +156,13 @@ EXAMPLES:
 
     /// Run a single test from a task JSON file
     #[command(after_help = "\
-EXAMPLES:
-  desktest run task.json                          # Basic run
-  desktest run task.json --monitor                # Watch live at http://localhost:7860
-  desktest run task.json --monitor --with-bash    # Live + let agent use bash for debugging
-  desktest run task.json --config config.json     # Custom config
-  desktest run task.json --record --verbose       # Record video + full LLM logs
-  desktest run task.json --resolution 1280x720    # Custom resolution")]
+\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m
+  desktest run task.json                          \x1b[2m# Basic run\x1b[0m
+  desktest run task.json --monitor                \x1b[2m# Watch live at http://localhost:7860\x1b[0m
+  desktest run task.json --monitor --with-bash    \x1b[2m# Live + let agent use bash for debugging\x1b[0m
+  desktest run task.json --config config.json     \x1b[2m# Custom config\x1b[0m
+  desktest run task.json --record --verbose       \x1b[2m# Record video + full LLM logs\x1b[0m
+  desktest run task.json --resolution 1280x720    \x1b[2m# Custom resolution\x1b[0m")]
     Run {
         /// Path to the task JSON file
         task: std::path::PathBuf,
@@ -146,7 +174,7 @@ EXAMPLES:
 
     /// Run a suite of tests from a directory of task JSON files
     #[command(after_help = "\
-EXAMPLES:
+\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m
   desktest suite ./tests
   desktest suite ./tests --filter gedit
   desktest suite ./tests --config config.json --output ./results")]
@@ -161,11 +189,11 @@ EXAMPLES:
 
     /// Start a container with a task for interactive development and debugging
     #[command(after_help = "\
-EXAMPLES:
-  desktest interactive task.json                   # Start container, run setup, pause
-  desktest interactive task.json --step            # Run agent one step at a time
-  desktest interactive task.json --validate-only   # Skip agent, run evaluation only
-  desktest interactive task.json --config c.json   # Use custom config")]
+\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m
+  desktest interactive task.json                   \x1b[2m# Start container, run setup, pause\x1b[0m
+  desktest interactive task.json --step            \x1b[2m# Run agent one step at a time\x1b[0m
+  desktest interactive task.json --validate-only   \x1b[2m# Skip agent, run evaluation only\x1b[0m
+  desktest interactive task.json --config c.json   \x1b[2m# Use custom config\x1b[0m")]
     Interactive {
         /// Path to the task JSON file
         task: std::path::PathBuf,
@@ -181,7 +209,7 @@ EXAMPLES:
 
     /// Convert a trajectory into a deterministic Python replay script
     #[command(after_help = "\
-EXAMPLES:
+\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m
   desktest codify desktest_artifacts/trajectory.jsonl
   desktest codify desktest_artifacts/trajectory.jsonl --output desktest_replay.py
   desktest codify desktest_artifacts/trajectory.jsonl --steps 1,2,5,6
@@ -216,18 +244,19 @@ EXAMPLES:
     },
 
     /// Attach to an existing running container and run a task against it
-    #[command(after_help = "\
-PREREQUISITES:
-  Docker daemon must be accessible. Desktest uses the Docker API (via the \
-socket) to exec into the target container. The user running desktest needs \
-Docker socket permissions — typically membership in the `docker` group, or \
-`sudo chmod 660 /var/run/docker.sock && sudo chown root:docker /var/run/docker.sock` \
-for temporary local dev access.\n\n\
-EXAMPLES:
-  desktest attach task.json --container my-container
-  desktest attach task.json --container abc123 --config config.json
-  desktest attach task.json --container my-container --resolution 1280x720
-  desktest attach task.json --container my-container --replay")]
+    #[command(after_help = concat!(
+        "\x1b[1;4;38;2;195;255;253mPREREQUISITES:\x1b[0m\n",
+        "  Docker daemon must be accessible. Desktest uses the Docker API (via the ",
+        "socket) to exec into the target container. The user running desktest needs ",
+        "Docker socket permissions \u{2014} typically membership in the `docker` group, or ",
+        "`sudo chmod 660 /var/run/docker.sock && sudo chown root:docker /var/run/docker.sock` ",
+        "for temporary local dev access.\n\n",
+        "\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m\n",
+        "  desktest attach task.json --container my-container\n",
+        "  desktest attach task.json --container abc123 --config config.json\n",
+        "  desktest attach task.json --container my-container --resolution 1280x720\n",
+        "  desktest attach task.json --container my-container --replay"
+    ))]
     Attach {
         /// Path to the task JSON file
         task: std::path::PathBuf,
@@ -242,12 +271,13 @@ EXAMPLES:
     },
 
     /// Replay a codified Python script inside a container (deprecated: use `desktest run --replay` instead)
-    #[command(after_help = "\
-DEPRECATED: Prefer setting 'replay_script' in your task JSON and using `desktest run --replay`\n\
-for deterministic execution with no LLM and zero API costs.\n\n\
-EXAMPLES:
-  desktest replay task.json --script desktest_replay.py
-  desktest replay task.json --script desktest_replay.py --screenshots-dir desktest_artifacts/")]
+    #[command(after_help = concat!(
+        "\x1b[1;4;38;2;195;255;253mDEPRECATED:\x1b[0m Prefer setting 'replay_script' in your task JSON and using `desktest run --replay`\n",
+        "for deterministic execution with no LLM and zero API costs.\n\n",
+        "\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m\n",
+        "  desktest replay task.json --script desktest_replay.py\n",
+        "  desktest replay task.json --script desktest_replay.py --screenshots-dir desktest_artifacts/"
+    ))]
     Replay {
         /// Path to the task JSON file (for container/app/setup config)
         task: std::path::PathBuf,
@@ -262,16 +292,17 @@ EXAMPLES:
     },
 
     /// View trajectory logs in the terminal (machine-readable, suitable for piping and agent consumption)
-    #[command(after_help = "\
-Prints trajectory steps to stdout as structured text. Designed for CLI \
-and agent workflows — pipe to grep, jq, or other tools.\n\
-For an interactive visual viewer, use `desktest review` instead.\n\n\
-EXAMPLES:
-  desktest logs desktest_artifacts/
-  desktest logs desktest_artifacts/ --brief
-  desktest logs desktest_artifacts/ --step 3
-  desktest logs desktest_artifacts/ --steps 3-7
-  desktest logs desktest_artifacts/ --steps 1,3,5-8")]
+    #[command(after_help = concat!(
+        "Prints trajectory steps to stdout as structured text. Designed for CLI ",
+        "and agent workflows \u{2014} pipe to grep, jq, or other tools.\n",
+        "For an interactive visual viewer, use `desktest review` instead.\n\n",
+        "\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m\n",
+        "  desktest logs desktest_artifacts/\n",
+        "  desktest logs desktest_artifacts/ --brief\n",
+        "  desktest logs desktest_artifacts/ --step 3\n",
+        "  desktest logs desktest_artifacts/ --steps 3-7\n",
+        "  desktest logs desktest_artifacts/ --steps 1,3,5-8"
+    ))]
     Logs {
         /// Path to artifacts directory containing trajectory.jsonl
         artifacts_dir: std::path::PathBuf,
@@ -290,19 +321,20 @@ EXAMPLES:
     },
 
     /// Check that all prerequisites are installed and configured
-    #[command(after_help = "\
-Verifies Docker daemon connectivity, API key availability, and displays \
-current configuration. Use this to troubleshoot setup issues.\n\n\
-EXAMPLES:
-  desktest doctor
-  desktest doctor --config config.json")]
+    #[command(after_help = concat!(
+        "Verifies Docker daemon connectivity, API key availability, and displays ",
+        "current configuration. Use this to troubleshoot setup issues.\n\n",
+        "\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m\n",
+        "  desktest doctor\n",
+        "  desktest doctor --config config.json"
+    ))]
     Doctor,
 
     /// Update desktest to the latest release from GitHub
     #[command(after_help = "\
-EXAMPLES:
-  desktest update                # Update to latest if newer
-  desktest update --force        # Re-download even if already up to date")]
+\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m
+  desktest update                \x1b[2m# Update to latest if newer\x1b[0m
+  desktest update --force        \x1b[2m# Re-download even if already up to date\x1b[0m")]
     Update {
         /// Force update even if already on the latest version
         #[arg(long, default_value_t = false)]
@@ -310,13 +342,14 @@ EXAMPLES:
     },
 
     /// Start a persistent monitor server that watches artifact directories for multi-phase runs
-    #[command(after_help = "\
-Watches an artifacts directory tree for trajectory files from multiple \
-desktest attach/run phases. Each subdirectory with a trajectory.jsonl \
-is treated as a separate phase, displayed in a single timeline.\n\n\
-EXAMPLES:
-  desktest monitor --watch ./artifacts/
-  desktest monitor --watch ./artifacts/ --monitor-port 8080")]
+    #[command(after_help = concat!(
+        "Watches an artifacts directory tree for trajectory files from multiple ",
+        "desktest attach/run phases. Each subdirectory with a trajectory.jsonl ",
+        "is treated as a separate phase, displayed in a single timeline.\n\n",
+        "\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m\n",
+        "  desktest monitor --watch ./artifacts/\n",
+        "  desktest monitor --watch ./artifacts/ --monitor-port 8080"
+    ))]
     Monitor {
         /// Directory tree to watch for phase subdirectories
         #[arg(long)]
@@ -324,12 +357,13 @@ EXAMPLES:
     },
 
     /// Generate an interactive HTML trajectory viewer (best for human review in a browser)
-    #[command(after_help = "\
-For a CLI/agent-friendly text view, use `desktest logs` instead.\n\n\
-EXAMPLES:
-  desktest review desktest_artifacts/
-  desktest review desktest_artifacts/ --output desktest_review.html
-  desktest review desktest_artifacts/ --no-open")]
+    #[command(after_help = concat!(
+        "For a CLI/agent-friendly text view, use `desktest logs` instead.\n\n",
+        "\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m\n",
+        "  desktest review desktest_artifacts/\n",
+        "  desktest review desktest_artifacts/ --output desktest_review.html\n",
+        "  desktest review desktest_artifacts/ --no-open"
+    ))]
     Review {
         /// Path to artifacts directory containing trajectory.jsonl
         artifacts_dir: std::path::PathBuf,

@@ -36,27 +36,83 @@ use clap::{CommandFactory, Parser};
 use cli::{Cli, Command};
 use orchestration::{LlmOverrides, RunConfig};
 
-fn print_banner(version: &str) {
-    const LOGO: &str = "\
- ██████╗ ███████╗███████╗██╗  ██╗████████╗███████╗███████╗████████╗
- ██╔══██╗██╔════╝██╔════╝██║ ██╔╝╚══██╔══╝██╔════╝██╔════╝╚══██╔══╝
- ██║  ██║█████╗  ███████╗█████╔╝    ██║   █████╗  ███████╗   ██║
- ██║  ██║██╔══╝  ╚════██║██╔═██╗    ██║   ██╔══╝  ╚════██║   ██║
- ██████╔╝███████╗███████║██║  ██╗   ██║   ███████╗███████║   ██║
- ╚═════╝ ╚══════╝╚══════╝╚═╝  ╚═╝   ╚═╝   ╚══════╝╚══════╝   ╚═╝";
+// ANSI color constants (Brand: #C3FFFD = Core Cyan, #9BA4A6 = Graphene Grey)
+const CYAN: &str = "\x1b[38;2;195;255;253m";
+const GREY: &str = "\x1b[38;2;155;164;166m";
+const WHITE_BOLD: &str = "\x1b[1;97m";
+const RESET: &str = "\x1b[0m";
 
-    // Use ANSI true-color for #C3FFFD (rgb 195, 255, 253)
+/// Print the Hackbox banner and return the box width (for separator alignment).
+fn print_banner(version: &str) -> usize {
+    const LOGO_LINES: &[&str] = &[
+        " ██████╗ ███████╗███████╗██╗  ██╗████████╗███████╗███████╗████████╗",
+        " ██╔══██╗██╔════╝██╔════╝██║ ██╔╝╚══██╔══╝██╔════╝██╔════╝╚══██╔══╝",
+        " ██║  ██║█████╗  ███████╗█████╔╝    ██║   █████╗  ███████╗   ██║",
+        " ██║  ██║██╔══╝  ╚════██║██╔═██╗    ██║   ██╔══╝  ╚════██║   ██║",
+        " ██████╔╝███████╗███████║██║  ██╗   ██║   ███████╗███████║   ██║",
+        " ╚═════╝ ╚══════╝╚══════╝╚═╝  ╚═╝   ╚═╝   ╚══════╝╚══════╝   ╚═╝",
+    ];
+
     let is_tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
-    if is_tty {
-        println!("\x1b[38;2;195;255;253m{LOGO}\x1b[0m");
-        println!(
-            "\x1b[38;2;195;255;253m  Desktest CLI v{version}\x1b[0m — Playwright for full-computer tests"
-        );
-    } else {
-        println!("{LOGO}");
-        println!("  Desktest CLI v{version} — Playwright for full-computer tests");
+    if !is_tty {
+        for line in LOGO_LINES {
+            println!("{line}");
+        }
+        println!("  Desktest CLI v{version} \u{2014} Playwright for full-computer tests");
+        println!();
+        return 0;
     }
+
+    // Compute the version tagline to measure its width
+    // Note: 1 leading space here — the format adds another ` ` prefix (like logo lines)
+    let tagline_plain = format!(" Desktest CLI v{version}");
+    let tagline_suffix = " \u{2014} Playwright for full-computer tests";
+    let tagline_len = tagline_plain.chars().count() + tagline_suffix.chars().count();
+
+    // Inner width = max of all content lines (logo + tagline) + 2 for left/right padding
+    let max_logo = LOGO_LINES
+        .iter()
+        .map(|l| l.chars().count())
+        .max()
+        .unwrap_or(0);
+    let inner = std::cmp::max(max_logo, tagline_len) + 2; // +2 for 1-char padding each side
+    let box_width = inner + 2; // total width including both █ borders
+    let tag_width = (box_width * 40) / 100; // 40% of box width per brand spec
+
+    // ── The Hackbox (solid █ border, half-height top/bottom) ──
+    // Top border: half-height bar (▄ = lower half block, hugs content)
+    println!("{CYAN}{}{RESET}", "▄".repeat(box_width));
+
+    // Tag row: solid tag continues from top-left, rest is interior space
+    let tag_interior = " ".repeat(box_width - tag_width - 1); // -1 for right █ border
+    println!("{CYAN}{}{}█{RESET}", "█".repeat(tag_width), tag_interior);
+
+    // Blank row for breathing room between tag and logo
+    println!("{CYAN}█{}█{RESET}", " ".repeat(inner));
+
+    // Logo lines inside the box
+    for line in LOGO_LINES {
+        let visible_len = line.chars().count();
+        let padding = if inner > visible_len + 1 {
+            inner - visible_len - 1
+        } else {
+            0
+        };
+        println!("{CYAN}█{RESET} {line}{}{CYAN}█{RESET}", " ".repeat(padding));
+    }
+
+    // Version tagline inside the box (same ` ` prefix as logo lines)
+    let tagline_pad = inner.saturating_sub(tagline_len + 1); // +1 for the space prefix
+    println!(
+        "{CYAN}█{RESET} {WHITE_BOLD}{tagline_plain}{GREY}{tagline_suffix}{}{CYAN}█{RESET}",
+        " ".repeat(tagline_pad),
+    );
+
+    // Bottom border: half-height bar (▀ = upper half block, hugs content)
+    println!("{CYAN}{}{RESET}", "▀".repeat(box_width));
+
     println!();
+    box_width
 }
 
 fn setup_logging(debug: bool) {
@@ -162,7 +218,13 @@ async fn main() {
         None => {
             let mut cmd = Cli::command();
             let version = cmd.get_version().unwrap_or("unknown").to_string();
-            print_banner(&version);
+            let box_width = print_banner(&version);
+            if box_width > 0 {
+                // Thin cyan dashed separator between banner and help
+                let sep_units = box_width / 2;
+                println!("{CYAN}  {}{RESET}", "─ ".repeat(sep_units));
+                println!();
+            }
             if let Err(e) = cmd.print_help() {
                 eprintln!("Error displaying help: {e}");
             }
