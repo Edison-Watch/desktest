@@ -308,6 +308,7 @@ mod tests {
             api_key_source: None,
             provider: "openai".into(),
             model: "gpt-4.1".into(),
+            llm_max_retries: 5,
             api_base_url: "https://api.openai.com".into(),
             display_width: 1920,
             display_height: 1080,

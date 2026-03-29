@@ -108,6 +108,10 @@ pub struct Cli {
     /// Use --artifacts-exclude=none to disable all default excludes.
     #[arg(long, global = true)]
     pub artifacts_exclude: Vec<String>,
+
+    /// Maximum number of retry attempts for retryable LLM API failures
+    #[arg(long, global = true)]
+    pub llm_max_retries: Option<usize>,
 }
 
 #[derive(Subcommand, Debug)]

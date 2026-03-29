@@ -36,6 +36,8 @@ const DEFAULT_TOTAL_TIMEOUT_SECS: u64 = 300;
 pub struct AgentLoopV2Config {
     /// Maximum number of steps before termination.
     pub max_steps: usize,
+    /// Maximum number of retry attempts for retryable LLM API failures.
+    pub llm_max_retries: usize,
     /// Per-step timeout (wall-clock time for a single LLM call + execution).
     pub step_timeout: Duration,
     /// Total timeout for the entire test run.
@@ -68,6 +70,7 @@ impl Default for AgentLoopV2Config {
     fn default() -> Self {
         Self {
             max_steps: DEFAULT_MAX_STEPS,
+            llm_max_retries: 5,
             step_timeout: Duration::from_secs(DEFAULT_STEP_TIMEOUT_SECS),
             total_timeout: Duration::from_secs(DEFAULT_TOTAL_TIMEOUT_SECS),
             observation_config: ObservationConfig::default(),
@@ -1082,6 +1085,7 @@ mod tests {
     fn test_default_config() {
         let config = AgentLoopV2Config::default();
         assert_eq!(config.max_steps, DEFAULT_MAX_STEPS);
+        assert_eq!(config.llm_max_retries, 5);
         assert_eq!(
             config.step_timeout,
             Duration::from_secs(DEFAULT_STEP_TIMEOUT_SECS)
@@ -1101,6 +1105,7 @@ mod tests {
     fn test_agent_loop_v2_config_custom() {
         let config = AgentLoopV2Config {
             max_steps: 25,
+            llm_max_retries: 7,
             step_timeout: Duration::from_secs(120),
             total_timeout: Duration::from_secs(600),
             observation_config: ObservationConfig::default(),
@@ -1116,6 +1121,7 @@ mod tests {
             early_exit: None,
         };
         assert_eq!(config.max_steps, 25);
+        assert_eq!(config.llm_max_retries, 7);
         assert_eq!(config.step_timeout.as_secs(), 120);
         assert_eq!(config.total_timeout.as_secs(), 600);
         assert_eq!(config.max_trajectory_length, 5);

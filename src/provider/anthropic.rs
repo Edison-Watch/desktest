@@ -2,6 +2,7 @@
 
 use std::pin::Pin;
 
+use reqwest::header::RETRY_AFTER;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -274,16 +275,29 @@ impl LlmProvider for AnthropicProvider {
                 .json(&request)
                 .send()
                 .await
-                .map_err(|e| AppError::Agent(format!("HTTP request failed: {e}")))?;
+                .map_err(|e| {
+                    AppError::Agent(format!(
+                        "HTTP request failed (connect={}, timeout={}, request={}): {}",
+                        e.is_connect(),
+                        e.is_timeout(),
+                        e.is_request(),
+                        e
+                    ))
+                })?;
 
             let elapsed = start.elapsed();
             let status = response.status();
 
             if !status.is_success() {
+                let retry_after = response
+                    .headers()
+                    .get(RETRY_AFTER)
+                    .and_then(|value| value.to_str().ok())
+                    .map(|value| format!("; retry-after: {value}"))
+                    .unwrap_or_default();
                 let error_body = response.text().await.unwrap_or_default();
                 return Err(AppError::Agent(format!(
-                    "Anthropic API error ({}): {}",
-                    status, error_body
+                    "Anthropic API error ({status}{retry_after}): {error_body}"
                 )));
             }
 

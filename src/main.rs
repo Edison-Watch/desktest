@@ -52,6 +52,7 @@ fn llm_overrides(cli: &Cli) -> LlmOverrides {
         provider: cli.provider.clone(),
         model: cli.model.clone(),
         api_key: cli.api_key.clone(),
+        llm_max_retries: cli.llm_max_retries,
     }
 }
 
@@ -192,6 +193,7 @@ async fn main() {
                 artifacts_timeout_secs: cli.artifacts_timeout,
                 no_artifacts: cli.no_artifacts,
                 artifacts_exclude: resolve_artifacts_exclude(&cli.artifacts_exclude),
+                llm_max_retries: run_config.llm_max_retries,
             };
 
             let result = orchestration::run_task(
@@ -246,6 +248,7 @@ async fn main() {
                 artifacts_timeout_secs: cli.artifacts_timeout,
                 no_artifacts: cli.no_artifacts,
                 artifacts_exclude: resolve_artifacts_exclude(&cli.artifacts_exclude),
+                llm_max_retries: run_config.llm_max_retries,
             };
 
             let result = suite::run_suite(
@@ -318,6 +321,7 @@ async fn main() {
                 artifacts_timeout_secs: cli.artifacts_timeout,
                 no_artifacts: cli.no_artifacts,
                 artifacts_exclude: resolve_artifacts_exclude(&cli.artifacts_exclude),
+                llm_max_retries: run_config.llm_max_retries,
             };
 
             let result = orchestration::run_attach(
@@ -378,6 +382,7 @@ async fn main() {
                 artifacts_timeout_secs: cli.artifacts_timeout,
                 no_artifacts: cli.no_artifacts,
                 artifacts_exclude: resolve_artifacts_exclude(&cli.artifacts_exclude),
+                llm_max_retries: run_config.llm_max_retries,
             };
             let result = interactive::run_interactive(
                 task_def,
@@ -663,6 +668,7 @@ async fn main() {
                 artifacts_timeout_secs: cli.artifacts_timeout,
                 no_artifacts: cli.no_artifacts,
                 artifacts_exclude: resolve_artifacts_exclude(&cli.artifacts_exclude),
+                llm_max_retries: run_config.llm_max_retries,
             };
 
             let result = orchestration::run_task(
