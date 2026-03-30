@@ -6,7 +6,7 @@ use reqwest::header::RETRY_AFTER;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-use super::{ChatMessage, LlmProvider};
+use super::{ChatMessage, LlmProvider, sanitize_error_body};
 use crate::error::AppError;
 
 /// Anthropic Messages API provider implementing the LlmProvider trait.
@@ -296,6 +296,7 @@ impl LlmProvider for AnthropicProvider {
                     .map(|value| format!("; retry-after: {value}"))
                     .unwrap_or_default();
                 let error_body = response.text().await.unwrap_or_default();
+                let error_body = sanitize_error_body(&error_body);
                 return Err(AppError::Agent(format!(
                     "Anthropic API error ({status}{retry_after}): {error_body}"
                 )));

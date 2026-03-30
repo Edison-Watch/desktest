@@ -294,6 +294,7 @@ async fn main() {
                 no_artifacts: cli.no_artifacts,
                 artifacts_exclude: resolve_artifacts_exclude(&cli.artifacts_exclude),
                 llm_max_retries: run_config.llm_max_retries,
+                no_network: cli.no_network,
             };
 
             let result = orchestration::run_task(
@@ -349,6 +350,7 @@ async fn main() {
                 no_artifacts: cli.no_artifacts,
                 artifacts_exclude: resolve_artifacts_exclude(&cli.artifacts_exclude),
                 llm_max_retries: run_config.llm_max_retries,
+                no_network: cli.no_network,
             };
 
             let result = suite::run_suite(
@@ -422,6 +424,7 @@ async fn main() {
                 no_artifacts: cli.no_artifacts,
                 artifacts_exclude: resolve_artifacts_exclude(&cli.artifacts_exclude),
                 llm_max_retries: run_config.llm_max_retries,
+                no_network: cli.no_network,
             };
 
             let result = orchestration::run_attach(
@@ -483,6 +486,7 @@ async fn main() {
                 no_artifacts: cli.no_artifacts,
                 artifacts_exclude: resolve_artifacts_exclude(&cli.artifacts_exclude),
                 llm_max_retries: run_config.llm_max_retries,
+                no_network: cli.no_network,
             };
             let result = interactive::run_interactive(
                 task_def,
@@ -769,6 +773,7 @@ async fn main() {
                 no_artifacts: cli.no_artifacts,
                 artifacts_exclude: resolve_artifacts_exclude(&cli.artifacts_exclude),
                 llm_max_retries: run_config.llm_max_retries,
+                no_network: cli.no_network,
             };
 
             let result = orchestration::run_task(

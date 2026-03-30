@@ -6,23 +6,15 @@ Items identified during a security audit (2026-03-23). Prioritized by impact.
 
 ### High Priority
 
-- ~~**Eliminate SYS_ADMIN for AppImages**~~: Done — `--appimage-extract-and-run` was already in use for all AppImages, so SYS_ADMIN + `/dev/fuse` have been removed entirely from container creation.
+- ~~**`needs_fuse` config escape hatch**~~: Done — `needs_fuse: true` field added to `DockerImage` app config. When set, grants `CAP_SYS_ADMIN` and `/dev/fuse` to the container.
 
-- **`needs_fuse` config escape hatch**: Add a `needs_fuse: true` config/task field so custom Docker images that internally depend on FUSE can opt in to `CAP_SYS_ADMIN` + `/dev/fuse`. No app types currently receive these privileges.
+- ~~**Container network egress restrictions**~~: Done — `--no-network` global CLI flag sets Docker network mode to `"none"`, disabling all container networking.
 
-- **Container network egress restrictions**: Add an option (e.g., `--no-network` or a config field) to disable outbound network access inside containers. Especially important for CI use cases where LLM-generated code runs inside the container with full internet access.
+- ~~**Sanitize API error responses**~~: Done — `sanitize_error_body()` helper truncates error bodies to 500 chars in both `http_base.rs` and `anthropic.rs`.
 
-- ~~**Path traversal in evaluators**~~: Done — `expected_path`, `script_path`, and `screenshots_dir` are now canonicalized and validated to stay within the working directory before reading.
-
-- ~~**Path traversal in tar extraction**~~: Done — `copy_from()` now rejects tar entries containing `..` or absolute path components after stripping the Docker wrapper directory.
-
-- **Sanitize API error responses**: `provider/http_base.rs` and `provider/anthropic.rs` include raw error bodies in error messages. These could leak sensitive info into logs or artifacts. Truncate and sanitize before logging.
-
-- **SSRF via custom base URL**: The `api_base_url` config field accepts any URL with no validation. Add protocol enforcement (require HTTPS unless explicitly overridden) and optionally block private/link-local IP ranges.
+- ~~**SSRF via custom base URL**~~: Done — `api_base_url` is now validated in `Config::validate()`: requires HTTPS (except localhost), blocks private/link-local IPs, rejects invalid URLs.
 
 ### Medium Priority
-
-- ~~**Container resource limits**~~: Done — containers now default to 4 GB memory (no swap), 4 CPU cores, and 512 PIDs.
 
 - **Prompt injection awareness**: Raw accessibility tree text, bash output, and error feedback are interpolated directly into LLM prompts (`agent/context.rs`). A malicious application could embed prompt injection payloads in its UI text or command output. Consider structured delimiters or content-length limits.
 

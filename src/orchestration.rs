@@ -46,6 +46,7 @@ pub(crate) struct RunConfig {
     pub no_artifacts: bool,
     pub artifacts_exclude: Vec<String>,
     pub llm_max_retries: usize,
+    pub no_network: bool,
 }
 
 /// Groups the core references that every orchestration inner function needs.
@@ -258,10 +259,12 @@ pub(crate) async fn run_task(
     std::fs::create_dir_all(&artifacts_dir)
         .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
 
-    // Determine custom Docker image from task definition
-    let custom_image = match &task_def.app {
-        task::AppConfig::DockerImage { image, .. } => Some(image.as_str()),
-        _ => None,
+    // Determine custom Docker image and FUSE requirement from task definition
+    let (custom_image, needs_fuse) = match &task_def.app {
+        task::AppConfig::DockerImage {
+            image, needs_fuse, ..
+        } => (Some(image.as_str()), *needs_fuse),
+        _ => (None, false),
     };
 
     let extra_env = if resolved_secrets.is_empty() {
@@ -280,7 +283,7 @@ pub(crate) async fn run_task(
         }
         r = async {
             let effective_image = resolve_image_name(&config, custom_image).await?;
-            docker::DockerSession::create(&config, effective_image, extra_env).await
+            docker::DockerSession::create(&config, effective_image, extra_env, run.no_network, needs_fuse).await
         } => r?,
     };
 
@@ -1490,6 +1493,7 @@ mod tests {
             task::AppConfig::DockerImage {
                 image,
                 entrypoint_cmd,
+                ..
             } => {
                 assert_eq!(image, "my-app:latest");
                 assert!(entrypoint_cmd.is_none());

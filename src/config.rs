@@ -1,6 +1,8 @@
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use url::Url;
 
 use crate::error::AppError;
 
@@ -266,7 +268,93 @@ impl Config {
             ));
         }
 
+        validate_api_base_url(&self.api_base_url)?;
+
         Ok(())
+    }
+}
+
+/// Validate `api_base_url` for SSRF protection.
+///
+/// Rules:
+/// - Must be a valid URL with http or https scheme.
+/// - Must use HTTPS unless the host is localhost or 127.0.0.1.
+/// - Must not resolve to a private, link-local, or loopback IP range
+///   (except localhost/127.0.0.1 which are allowed for local development).
+fn validate_api_base_url(url_str: &str) -> Result<(), AppError> {
+    let parsed = Url::parse(url_str)
+        .map_err(|e| AppError::Config(format!("api_base_url is not a valid URL: {e}")))?;
+
+    match parsed.scheme() {
+        "http" | "https" => {}
+        other => {
+            return Err(AppError::Config(format!(
+                "api_base_url must use http or https scheme, got: {other}"
+            )));
+        }
+    }
+
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| AppError::Config("api_base_url must include a host".into()))?;
+
+    let is_localhost = host == "localhost" || host == "127.0.0.1" || host == "::1";
+
+    // Require HTTPS for non-localhost hosts.
+    if parsed.scheme() == "http" && !is_localhost {
+        return Err(AppError::Config(format!(
+            "api_base_url must use HTTPS for non-localhost hosts: {url_str}"
+        )));
+    }
+
+    // If the host is an IP address, check for private/link-local ranges.
+    if !is_localhost {
+        if let Ok(ip) = host.parse::<IpAddr>() {
+            if is_private_or_link_local(&ip) {
+                return Err(AppError::Config(format!(
+                    "api_base_url must not point to a private or link-local IP address: {host}"
+                )));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Returns true if the IP is in a private, link-local, or loopback range.
+fn is_private_or_link_local(ip: &IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            let octets = v4.octets();
+            // 10.0.0.0/8
+            octets[0] == 10
+            // 172.16.0.0/12
+            || (octets[0] == 172 && (16..=31).contains(&octets[1]))
+            // 192.168.0.0/16
+            || (octets[0] == 192 && octets[1] == 168)
+            // 169.254.0.0/16 (link-local)
+            || (octets[0] == 169 && octets[1] == 254)
+            // 127.0.0.0/8 (loopback)
+            || octets[0] == 127
+            // 0.0.0.0
+            || v4.is_unspecified()
+        }
+        IpAddr::V6(v6) => {
+            let segments = v6.segments();
+            // ::1 loopback
+            v6.is_loopback()
+            // :: unspecified
+            || v6.is_unspecified()
+            // fe80::/10 link-local
+            || (segments[0] & 0xffc0) == 0xfe80
+            // fc00::/7 unique local (private)
+            || (segments[0] & 0xfe00) == 0xfc00
+            // ::ffff:0:0/96 IPv4-mapped — check the embedded IPv4 address
+            || match v6.to_ipv4_mapped() {
+                Some(v4) => is_private_or_link_local(&IpAddr::V4(v4)),
+                None => false,
+            }
+        }
     }
 }
 
@@ -560,5 +648,153 @@ mod tests {
         }"#;
         let config = Config::parse_and_validate(json).unwrap();
         assert_eq!(config.llm_max_retries, 7);
+    }
+
+    // --- SSRF protection tests ---
+
+    #[test]
+    fn test_api_base_url_default_is_valid() {
+        let json = r#"{"api_key": "sk-test", "app_type": "docker_image"}"#;
+        assert!(Config::parse_and_validate(json).is_ok());
+    }
+
+    #[test]
+    fn test_api_base_url_https_public_allowed() {
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image",
+            "api_base_url": "https://api.openai.com"
+        }"#;
+        assert!(Config::parse_and_validate(json).is_ok());
+    }
+
+    #[test]
+    fn test_api_base_url_http_localhost_allowed() {
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image",
+            "api_base_url": "http://localhost:8080"
+        }"#;
+        assert!(Config::parse_and_validate(json).is_ok());
+    }
+
+    #[test]
+    fn test_api_base_url_http_127_allowed() {
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image",
+            "api_base_url": "http://127.0.0.1:11434"
+        }"#;
+        assert!(Config::parse_and_validate(json).is_ok());
+    }
+
+    #[test]
+    fn test_api_base_url_https_localhost_allowed() {
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image",
+            "api_base_url": "https://localhost:8443"
+        }"#;
+        assert!(Config::parse_and_validate(json).is_ok());
+    }
+
+    #[test]
+    fn test_api_base_url_http_non_localhost_rejected() {
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image",
+            "api_base_url": "http://example.com"
+        }"#;
+        let err = Config::parse_and_validate(json).unwrap_err();
+        assert!(err.to_string().contains("must use HTTPS"));
+    }
+
+    #[test]
+    fn test_api_base_url_private_10_rejected() {
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image",
+            "api_base_url": "https://10.0.0.1"
+        }"#;
+        let err = Config::parse_and_validate(json).unwrap_err();
+        assert!(err.to_string().contains("private or link-local"));
+    }
+
+    #[test]
+    fn test_api_base_url_private_172_16_rejected() {
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image",
+            "api_base_url": "https://172.16.0.1"
+        }"#;
+        let err = Config::parse_and_validate(json).unwrap_err();
+        assert!(err.to_string().contains("private or link-local"));
+    }
+
+    #[test]
+    fn test_api_base_url_private_192_168_rejected() {
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image",
+            "api_base_url": "https://192.168.1.1"
+        }"#;
+        let err = Config::parse_and_validate(json).unwrap_err();
+        assert!(err.to_string().contains("private or link-local"));
+    }
+
+    #[test]
+    fn test_api_base_url_link_local_169_254_rejected() {
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image",
+            "api_base_url": "https://169.254.169.254"
+        }"#;
+        let err = Config::parse_and_validate(json).unwrap_err();
+        assert!(err.to_string().contains("private or link-local"));
+    }
+
+    #[test]
+    fn test_api_base_url_invalid_url_rejected() {
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image",
+            "api_base_url": "not-a-url"
+        }"#;
+        let err = Config::parse_and_validate(json).unwrap_err();
+        assert!(err.to_string().contains("not a valid URL"));
+    }
+
+    #[test]
+    fn test_api_base_url_ftp_scheme_rejected() {
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image",
+            "api_base_url": "ftp://example.com"
+        }"#;
+        let err = Config::parse_and_validate(json).unwrap_err();
+        assert!(err.to_string().contains("http or https scheme"));
+    }
+
+    #[test]
+    fn test_api_base_url_172_outside_private_range_allowed() {
+        let json = r#"{
+            "api_key": "sk-test",
+            "app_type": "docker_image",
+            "api_base_url": "https://172.32.0.1"
+        }"#;
+        assert!(Config::parse_and_validate(json).is_ok());
+    }
+
+    #[test]
+    fn test_validate_api_base_url_standalone() {
+        assert!(validate_api_base_url("https://api.anthropic.com").is_ok());
+        assert!(validate_api_base_url("http://localhost:8080").is_ok());
+        assert!(validate_api_base_url("http://127.0.0.1:11434").is_ok());
+        assert!(validate_api_base_url("https://10.0.0.1").is_err());
+        assert!(validate_api_base_url("https://192.168.0.1").is_err());
+        assert!(validate_api_base_url("https://169.254.169.254").is_err());
+        assert!(validate_api_base_url("http://example.com").is_err());
+        assert!(validate_api_base_url("ftp://example.com").is_err());
+        assert!(validate_api_base_url("not-a-url").is_err());
     }
 }

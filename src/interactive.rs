@@ -86,10 +86,12 @@ async fn run_interactive_pause(
     config.apply_task_app(&task_def.app);
     let timeout = Duration::from_secs(config.startup_timeout_seconds);
 
-    // Determine custom Docker image from task definition
-    let custom_image = match &task_def.app {
-        task::AppConfig::DockerImage { image, .. } => Some(image.as_str()),
-        _ => None,
+    // Determine custom Docker image and FUSE requirement from task definition
+    let (custom_image, needs_fuse) = match &task_def.app {
+        task::AppConfig::DockerImage {
+            image, needs_fuse, ..
+        } => (Some(image.as_str()), *needs_fuse),
+        _ => (None, false),
     };
     let extra_env = if resolved_secrets.is_empty() {
         None
@@ -106,7 +108,7 @@ async fn run_interactive_pause(
         }
         r = async {
             let effective_image = resolve_image_name(&config, custom_image).await?;
-            docker::DockerSession::create(&config, effective_image, extra_env).await
+            docker::DockerSession::create(&config, effective_image, extra_env, run.no_network, needs_fuse).await
         } => r?,
     };
     let session = SessionKind::Docker(session);
@@ -248,9 +250,11 @@ async fn run_interactive_step(
     std::fs::create_dir_all(&artifacts_dir)
         .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
 
-    let custom_image = match &task_def.app {
-        task::AppConfig::DockerImage { image, .. } => Some(image.as_str()),
-        _ => None,
+    let (custom_image, needs_fuse) = match &task_def.app {
+        task::AppConfig::DockerImage {
+            image, needs_fuse, ..
+        } => (Some(image.as_str()), *needs_fuse),
+        _ => (None, false),
     };
     let extra_env = if resolved_secrets.is_empty() {
         None
@@ -267,7 +271,7 @@ async fn run_interactive_step(
         }
         r = async {
             let effective_image = resolve_image_name(&config, custom_image).await?;
-            docker::DockerSession::create(&config, effective_image, extra_env).await
+            docker::DockerSession::create(&config, effective_image, extra_env, run.no_network, needs_fuse).await
         } => r?,
     };
     let session = SessionKind::Docker(session);
