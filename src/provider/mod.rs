@@ -107,10 +107,11 @@ const MAX_ERROR_BODY_LEN: usize = 500;
 
 /// Truncate an error body to avoid leaking large/sensitive API responses into logs.
 pub(crate) fn sanitize_error_body(body: &str) -> String {
-    if body.len() <= MAX_ERROR_BODY_LEN {
+    if body.chars().count() <= MAX_ERROR_BODY_LEN {
         body.to_string()
     } else {
-        format!("{}... (truncated)", &body[..MAX_ERROR_BODY_LEN])
+        let truncated: String = body.chars().take(MAX_ERROR_BODY_LEN).collect();
+        format!("{truncated}... (truncated)")
     }
 }
 
