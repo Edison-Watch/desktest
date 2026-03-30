@@ -374,7 +374,7 @@ type_text('Hello World')
 - After clicking a menu or button, wait briefly (`time.sleep(0.5)`) for the UI to update
 - If an action doesn't produce the expected result, try a different approach rather than repeating the same action
 - `pyautogui.typewrite()` is only appropriate for simple ASCII text without special characters; prefer `type_text()` when in doubt
-- Use `type_text('text')` for passwords, non-ASCII text, or any text containing special characters (`@`, `\`, `(`, `)`, `#`, `!`, etc.). Example: `type_text('-8S6@y603(D\\')`
+- Use `type_text('text')` for passwords, non-ASCII text, or any text containing special characters (`@`, `\`, `(`, `)`, `#`, `!`, etc.). Example: `type_text('P@ssw0rd!#1')`
 - Use `pyperclip.copy()` + `Ctrl+V` as a fallback for bulk text if `type_text()` is too slow for very long strings
 - Multiple actions can be in a single code block (they execute sequentially)
 - Do NOT use `pyautogui.locateOnScreen()` or image-based location — use coordinates from the screenshot

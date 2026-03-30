@@ -139,10 +139,15 @@ def _type_text(text, delay_ms=12):
         delay_ms: Delay between keystrokes in milliseconds (default 12).
     """
     import subprocess
+    delay_ms = max(0, int(delay_ms))
+    estimated_s = len(text) * delay_ms / 1000
+    effective_timeout = max(30, estimated_s + 5)
     subprocess.run(
         ["xdotool", "type", "--clearmodifiers", "--delay", str(delay_ms), "--", text],
         check=True,
-        timeout=30,
+        timeout=effective_timeout,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
     )
 
 
