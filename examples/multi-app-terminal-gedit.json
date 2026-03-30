@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0",
+  "id": "multi-app-terminal-gedit",
+  "instruction": "Open a terminal (xfce4-terminal). In the terminal, run: curl http://localhost:8000/data.csv -o /home/tester/data.csv. Then open the file /home/tester/data.csv in gedit. Use Find and Replace (Ctrl+H) to replace all occurrences of 'ERROR' with 'FIXED'. Save the file. Then switch back to the terminal and run: grep -c FIXED /home/tester/data.csv",
+  "completion_condition": "The file data.csv has been downloaded, all ERROR entries replaced with FIXED, saved, and the grep count command has been executed in the terminal.",
+  "app": {
+    "type": "folder",
+    "dir": "./examples/multi-app-terminal-gedit-app",
+    "entrypoint": "run.sh"
+  },
+  "config": [
+    {
+      "type": "execute",
+      "command": "mkdir -p /home/tester/server && cat > /home/tester/server/data.csv << 'CSVEOF'\nid,timestamp,status,message\n1,2024-01-15 08:30:00,OK,System started\n2,2024-01-15 08:31:12,ERROR,Connection timeout on port 5432\n3,2024-01-15 08:32:45,OK,Heartbeat received\n4,2024-01-15 08:33:01,ERROR,Disk usage above threshold\n5,2024-01-15 08:34:22,OK,Backup completed\n6,2024-01-15 08:35:10,ERROR,Authentication failed for user admin\n7,2024-01-15 08:36:00,OK,Cache cleared\n8,2024-01-15 08:37:15,ERROR,Memory allocation failure in worker 3\n9,2024-01-15 08:38:44,OK,Service restored\n10,2024-01-15 08:39:59,ERROR,SSL certificate expiring in 7 days\nCSVEOF"
+    },
+    {
+      "type": "execute",
+      "command": "cd /home/tester/server && nohup python3 -m http.server 8000 > /dev/null 2>&1 &"
+    }
+  ],
+  "evaluator": {
+    "mode": "hybrid",
+    "metrics": [
+      {
+        "type": "file_exists",
+        "path": "/home/tester/data.csv"
+      },
+      {
+        "type": "command_output",
+        "command": "grep -c FIXED /home/tester/data.csv",
+        "expected": "5",
+        "match_mode": "contains"
+      },
+      {
+        "type": "command_output",
+        "command": "grep -c ERROR /home/tester/data.csv",
+        "expected": "0",
+        "match_mode": "contains"
+      },
+      {
+        "type": "command_output",
+        "command": "head -1 /home/tester/data.csv",
+        "expected": "id,timestamp,status,message",
+        "match_mode": "contains"
+      }
+    ]
+  },
+  "timeout": 240,
+  "max_steps": 25,
+  "metadata": {
+    "description": "Multi-app workflow: open terminal, curl a CSV from a local server, open in gedit, find-and-replace ERROR->FIXED, save, then verify in terminal. Tests app switching, terminal interaction, and dialog navigation.",
+    "tags": ["multi-app", "terminal", "gedit", "find-replace", "curl", "hard"]
+  }
+}
