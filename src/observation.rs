@@ -89,7 +89,7 @@ impl ObservationConfig {
     pub fn for_session(session: &SessionKind) -> Self {
         match session {
             SessionKind::Docker(_) => Self::default(),
-            SessionKind::Tart(_) => Self {
+            SessionKind::Tart(_) | SessionKind::Native(_) => Self {
                 screenshot_cmd: MACOS_SCREENSHOT_CMD
                     .iter()
                     .map(|s| (*s).to_string())

@@ -241,13 +241,6 @@ pub(crate) async fn run_task(
         ));
     }
 
-    // Guard: macos_native not yet supported (Phase 5)
-    if matches!(task_def.app, task::AppConfig::MacosNative { .. }) {
-        return Err(AppError::Config(
-            "MacosNative app type is not yet supported. Use 'macos_tart' for macOS testing.".into(),
-        ));
-    }
-
     // Resolve secrets from environment variables and apply substitution
     let resolved_secrets = task_def.resolve_secrets()?;
     task_def.apply_secrets(&resolved_secrets)?;
@@ -267,6 +260,7 @@ pub(crate) async fn run_task(
         .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
 
     let is_macos_tart = matches!(task_def.app, task::AppConfig::MacosTart { .. });
+    let is_macos_native = matches!(task_def.app, task::AppConfig::MacosNative { .. });
 
     let extra_env = if resolved_secrets.is_empty() {
         None
@@ -274,7 +268,7 @@ pub(crate) async fn run_task(
         Some(&resolved_secrets)
     };
 
-    // Create session: Docker container or Tart VM (inside select! so Ctrl+C works)
+    // Create session: Docker container, Tart VM, or native host
     let session: SessionKind = if is_macos_tart {
         let base_image = match &task_def.app {
             task::AppConfig::MacosTart { base_image, .. } => base_image.as_str(),
@@ -290,6 +284,9 @@ pub(crate) async fn run_task(
             r = crate::tart::TartSession::create(base_image) => r?,
         };
         SessionKind::Tart(tart_session)
+    } else if is_macos_native {
+        info!("Using native macOS session (no VM, no isolation)");
+        SessionKind::Native(crate::session::NativeSession::create())
     } else {
         // Determine custom Docker image and FUSE requirement from task definition
         let (custom_image, needs_fuse) = match &task_def.app {
@@ -444,12 +441,16 @@ async fn run_task_inner(
         }
     );
 
-    let is_macos = matches!(task_def.app, task::AppConfig::MacosTart { .. });
+    let is_macos_tart = matches!(task_def.app, task::AppConfig::MacosTart { .. });
+    let is_macos_native = matches!(task_def.app, task::AppConfig::MacosNative { .. });
 
     // 1. Wait for desktop to be ready
     info!("Waiting for desktop to be ready...");
-    if is_macos {
+    if is_macos_tart {
         crate::tart::readiness::wait_for_desktop_macos(session, timeout, run.debug).await?;
+    } else if is_macos_native {
+        // Native: desktop is always ready (we're already on the host)
+        info!("Native macOS session: desktop is ready");
     } else {
         readiness::wait_for_desktop(session, timeout, run.debug).await?;
     }
@@ -464,12 +465,18 @@ async fn run_task_inner(
     }
 
     // 2. Deploy app (before setup steps, so setup can reference deployed files)
-    let app_path = if is_macos {
+    let app_path = if is_macos_tart {
         info!("Deploying app to macOS VM...");
         let tart = session
             .as_tart()
             .expect("Tart session required for macOS app deployment");
         tart.deploy_app(&task_def.app).await?
+    } else if is_macos_native {
+        info!("Preparing native macOS app...");
+        let native = session
+            .as_native()
+            .expect("Native session required for MacosNative app deployment");
+        native.deploy_app(&task_def.app).await?
     } else if is_docker_image {
         info!("Custom Docker image: skipping app deployment");
         String::new()
@@ -488,8 +495,8 @@ async fn run_task_inner(
     }
 
     // 4. Launch app
-    if is_macos {
-        // macOS: get baseline, launch, wait for new app window
+    if is_macos_tart {
+        // macOS Tart: get baseline, launch, wait for new app window
         info!("Waiting for stable process baseline...");
         let baseline_procs = crate::tart::readiness::get_stable_gui_process_list(session).await?;
 
@@ -497,6 +504,26 @@ async fn run_task_inner(
             .as_tart()
             .expect("Tart session required for macOS app launch");
         tart.launch_app(&task_def.app, &app_path).await?;
+
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+        info!("Waiting for app window...");
+        crate::tart::readiness::wait_for_app_window_macos(
+            session,
+            &baseline_procs,
+            timeout,
+            run.debug,
+        )
+        .await?;
+    } else if is_macos_native {
+        // macOS Native: get baseline, launch, wait for new app window
+        info!("Waiting for stable process baseline...");
+        let baseline_procs = crate::tart::readiness::get_stable_gui_process_list(session).await?;
+
+        let native = session
+            .as_native()
+            .expect("Native session required for MacosNative app launch");
+        native.launch_app(&task_def.app, &app_path).await?;
 
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 

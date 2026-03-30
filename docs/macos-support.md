@@ -1,6 +1,4 @@
-# macOS Support (Planned)
-
-> **Status:** This feature is planned but not yet implemented. This document describes the design, constraints, and known limitations.
+# macOS Support
 
 Desktest's macOS support enables E2E testing of native macOS desktop applications using the same LLM-powered agent loop used for Linux. macOS support requires Apple Silicon hardware and uses [Tart](https://github.com/cirruslabs/tart) VMs for clean, isolated test environments.
 
@@ -9,7 +7,7 @@ Desktest's macOS support enables E2E testing of native macOS desktop application
 On Linux, desktest runs tests inside Docker containers with a virtual X11 desktop. On macOS, Docker cannot host macOS guests (both technically and legally), so desktest uses **Tart VMs** — lightweight macOS virtual machines powered by Apple's Virtualization.framework.
 
 ```
-Linux (current)                    macOS (planned)
+Linux                              macOS
 ─────────────────                  ─────────────────
 Docker container                   Tart macOS VM
   Xvfb + XFCE desktop               Native macOS desktop
@@ -33,6 +31,84 @@ Docker container                   Tart macOS VM
 - **Tart installed** — `brew install cirruslabs/cli/tart` (for `macos_tart` mode)
 - **Python 3 + PyAutoGUI** — installed in the VM golden image (or on host for native mode)
 - **Xcode Command Line Tools** — `xcode-select --install`
+
+## Quick Start
+
+### 1. Prepare a golden image
+
+```bash
+# Install Tart
+brew install cirruslabs/cli/tart
+
+# Create the golden image (downloads base macOS, provisions tools)
+desktest init-macos --base-image ghcr.io/cirruslabs/macos-sequoia-base:latest \
+                    --output-image desktest-macos:latest
+
+# For Electron apps, add --with-electron
+desktest init-macos --base-image ghcr.io/cirruslabs/macos-sequoia-base:latest \
+                    --output-image desktest-macos-electron:latest \
+                    --with-electron
+```
+
+### 2. Write a task file
+
+```json
+{
+  "schema_version": "1.0",
+  "id": "macos-textedit-hello",
+  "instruction": "Open a new document in TextEdit, type 'Hello World', and save as 'hello.txt' on the Desktop.",
+  "app": {
+    "type": "macos_tart",
+    "base_image": "desktest-macos:latest",
+    "bundle_id": "com.apple.TextEdit"
+  },
+  "config": [],
+  "evaluator": {
+    "mode": "hybrid",
+    "metrics": [
+      {
+        "type": "file_exists",
+        "path": "/Users/admin/Desktop/hello.txt"
+      },
+      {
+        "type": "command_output",
+        "command": "cat /Users/admin/Desktop/hello.txt",
+        "match_mode": "contains",
+        "expected": "Hello World"
+      }
+    ]
+  },
+  "timeout": 180,
+  "max_steps": 20
+}
+```
+
+### 3. Run the test
+
+```bash
+desktest run examples/macos-textedit.json --config config.json
+```
+
+### 4. Native mode (no VM)
+
+For quick iteration without a VM, use `macos_native`:
+
+```json
+{
+  "schema_version": "1.0",
+  "id": "native-textedit",
+  "instruction": "Open TextEdit and type 'Hello'",
+  "app": {
+    "type": "macos_native",
+    "bundle_id": "com.apple.TextEdit"
+  },
+  "config": [],
+  "timeout": 120,
+  "max_steps": 10
+}
+```
+
+**Warning:** Native mode runs on your actual desktop with no isolation. The test agent will control your mouse and keyboard.
 
 ### Permissions (TCC)
 

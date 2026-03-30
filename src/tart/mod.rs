@@ -31,8 +31,49 @@ pub struct TartSession {
     run_child: Arc<Mutex<Option<Child>>>,
 }
 
+/// Clean up stale shared directories from previously crashed Tart sessions.
+///
+/// Scans the system temp directory for `desktest-tart-*-shared` directories
+/// that are no longer associated with a running VM. This handles the case
+/// where desktest was killed before `TartSession::cleanup()` could run.
+pub fn cleanup_stale_shared_dirs() {
+    let tmp = std::env::temp_dir();
+    let entries = match std::fs::read_dir(&tmp) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with("desktest-tart-") && name.ends_with("-shared") {
+            // Extract the VM name from the dir name (strip "-shared" suffix)
+            let vm_name = &name[..name.len() - 7];
+
+            // Check if this VM is still running via `tart list`
+            let still_running = std::process::Command::new("tart")
+                .args(["get", vm_name])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+
+            if !still_running {
+                tracing::debug!("Cleaning up stale shared dir: {name}");
+                let _ = std::fs::remove_dir_all(entry.path());
+            }
+        }
+    }
+}
+
 impl TartSession {
     pub async fn create(base_image: &str) -> Result<Self, AppError> {
+        // Opportunistically clean up shared dirs from crashed sessions.
+        // Run on a blocking thread to avoid stalling the Tokio executor
+        // (cleanup does synchronous I/O and spawns `tart get` subprocesses).
+        let _ = tokio::task::spawn_blocking(cleanup_stale_shared_dirs).await;
+
         let vm_name = format!("desktest-tart-{}", protocol::next_request_id());
         let shared_dir = std::env::temp_dir().join(format!("{vm_name}-shared"));
         let guest_shared_dir = format!("/Volumes/My Shared Files/{TART_SHARED_DIR_NAME}");

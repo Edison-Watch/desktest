@@ -25,10 +25,13 @@ pub async fn collect_artifacts(
         .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
 
     // Collect home directory (with exclude filtering)
-    let home_dest = artifacts_dir.join("home");
-    match collect_home_filtered(session, &home_dest, excludes).await {
-        Ok(()) => debug!("Collected home directory to {}", home_dest.display()),
-        Err(e) => warn!("Failed to collect home directory: {e}"),
+    // Skip for native sessions — we don't want to copy the host user's entire home
+    if !matches!(session, SessionKind::Native(_)) {
+        let home_dest = artifacts_dir.join("home");
+        match collect_home_filtered(session, &home_dest, excludes).await {
+            Ok(()) => debug!("Collected home directory to {}", home_dest.display()),
+            Err(e) => warn!("Failed to collect home directory: {e}"),
+        }
     }
 
     // Collect app log (stdout/stderr from the launched app)
@@ -38,8 +41,12 @@ pub async fn collect_artifacts(
         Err(e) => debug!("No app log to collect: {e}"),
     }
 
-    // Capture process list
-    match session.exec(&["ps", "auxf"]).await {
+    // Capture process list (macOS `ps` doesn't support `f` flag)
+    let ps_cmd: &[&str] = match session {
+        SessionKind::Tart(_) | SessionKind::Native(_) => &["ps", "aux"],
+        SessionKind::Docker(_) => &["ps", "auxf"],
+    };
+    match session.exec(ps_cmd).await {
         Ok(output) => {
             let ps_path = artifacts_dir.join("processes.txt");
             if let Err(e) = std::fs::write(&ps_path, &output) {
