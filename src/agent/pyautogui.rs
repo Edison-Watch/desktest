@@ -2,8 +2,13 @@
 //!
 //! Parses LLM output for Python code blocks and special commands,
 //! then executes the code via the `/usr/local/bin/execute-action` script
-//! inside the Docker container.
+//! inside the session (Docker container, Tart VM, or native host).
+//!
+//! The execute-action script is embedded in the binary and deployed at
+//! runtime via [`deploy_sandbox_script`] to ensure it always matches the
+//! current desktest version, regardless of the Docker image age.
 
+use std::path::Path;
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -14,6 +19,44 @@ use crate::session::{Session, SessionKind};
 
 /// Default per-code-block execution timeout in seconds.
 const DEFAULT_STEP_TIMEOUT_SECS: u64 = 60;
+
+/// The execute-action sandbox script, embedded at compile time.
+const EXECUTE_ACTION_SCRIPT: &str = include_str!("../../docker/execute-action.py");
+
+/// Target path for the sandbox script inside the session.
+const EXECUTE_ACTION_PATH: &str = "/usr/local/bin/execute-action";
+
+/// Deploy the embedded execute-action sandbox script to the session.
+///
+/// Writes the compile-time-embedded script to `/usr/local/bin/execute-action`,
+/// ensuring the sandbox always has `type_text()` and other helpers regardless
+/// of the Docker image version. Safe to call multiple times (idempotent).
+pub async fn deploy_sandbox_script(session: &SessionKind) -> Result<(), AppError> {
+    let tmp_dir =
+        tempfile::tempdir().map_err(|e| AppError::Infra(format!("Cannot create temp dir: {e}")))?;
+    let script_path = tmp_dir.path().join("execute-action");
+    std::fs::write(&script_path, EXECUTE_ACTION_SCRIPT)
+        .map_err(|e| AppError::Infra(format!("Cannot write sandbox script: {e}")))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))
+            .map_err(|e| AppError::Infra(format!("Cannot set script permissions: {e}")))?;
+    }
+
+    // copy_into uses Docker's upload API (root permissions) for Docker sessions,
+    // shared directory for Tart VMs, and regular file copy for native sessions.
+    let dest_dir = Path::new(EXECUTE_ACTION_PATH)
+        .parent()
+        .expect("execute-action path has parent");
+    session
+        .copy_into(&script_path, dest_dir.to_str().unwrap())
+        .await?;
+
+    debug!("Deployed execute-action sandbox script");
+    Ok(())
+}
 
 /// Special commands the agent can emit instead of (or alongside) code.
 #[derive(Debug, Clone, PartialEq, Eq)]
