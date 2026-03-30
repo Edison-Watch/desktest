@@ -308,6 +308,10 @@ fn validate_api_base_url(url_str: &str) -> Result<(), AppError> {
     }
 
     // If the host is an IP address, check for private/link-local ranges.
+    // NOTE: This check only catches literal IP addresses in the URL.
+    // Hostnames that DNS-resolve to private/link-local ranges are not
+    // blocked here; full SSRF prevention would require resolving the
+    // hostname at request time.
     if !is_localhost {
         if let Ok(ip) = host.parse::<IpAddr>() {
             if is_private_or_link_local(&ip) {
