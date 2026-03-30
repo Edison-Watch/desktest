@@ -16,6 +16,10 @@
     {
       "type": "execute",
       "command": "cd /home/tester/server && nohup python3 -m http.server 8000 > /dev/null 2>&1 &"
+    },
+    {
+      "type": "execute",
+      "command": "for i in $(seq 1 10); do curl -sf http://localhost:8000/ && break || sleep 0.5; done"
     }
   ],
   "evaluator": {
@@ -29,13 +33,13 @@
         "type": "command_output",
         "command": "grep -c FIXED /home/tester/data.csv",
         "expected": "5",
-        "match_mode": "contains"
+        "match_mode": "equals"
       },
       {
         "type": "command_output",
         "command": "grep -c ERROR /home/tester/data.csv",
         "expected": "0",
-        "match_mode": "contains"
+        "match_mode": "equals"
       },
       {
         "type": "command_output",
