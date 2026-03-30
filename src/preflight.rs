@@ -43,6 +43,47 @@ pub fn check_tart() -> Result<(), AppError> {
     }
 }
 
+/// Check that we're running on macOS (required for native sessions).
+///
+/// Performs best-effort TCC permission detection by probing screencapture.
+pub fn check_native_macos() -> Result<(), AppError> {
+    if cfg!(not(target_os = "macos")) {
+        return Err(AppError::Config(
+            "MacosNative app type requires macOS. This platform is not macOS.".into(),
+        ));
+    }
+
+    // Best-effort: probe screencapture to detect Screen Recording permission
+    match std::process::Command::new("screencapture")
+        .args(["-x", "/tmp/desktest-preflight-check.png"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            // Clean up probe file
+            let _ = std::fs::remove_file("/tmp/desktest-preflight-check.png");
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("permission") || stderr.contains("TCC") {
+                return Err(AppError::Config(
+                    "Screen Recording permission is not granted.\n\
+                     Go to System Settings → Privacy & Security → Screen Recording\n\
+                     and enable your terminal application."
+                        .into(),
+                ));
+            }
+            // screencapture failed but not clearly a TCC issue — continue
+        }
+        Err(_) => {
+            // screencapture not found — unexpected on macOS, but not fatal
+        }
+    }
+
+    Ok(())
+}
+
 /// Check that an API key is available for the configured provider.
 ///
 /// Delegates to `provider::resolve_api_key` so the resolution logic lives
@@ -64,13 +105,13 @@ pub async fn run_preflight(
     needs_llm: bool,
     app: Option<&AppConfig>,
 ) -> Result<(), AppError> {
-    let is_macos = matches!(
-        app,
-        Some(AppConfig::MacosTart { .. } | AppConfig::MacosNative { .. })
-    );
+    let is_macos_tart = matches!(app, Some(AppConfig::MacosTart { .. }));
+    let is_macos_native = matches!(app, Some(AppConfig::MacosNative { .. }));
 
-    if is_macos {
+    if is_macos_tart {
         check_tart()?;
+    } else if is_macos_native {
+        check_native_macos()?;
     } else {
         let _client = check_docker().await?;
     }
@@ -138,6 +179,23 @@ pub async fn run_doctor(config: &Config) -> bool {
         println!("Tart VM ......... skipped (requires macOS on Apple Silicon)");
     }
 
+    // Native macOS check (informational — only relevant on macOS)
+    if cfg!(target_os = "macos") {
+        print!("Native macOS .... ");
+        let _ = std::io::stdout().flush();
+        match check_native_macos() {
+            Ok(()) => {
+                println!("ok (Screen Recording permission available)");
+            }
+            Err(e) => {
+                println!("limited");
+                println!("  {e}");
+            }
+        }
+    } else {
+        println!("Native macOS .... skipped (requires macOS)");
+    }
+
     // CLI binary check (replaces API key check for CLI-based providers)
     if config.provider == "claude-cli" {
         print!("Claude CLI ..... ");
@@ -194,9 +252,8 @@ pub async fn run_doctor(config: &Config) -> bool {
                 println!("ok (from {source})");
             }
             Err(e) => {
-                println!("MISSING");
+                println!("not configured (set via config, --api-key, or env var)");
                 println!("  {e}");
-                all_ok = false;
             }
         }
     }

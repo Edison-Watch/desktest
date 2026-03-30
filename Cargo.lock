@@ -437,6 +437,7 @@ dependencies = [
  "flate2",
  "futures",
  "httpdate",
+ "libc",
  "predicates",
  "quick-xml",
  "regex",

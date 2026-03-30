@@ -1,8 +1,12 @@
 use std::path::Path;
 
+pub mod native;
+
 use crate::docker::DockerSession;
 use crate::error::AppError;
 use crate::tart::TartSession;
+
+pub use native::NativeSession;
 
 /// Core session trait abstracting the environment (Docker container, Tart VM, native host).
 ///
@@ -46,7 +50,8 @@ pub enum SessionKind {
     Docker(DockerSession),
     /// Tart VM session (macOS desktop testing).
     Tart(TartSession),
-    // Native(NativeSession), — Phase 5
+    /// Native host session (macOS, no VM, no isolation).
+    Native(NativeSession),
 }
 
 impl SessionKind {
@@ -57,7 +62,7 @@ impl SessionKind {
     pub fn as_docker(&self) -> Option<&DockerSession> {
         match self {
             SessionKind::Docker(s) => Some(s),
-            SessionKind::Tart(_) => None,
+            _ => None,
         }
     }
 
@@ -68,7 +73,18 @@ impl SessionKind {
     pub fn as_tart(&self) -> Option<&TartSession> {
         match self {
             SessionKind::Tart(s) => Some(s),
-            SessionKind::Docker(_) => None,
+            _ => None,
+        }
+    }
+
+    /// Access the underlying `NativeSession`, if this is a native session.
+    ///
+    /// Used for native-specific operations that are not part of the `Session`
+    /// trait (e.g., `deploy_app()`, `launch_app()`).
+    pub fn as_native(&self) -> Option<&NativeSession> {
+        match self {
+            SessionKind::Native(s) => Some(s),
+            _ => None,
         }
     }
 }
@@ -148,4 +164,4 @@ macro_rules! forward_session {
     };
 }
 
-forward_session!(Docker, Tart);
+forward_session!(Docker, Tart, Native);

@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "id": "macos-electron-todo",
+  "instruction": "Add a todo item called 'Buy groceries' and verify it appears in the list",
+  "app": {
+    "type": "macos_tart",
+    "base_image": "desktest-macos-electron:latest",
+    "app_path": "./examples/electron-todo-app",
+    "electron": true
+  },
+  "config": [],
+  "evaluator": {
+    "mode": "hybrid",
+    "metrics": [
+      {
+        "type": "command_output",
+        "command": "find /Users/admin -name todos.json -exec cat {} \\;",
+        "expected": "Buy groceries",
+        "match_mode": "contains"
+      }
+    ]
+  },
+  "timeout": 180,
+  "max_steps": 15,
+  "metadata": {
+    "description": "Tests Electron app on macOS: deploy via shared dir, npm install, launch with accessibility flags.",
+    "tags": ["macos", "tart", "electron", "todo-app"],
+    "platform": "macos"
+  }
+}
