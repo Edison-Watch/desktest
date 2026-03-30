@@ -60,6 +60,17 @@ impl SessionKind {
             SessionKind::Tart(_) => None,
         }
     }
+
+    /// Access the underlying `TartSession`, if this is a Tart session.
+    ///
+    /// Used for Tart-specific operations that are not part of the `Session`
+    /// trait (e.g., `deploy_app()`, `launch_app()`).
+    pub fn as_tart(&self) -> Option<&TartSession> {
+        match self {
+            SessionKind::Tart(s) => Some(s),
+            SessionKind::Docker(_) => None,
+        }
+    }
 }
 
 // Implement Session for DockerSession by delegating to existing methods.

@@ -7,6 +7,7 @@ mod config;
 mod docker;
 mod error;
 mod evaluator;
+mod init_macos;
 mod interactive;
 mod logs;
 mod monitor;
@@ -276,7 +277,9 @@ async fn main() {
             );
 
             let needs_llm = !*replay && !task_def.is_programmatic_only();
-            if let Err(e) = preflight::run_preflight(&run_config, needs_llm).await {
+            if let Err(e) =
+                preflight::run_preflight(&run_config, needs_llm, Some(&task_def.app)).await
+            {
                 eprintln!("Preflight check failed: {e}");
                 eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
                 std::process::exit(e.exit_code());
@@ -328,13 +331,14 @@ async fn main() {
                 &cli.resolution,
                 &llm_overrides(&cli),
             );
-            // Skip API key check for suites: tasks are discovered dynamically and
-            // some may be programmatic-only. Each individual run_task call will
-            // check for its own API key requirement.
-            if let Err(e) = preflight::run_preflight(&run_config, false).await {
-                eprintln!("Preflight check failed: {e}");
-                eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
-                std::process::exit(e.exit_code());
+            // Infrastructure check (Docker vs Tart) is deferred to individual
+            // run_task calls — suites may contain a mix of Docker and Tart tasks,
+            // and we don't know the app types until tasks are discovered.
+            // Only check the API key here if it can be validated early.
+            if let Err(e) = preflight::check_api_key(&run_config) {
+                // Non-fatal: some tasks may be programmatic-only or use CLI providers.
+                // Individual run_task calls will fail with a clearer error if needed.
+                tracing::debug!("Suite-level API key check: {e}");
             }
 
             let monitor_handle =
@@ -404,7 +408,9 @@ async fn main() {
             );
 
             let needs_llm = !*replay && !task_def.is_programmatic_only();
-            if let Err(e) = preflight::run_preflight(&run_config, needs_llm).await {
+            if let Err(e) =
+                preflight::run_preflight(&run_config, needs_llm, Some(&task_def.app)).await
+            {
                 eprintln!("Preflight check failed: {e}");
                 eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
                 std::process::exit(e.exit_code());
@@ -467,7 +473,9 @@ async fn main() {
             // run_interactive_step unconditionally creates an LLM provider,
             // so any --step invocation needs an API key regardless of evaluator mode.
             let needs_llm = *step && !*validate_only;
-            if let Err(e) = preflight::run_preflight(&run_config, needs_llm).await {
+            if let Err(e) =
+                preflight::run_preflight(&run_config, needs_llm, Some(&task_def.app)).await
+            {
                 eprintln!("Preflight check failed: {e}");
                 eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
                 std::process::exit(e.exit_code());
@@ -751,7 +759,8 @@ async fn main() {
             );
 
             // Replay mode doesn't need LLM
-            if let Err(e) = preflight::run_preflight(&run_config, false).await {
+            if let Err(e) = preflight::run_preflight(&run_config, false, Some(&task_def.app)).await
+            {
                 eprintln!("Preflight check failed: {e}");
                 eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
                 std::process::exit(e.exit_code());
@@ -829,6 +838,17 @@ async fn main() {
             Ok(()) => std::process::exit(0),
             Err(e) => {
                 eprintln!("Update failed: {e}");
+                std::process::exit(e.exit_code());
+            }
+        },
+        Command::InitMacos {
+            base_image,
+            output_image,
+            with_electron,
+        } => match init_macos::run_init_macos(base_image, output_image, *with_electron).await {
+            Ok(()) => std::process::exit(0),
+            Err(e) => {
+                eprintln!("init-macos failed: {e}");
                 std::process::exit(e.exit_code());
             }
         },

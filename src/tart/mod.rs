@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 
+pub mod deploy;
 pub mod protocol;
+pub mod readiness;
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -296,7 +298,7 @@ impl Session for TartSession {
     }
 }
 
-async fn run_tart_command<I, S>(args: I) -> Result<(), AppError>
+pub async fn run_tart_command<I, S>(args: I) -> Result<(), AppError>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
