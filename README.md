@@ -1,6 +1,6 @@
 # Desktest - Computer Use CLI for testing/QA
 
-Desktest is a CLI tool for automated end-to-end testing of Linux desktop applications using LLM-powered computer use agents. It spins up a disposable Docker container with a virtual desktop, deploys your app, and runs an agent that interacts with it like a real user — clicking, typing, and reading the screen. Deterministic programmatic checks then validate correctness.
+Desktest is a general computer use CLI for automated end-to-end testing of desktop applications using LLM-powered agents. It spins up a disposable Docker container (Linux) or Tart VM (macOS) with a desktop environment, deploys your app, and runs an agent that interacts with it like a real user — clicking, typing, and reading the screen. Deterministic programmatic checks then validate correctness.
 
 > **Warning:** Desktest is beta software under active development. APIs, task schema, and CLI flags may change between releases.
 

@@ -32,7 +32,7 @@ const BRAND_STYLES: Styles = Styles::styled()
 #[command(
     name = "desktest",
     styles = BRAND_STYLES,
-    about = "Automated end-to-end testing for Linux desktop apps using LLM-powered agents",
+    about = "General computer use CLI for automated end-to-end testing with LLM-powered agents",
     version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("DESKTEST_GIT_SHA"), ")"),
     after_help = concat!(
         "\x1b[1;4;38;2;195;255;253mWORKFLOWS:\x1b[0m\n",

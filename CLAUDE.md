@@ -64,21 +64,3 @@ Helper scripts:
 - `docker/screenshot_compare.py` — PIL-based screenshot comparison for visual assertions
 
 Default display resolution: 1920x1080.
-
-### macOS support (`src/tart/`, `macos/`)
-
-Three app types for macOS testing:
-- `macos_tart` — Runs inside a Tart VM (ephemeral clone of a golden image). Requires Apple Silicon + Tart.
-- `macos_native` — Runs directly on the host macOS desktop (no VM, no isolation). Useful for CI on bare-metal Macs.
-
-Tart VM communication uses a shared directory protocol (`tart run --dir`) with a Python VM agent polling for command files — no SSH required.
-
-macOS-specific files:
-- `src/tart/mod.rs` — `TartSession` (VM lifecycle, Session trait impl)
-- `src/tart/protocol.rs` — Shared-directory request/response protocol
-- `src/tart/deploy.rs` — App deployment and launch inside VM
-- `src/tart/readiness.rs` — Desktop and app window readiness checks
-- `src/session/native.rs` — `NativeSession` (host execution, no isolation)
-- `src/init_macos.rs` — `desktest init-macos` golden image preparation
-- `macos/vm-agent.py` — Python agent running inside the VM
-- `macos/a11y-helper/` — Swift accessibility tree extractor (AXUIElement API, TSV output)

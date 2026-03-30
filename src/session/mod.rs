@@ -2,6 +2,7 @@ use std::path::Path;
 
 pub mod native;
 
+use crate::agent::context::Platform;
 use crate::docker::DockerSession;
 use crate::error::AppError;
 use crate::tart::TartSession;
@@ -46,7 +47,7 @@ pub trait Session: Send + Sync {
 /// inner type.
 #[allow(dead_code)]
 pub enum SessionKind {
-    /// Docker container session (Linux desktop testing).
+    /// Docker container session (Linux testing).
     Docker(DockerSession),
     /// Tart VM session (macOS desktop testing).
     Tart(TartSession),
@@ -55,6 +56,14 @@ pub enum SessionKind {
 }
 
 impl SessionKind {
+    /// Return the platform this session is running on.
+    pub fn platform(&self) -> Platform {
+        match self {
+            SessionKind::Docker(_) => Platform::Linux,
+            SessionKind::Tart(_) | SessionKind::Native(_) => Platform::Macos,
+        }
+    }
+
     /// Access the underlying `DockerSession`, if this is a Docker session.
     ///
     /// Used for Docker-specific operations that are not part of the `Session`
