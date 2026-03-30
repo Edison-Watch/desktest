@@ -425,7 +425,7 @@ dependencies = [
 
 [[package]]
 name = "desktest"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "assert_cmd",
  "axum",
@@ -454,6 +454,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "tracing-subscriber",
+ "url",
  "wiremock",
 ]
 

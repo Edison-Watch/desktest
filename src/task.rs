@@ -114,6 +114,10 @@ pub enum AppConfig {
         image: String,
         #[serde(default)]
         entrypoint_cmd: Option<String>,
+        /// When true, the container gets `CAP_SYS_ADMIN` and `/dev/fuse`.
+        /// Required for custom images that need FUSE (e.g. for mounting filesystems).
+        #[serde(default)]
+        needs_fuse: bool,
     },
     /// Attach to an existing running desktop (used with `desktest attach`).
     /// The app section is ignored in attach mode; this variant exists so
@@ -527,6 +531,7 @@ fn apply_secrets_to_app(
         AppConfig::DockerImage {
             image,
             entrypoint_cmd,
+            ..
         } => {
             *image = substitute_secrets(image, resolved, defined)?;
             if let Some(cmd) = entrypoint_cmd {
@@ -1127,6 +1132,7 @@ mod tests {
             AppConfig::DockerImage {
                 image,
                 entrypoint_cmd,
+                ..
             } => {
                 assert_eq!(image, "my-libreoffice:latest");
                 assert_eq!(entrypoint_cmd.as_deref(), Some("libreoffice --writer"));
@@ -1903,6 +1909,7 @@ mod tests {
             AppConfig::DockerImage {
                 image,
                 entrypoint_cmd,
+                ..
             } => {
                 assert_eq!(image, "registry.local/myapp:stable");
                 assert_eq!(entrypoint_cmd.as_deref(), Some("run --token abc123"));

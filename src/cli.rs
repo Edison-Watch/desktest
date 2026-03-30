@@ -140,6 +140,10 @@ pub struct Cli {
     /// Maximum number of retry attempts for retryable LLM API failures
     #[arg(long, global = true)]
     pub llm_max_retries: Option<usize>,
+
+    /// Disable outbound network access from the container (sets Docker network mode to "none")
+    #[arg(long, default_value_t = false, global = true)]
+    pub no_network: bool,
 }
 
 #[derive(Subcommand, Debug)]
