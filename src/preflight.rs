@@ -89,9 +89,7 @@ fn check_screen_recording() -> Result<(), AppError> {
                      and enable your terminal application."
                         .into(),
                 ))
-            } else if combined.contains("could not create image")
-                || combined.contains("no image")
-            {
+            } else if combined.contains("could not create image") || combined.contains("no image") {
                 Err(AppError::Config(
                     "screencapture failed: no display available.\n\
                      This typically happens in SSH sessions or headless environments.\n\
