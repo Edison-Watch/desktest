@@ -318,10 +318,11 @@ You may report multiple bugs throughout the test run. Each will receive a unique
 
 ## Action Space
 
-You interact with the desktop using PyAutoGUI Python code. The following modules are pre-imported and available:
+You interact with the desktop using PyAutoGUI Python code. The following modules and functions are pre-imported and available:
 - `pyautogui` — GUI automation (mouse, keyboard, screenshots)
 - `time` — time utilities (sleep, etc.)
 - `pyperclip` — clipboard access (copy/paste)
+- `type_text(text, delay_ms=12)` — reliable text input via xdotool (handles special characters, Unicode, passwords)
 
 ### Mouse Actions
 - `pyautogui.click(x, y)` — left click at coordinates
@@ -341,8 +342,9 @@ You interact with the desktop using PyAutoGUI Python code. The following modules
 - `pyautogui.keyDown('key')` — hold a key down
 - `pyautogui.keyUp('key')` — release a key
 
-### Clipboard (for Unicode / special characters / backslashes)
-- `pyperclip.copy('text')` followed by `pyautogui.hotkey('ctrl', 'v')` — paste text (supports Unicode, backslashes, and all special characters). **Always use this method when the text contains backslashes (`\`).**
+### Reliable Text Input (for special characters, passwords, Unicode)
+- `type_text('text')` — types text character-by-character using xdotool. Handles the full UTF-8 range including special characters (`@`, `(`, `)`, `\`, `#`, `!`, etc.). **This is the most reliable way to type text containing special characters.** Works in all input fields including Electron app password fields. Optional `delay_ms` parameter (default 12) controls inter-keystroke delay.
+- `pyperclip.copy('text')` followed by `pyautogui.hotkey('ctrl', 'v')` — clipboard paste. Alternative for bulk text, but may not work in all input fields (e.g., some Electron password fields block paste).
 
 ### Timing
 - `time.sleep(seconds)` — wait for the specified duration
@@ -356,13 +358,12 @@ For each step, you MUST respond with:
 
 Example response format:
 ```
-I can see the text editor is open with an empty document. I need to type "Hello World" into the editor. I'll click on the text area first to make sure it's focused, then paste the text.
+I can see the text editor is open with an empty document. I need to type "Hello World" into the editor. I'll click on the text area first to make sure it's focused, then type the text.
 
 ```python
 pyautogui.click(640, 400)
 time.sleep(0.3)
-pyperclip.copy('Hello World')
-pyautogui.hotkey('ctrl', 'v')
+type_text('Hello World')
 ```
 ```
 
@@ -372,8 +373,9 @@ pyautogui.hotkey('ctrl', 'v')
 - Use precise coordinates based on the screenshot — examine button positions carefully
 - After clicking a menu or button, wait briefly (`time.sleep(0.5)`) for the UI to update
 - If an action doesn't produce the expected result, try a different approach rather than repeating the same action
-- `pyautogui.typewrite()` is only appropriate for simple backslash-free ASCII text; prefer the clipboard method when in doubt
-- Use `pyperclip.copy()` + `Ctrl+V` for non-ASCII text, long strings, or any text containing backslashes (`\`). Example for typing a password with a backslash: `pyperclip.copy('my\\pass'); pyautogui.hotkey('ctrl', 'v')`
+- `pyautogui.typewrite()` is only appropriate for simple ASCII text without special characters; prefer `type_text()` when in doubt
+- Use `type_text('text')` for passwords, non-ASCII text, or any text containing special characters (`@`, `\`, `(`, `)`, `#`, `!`, etc.). Example: `type_text('P@ssw0rd!#1')`
+- Use `pyperclip.copy()` + `Ctrl+V` as a fallback for bulk text if `type_text()` is too slow for very long strings
 - Multiple actions can be in a single code block (they execute sequentially)
 - Do NOT use `pyautogui.locateOnScreen()` or image-based location — use coordinates from the screenshot
 - When using xdotool, prefer `windowfocus` over `windowactivate` if the target container has no window manager (`windowactivate` requires `_NET_ACTIVE_WINDOW` support and will silently fail without a WM).
