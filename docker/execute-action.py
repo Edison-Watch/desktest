@@ -127,6 +127,25 @@ def _safe_builtins():
     return safe
 
 
+def _type_text(text, delay_ms=12):
+    """Type text reliably using xdotool, handling special characters and Unicode.
+
+    This is exposed as type_text() in the sandbox namespace. It bypasses
+    PyAutoGUI's typewrite() limitations (which can't handle @, (, ), \\, #, !,
+    etc.) by calling xdotool type --clearmodifiers directly.
+
+    Args:
+        text: The string to type. Supports full UTF-8.
+        delay_ms: Delay between keystrokes in milliseconds (default 12).
+    """
+    import subprocess
+    subprocess.run(
+        ["xdotool", "type", "--clearmodifiers", "--delay", str(delay_ms), "--", text],
+        check=True,
+        timeout=30,
+    )
+
+
 def main():
     code = sys.stdin.read()
     if not code.strip():
@@ -143,6 +162,7 @@ def main():
     namespace = {
         "pyautogui": _sanitize_module(pyautogui),
         "time": _sanitize_module(time),
+        "type_text": _type_text,
         "__builtins__": _safe_builtins(),
     }
     if pyperclip is not None:
