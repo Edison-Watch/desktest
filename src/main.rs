@@ -264,6 +264,11 @@ async fn main() {
             }
 
             if *replay {
+                if cli.provider.is_some() {
+                    eprintln!(
+                        "Warning: --provider is ignored in --replay mode (replay runs are deterministic, no LLM is used)"
+                    );
+                }
                 if let Err(e) = task_def.apply_replay_override() {
                     eprintln!("Error: {e}");
                     std::process::exit(e.exit_code());
@@ -276,7 +281,7 @@ async fn main() {
                 &llm_overrides(&cli),
             );
 
-            let needs_llm = !*replay && !task_def.is_programmatic_only();
+            let needs_llm = !task_def.replay_mode && !task_def.is_programmatic_only();
             if let Err(e) =
                 preflight::run_preflight(&run_config, needs_llm, Some(&task_def.app)).await
             {
@@ -397,6 +402,11 @@ async fn main() {
             }
 
             if *replay {
+                if cli.provider.is_some() {
+                    eprintln!(
+                        "Warning: --provider is ignored in --replay mode (replay runs are deterministic, no LLM is used)"
+                    );
+                }
                 if let Err(e) = task_def.apply_replay_override() {
                     eprintln!("Error: {e}");
                     std::process::exit(e.exit_code());
@@ -409,7 +419,7 @@ async fn main() {
                 &llm_overrides(&cli),
             );
 
-            let needs_llm = !*replay && !task_def.is_programmatic_only();
+            let needs_llm = !task_def.replay_mode && !task_def.is_programmatic_only();
             if let Err(e) =
                 preflight::run_preflight(&run_config, needs_llm, Some(&task_def.app)).await
             {
