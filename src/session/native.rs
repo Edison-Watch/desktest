@@ -113,8 +113,9 @@ async fn exec_with_timeout(
         .map_err(|e| AppError::Infra(format!("Failed to spawn '{cmd_name}': {e}")))?;
 
     match tokio::time::timeout(timeout, child.wait_with_output()).await {
-        Ok(result) => result
-            .map_err(|e| AppError::Infra(format!("Failed to wait for '{cmd_name}': {e}"))),
+        Ok(result) => {
+            result.map_err(|e| AppError::Infra(format!("Failed to wait for '{cmd_name}': {e}")))
+        }
         Err(_) => {
             // child has kill_on_drop(true), so it will be killed when dropped here
             Err(AppError::Infra(format!(
@@ -246,7 +247,10 @@ impl Session for NativeSession {
             .split_first()
             .ok_or_else(|| AppError::Infra("Empty command".into()))?;
 
-        debug!("native exec_detached_with_log: {} > {log_path}", cmd.join(" "));
+        debug!(
+            "native exec_detached_with_log: {} > {log_path}",
+            cmd.join(" ")
+        );
 
         let log_file = std::fs::File::create(log_path)
             .map_err(|e| AppError::Infra(format!("Failed to create log file '{log_path}': {e}")))?;
@@ -356,10 +360,7 @@ fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<(), AppError> {
     })?;
 
     for entry in std::fs::read_dir(src).map_err(|e| {
-        AppError::Infra(format!(
-            "Failed to read directory '{}': {e}",
-            src.display()
-        ))
+        AppError::Infra(format!("Failed to read directory '{}': {e}", src.display()))
     })? {
         let entry = entry.map_err(|e| AppError::Infra(format!("Directory entry error: {e}")))?;
         let src_path = entry.path();
@@ -406,10 +407,7 @@ mod tests {
     #[tokio::test]
     async fn test_native_exec_with_exit_code_failure() {
         let session = NativeSession::create();
-        let (_, code) = session
-            .exec_with_exit_code(&["false"])
-            .await
-            .unwrap();
+        let (_, code) = session.exec_with_exit_code(&["false"]).await.unwrap();
         assert_eq!(code, 1);
     }
 

@@ -55,10 +55,8 @@ pub fn check_native_macos() -> Result<(), AppError> {
 
     // Best-effort: probe screencapture to detect Screen Recording permission.
     // Use a unique temp file to avoid races when multiple desktest instances run.
-    let probe_path = std::env::temp_dir().join(format!(
-        "desktest-preflight-{}.png",
-        std::process::id()
-    ));
+    let probe_path =
+        std::env::temp_dir().join(format!("desktest-preflight-{}.png", std::process::id()));
     let probe_str = probe_path.to_string_lossy().to_string();
 
     match std::process::Command::new("screencapture")
