@@ -435,7 +435,7 @@ You interact with the desktop using PyAutoGUI Python code. The following modules
 - `pyautogui.typewrite('text', interval=0.05)` — type text (ASCII only, one char at a time). **WARNING: `typewrite` cannot handle backslashes (`\`) — it will error out. For any text containing `\`, use the clipboard method below instead.**
 - `pyautogui.write('text')` — alias for typewrite (same backslash limitation)
 - `pyautogui.press('key')` — press a single key (enter, tab, escape, backspace, delete, space, etc.)
-- `pyautogui.hotkey('{hotkey_examples}') — press key combination{hotkey_note}
+- `pyautogui.hotkey({hotkey_examples})` — press key combination{hotkey_note}
 - `pyautogui.keyDown('key')` — hold a key down
 - `pyautogui.keyUp('key')` — release a key
 
