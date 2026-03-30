@@ -333,6 +333,13 @@ You may report multiple bugs throughout the test run. Each will receive a unique
         Platform::Macos => "command",
     };
 
+    let xdotool_tip = match platform {
+        Platform::Linux => {
+            "\n- When using xdotool, prefer `windowfocus` over `windowactivate` if the target container has no window manager (`windowactivate` requires `_NET_ACTIVE_WINDOW` support and will silently fail without a WM)."
+        }
+        Platform::Macos => "",
+    };
+
     format!(
         r#"You are a professional software tester controlling {platform_desc}. Your task is to interact with the desktop GUI to complete a given objective.
 
@@ -401,8 +408,7 @@ pyautogui.hotkey('{clipboard_paste_key}', 'v')
 - `pyautogui.typewrite()` is only appropriate for simple backslash-free ASCII text; prefer the clipboard method when in doubt
 - Use `pyperclip.copy()` + `pyautogui.hotkey('{clipboard_paste_key}', 'v')` for non-ASCII text, long strings, or any text containing backslashes (`\`). Example for typing a password with a backslash: `pyperclip.copy('my\\pass'); pyautogui.hotkey('{clipboard_paste_key}', 'v')`
 - Multiple actions can be in a single code block (they execute sequentially)
-- Do NOT use `pyautogui.locateOnScreen()` or image-based location — use coordinates from the screenshot
-- When using xdotool, prefer `windowfocus` over `windowactivate` if the target container has no window manager (`windowactivate` requires `_NET_ACTIVE_WINDOW` support and will silently fail without a WM).
+- Do NOT use `pyautogui.locateOnScreen()` or image-based location — use coordinates from the screenshot{xdotool_tip}
 
 ## Special Commands
 
@@ -426,6 +432,7 @@ Use BOTH the screenshot and accessibility tree to understand the current state. 
         platform_desc = platform_desc,
         display_desc = display_desc,
         clipboard_paste_key = clipboard_paste_key,
+        xdotool_tip = xdotool_tip,
         display_width = display_width,
         display_height = display_height,
         max_x = display_width.saturating_sub(1),
@@ -543,7 +550,15 @@ mod tests {
 
     #[test]
     fn test_context_manager_new() {
-        let ctx = ContextManager::new(1920, 1080, "Click the button", 3, false, false, Platform::Linux);
+        let ctx = ContextManager::new(
+            1920,
+            1080,
+            "Click the button",
+            3,
+            false,
+            false,
+            Platform::Linux,
+        );
         assert_eq!(ctx.trajectory_len(), 0);
         assert!(ctx.system_prompt.contains("1920x1080"));
         assert_eq!(ctx.instruction, "Click the button");
@@ -552,7 +567,15 @@ mod tests {
 
     #[test]
     fn test_build_messages_no_trajectory() {
-        let ctx = ContextManager::new(1920, 1080, "Click the button", 3, false, false, Platform::Linux);
+        let ctx = ContextManager::new(
+            1920,
+            1080,
+            "Click the button",
+            3,
+            false,
+            false,
+            Platform::Linux,
+        );
         let obs = make_screenshot_observation();
         let messages = ctx.build_messages(&obs);
 
@@ -574,7 +597,15 @@ mod tests {
 
     #[test]
     fn test_build_messages_with_trajectory() {
-        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 3, false, false, Platform::Linux);
+        let mut ctx = ContextManager::new(
+            1920,
+            1080,
+            "Click the button",
+            3,
+            false,
+            false,
+            Platform::Linux,
+        );
         ctx.push_turn(TrajectoryTurn {
             observation: make_screenshot_observation(),
             response_text: "I see a button. I'll click it.".into(),
@@ -596,7 +627,15 @@ mod tests {
 
     #[test]
     fn test_build_messages_with_error_feedback() {
-        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 3, false, false, Platform::Linux);
+        let mut ctx = ContextManager::new(
+            1920,
+            1080,
+            "Click the button",
+            3,
+            false,
+            false,
+            Platform::Linux,
+        );
         ctx.push_turn(TrajectoryTurn {
             observation: make_screenshot_observation(),
             response_text: "I'll click at (100, 200)".into(),
@@ -616,7 +655,15 @@ mod tests {
 
     #[test]
     fn test_sliding_window_truncation() {
-        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 2, false, false, Platform::Linux);
+        let mut ctx = ContextManager::new(
+            1920,
+            1080,
+            "Click the button",
+            2,
+            false,
+            false,
+            Platform::Linux,
+        );
 
         // Push 4 turns
         for i in 0..4 {
@@ -668,7 +715,15 @@ mod tests {
 
     #[test]
     fn test_fallback_messages_no_trajectory() {
-        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 3, false, false, Platform::Linux);
+        let mut ctx = ContextManager::new(
+            1920,
+            1080,
+            "Click the button",
+            3,
+            false,
+            false,
+            Platform::Linux,
+        );
         ctx.push_turn(TrajectoryTurn {
             observation: make_screenshot_observation(),
             response_text: "Turn 0".into(),
