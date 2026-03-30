@@ -241,6 +241,13 @@ pub(crate) async fn run_task(
         ));
     }
 
+    // Guard: macos_native not yet supported (Phase 5)
+    if matches!(task_def.app, task::AppConfig::MacosNative { .. }) {
+        return Err(AppError::Config(
+            "MacosNative app type is not yet supported. Use 'macos_tart' for macOS testing.".into(),
+        ));
+    }
+
     // Resolve secrets from environment variables and apply substitution
     let resolved_secrets = task_def.resolve_secrets()?;
     task_def.apply_secrets(&resolved_secrets)?;
@@ -259,13 +266,7 @@ pub(crate) async fn run_task(
     std::fs::create_dir_all(&artifacts_dir)
         .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
 
-    // Determine custom Docker image and FUSE requirement from task definition
-    let (custom_image, needs_fuse) = match &task_def.app {
-        task::AppConfig::DockerImage {
-            image, needs_fuse, ..
-        } => (Some(image.as_str()), *needs_fuse),
-        _ => (None, false),
-    };
+    let is_macos_tart = matches!(task_def.app, task::AppConfig::MacosTart { .. });
 
     let extra_env = if resolved_secrets.is_empty() {
         None
@@ -273,21 +274,45 @@ pub(crate) async fn run_task(
         Some(&resolved_secrets)
     };
 
-    // Build electron image + create container (inside select! so Ctrl+C works)
-    info!("Creating Docker container...");
-    let session = tokio::select! {
-        biased;
-        _ = tokio::signal::ctrl_c() => {
-            eprintln!("\nInterrupted (Ctrl+C) during container setup");
-            return Err(AppError::Infra("Interrupted by user".into()));
-        }
-        r = async {
-            let effective_image = resolve_image_name(&config, custom_image).await?;
-            docker::DockerSession::create(&config, effective_image, extra_env, run.no_network, needs_fuse).await
-        } => r?,
-    };
+    // Create session: Docker container or Tart VM (inside select! so Ctrl+C works)
+    let session: SessionKind = if is_macos_tart {
+        let base_image = match &task_def.app {
+            task::AppConfig::MacosTart { base_image, .. } => base_image.as_str(),
+            _ => unreachable!(),
+        };
+        info!("Creating Tart VM from '{base_image}'...");
+        let tart_session = tokio::select! {
+            biased;
+            _ = tokio::signal::ctrl_c() => {
+                eprintln!("\nInterrupted (Ctrl+C) during VM setup");
+                return Err(AppError::Infra("Interrupted by user".into()));
+            }
+            r = crate::tart::TartSession::create(base_image) => r?,
+        };
+        SessionKind::Tart(tart_session)
+    } else {
+        // Determine custom Docker image and FUSE requirement from task definition
+        let (custom_image, needs_fuse) = match &task_def.app {
+            task::AppConfig::DockerImage {
+                image, needs_fuse, ..
+            } => (Some(image.as_str()), *needs_fuse),
+            _ => (None, false),
+        };
 
-    let session = SessionKind::Docker(session);
+        info!("Creating Docker container...");
+        let docker_session = tokio::select! {
+            biased;
+            _ = tokio::signal::ctrl_c() => {
+                eprintln!("\nInterrupted (Ctrl+C) during container setup");
+                return Err(AppError::Infra("Interrupted by user".into()));
+            }
+            r = async {
+                let effective_image = resolve_image_name(&config, custom_image).await?;
+                docker::DockerSession::create(&config, effective_image, extra_env, run.no_network, needs_fuse).await
+            } => r?,
+        };
+        SessionKind::Docker(docker_session)
+    };
 
     let ctx = TaskContext {
         task_def: &task_def,
@@ -419,9 +444,15 @@ async fn run_task_inner(
         }
     );
 
+    let is_macos = matches!(task_def.app, task::AppConfig::MacosTart { .. });
+
     // 1. Wait for desktop to be ready
     info!("Waiting for desktop to be ready...");
-    readiness::wait_for_desktop(session, timeout, run.debug).await?;
+    if is_macos {
+        crate::tart::readiness::wait_for_desktop_macos(session, timeout, run.debug).await?;
+    } else {
+        readiness::wait_for_desktop(session, timeout, run.debug).await?;
+    }
 
     // 1b. Validate custom image dependencies (after desktop is ready so X11-dependent imports work)
     let is_docker_image = matches!(task_def.app, task::AppConfig::DockerImage { .. });
@@ -433,7 +464,13 @@ async fn run_task_inner(
     }
 
     // 2. Deploy app (before setup steps, so setup can reference deployed files)
-    let app_path = if is_docker_image {
+    let app_path = if is_macos {
+        info!("Deploying app to macOS VM...");
+        let tart = session
+            .as_tart()
+            .expect("Tart session required for macOS app deployment");
+        tart.deploy_app(&task_def.app).await?
+    } else if is_docker_image {
         info!("Custom Docker image: skipping app deployment");
         String::new()
     } else {
@@ -451,7 +488,27 @@ async fn run_task_inner(
     }
 
     // 4. Launch app
-    if is_docker_image {
+    if is_macos {
+        // macOS: get baseline, launch, wait for new app window
+        info!("Waiting for stable process baseline...");
+        let baseline_procs = crate::tart::readiness::get_stable_gui_process_list(session).await?;
+
+        let tart = session
+            .as_tart()
+            .expect("Tart session required for macOS app launch");
+        tart.launch_app(&task_def.app, &app_path).await?;
+
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+        info!("Waiting for app window...");
+        crate::tart::readiness::wait_for_app_window_macos(
+            session,
+            &baseline_procs,
+            timeout,
+            run.debug,
+        )
+        .await?;
+    } else if is_docker_image {
         if let task::AppConfig::DockerImage { entrypoint_cmd, .. } = &task_def.app {
             if let Some(cmd) = entrypoint_cmd {
                 info!("Waiting for stable window baseline...");
@@ -1018,6 +1075,8 @@ pub(crate) async fn run_attach(
             task::AppConfig::Appimage { .. } => "appimage",
             task::AppConfig::Folder { .. } => "folder",
             task::AppConfig::DockerImage { .. } => "docker_image",
+            task::AppConfig::MacosTart { .. } => "macos_tart",
+            task::AppConfig::MacosNative { .. } => "macos_native",
             task::AppConfig::VncAttach { .. } => unreachable!(),
         };
         tracing::warn!(

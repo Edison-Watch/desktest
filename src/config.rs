@@ -45,6 +45,8 @@ pub enum AppType {
     Folder,
     DockerImage,
     VncAttach,
+    MacosTart,
+    MacosNative,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -189,6 +191,14 @@ impl Config {
                 self.app_type = AppType::VncAttach;
                 self.electron = false;
             }
+            crate::task::AppConfig::MacosTart { electron, .. } => {
+                self.app_type = AppType::MacosTart;
+                self.electron = *electron;
+            }
+            crate::task::AppConfig::MacosNative { .. } => {
+                self.app_type = AppType::MacosNative;
+                self.electron = false;
+            }
         }
     }
 
@@ -246,6 +256,12 @@ impl Config {
             }
             AppType::VncAttach => {
                 // No validation needed — container is managed externally
+            }
+            AppType::MacosTart => {
+                // Validation happens in task.rs (base_image + launch method check)
+            }
+            AppType::MacosNative => {
+                // Validation happens in task.rs (bundle_id or app_path check)
             }
         }
 

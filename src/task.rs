@@ -126,6 +126,38 @@ pub enum AppConfig {
         #[serde(default)]
         note: Option<String>,
     },
+    /// Run a macOS app inside a Tart VM (Apple Virtualization.framework).
+    ///
+    /// At least one of `bundle_id`, `app_path`, or `launch_cmd` must be provided.
+    /// If `launch_cmd` is set it takes precedence; otherwise `open -b <bundle_id>`
+    /// or `open <app_path>` is used.
+    MacosTart {
+        /// Tart base image to clone (e.g., "desktest-macos:latest").
+        base_image: String,
+        /// macOS bundle identifier (e.g., "com.apple.TextEdit"). Used with `open -b`.
+        #[serde(default)]
+        bundle_id: Option<String>,
+        /// Path to a .app bundle inside the VM or on the host for deployment.
+        #[serde(default)]
+        app_path: Option<String>,
+        /// Arbitrary launch command (takes precedence over bundle_id / app_path).
+        #[serde(default)]
+        launch_cmd: Option<String>,
+        /// Whether this is an Electron app (adds accessibility flags).
+        #[serde(default)]
+        electron: bool,
+    },
+    /// Test a macOS app on the host desktop (no VM, no isolation).
+    ///
+    /// At least one of `bundle_id` or `app_path` must be provided.
+    MacosNative {
+        /// macOS bundle identifier (e.g., "com.apple.TextEdit").
+        #[serde(default)]
+        bundle_id: Option<String>,
+        /// Path to a .app bundle on the host.
+        #[serde(default)]
+        app_path: Option<String>,
+    },
 }
 
 /// A setup step to execute before the agent loop.
@@ -509,6 +541,35 @@ fn apply_secrets_to_app(
         AppConfig::VncAttach { note } => {
             if let Some(text) = note {
                 *text = substitute_secrets(text, resolved, defined)?;
+            }
+        }
+        AppConfig::MacosTart {
+            base_image,
+            bundle_id,
+            app_path,
+            launch_cmd,
+            ..
+        } => {
+            *base_image = substitute_secrets(base_image, resolved, defined)?;
+            if let Some(bid) = bundle_id {
+                *bid = substitute_secrets(bid, resolved, defined)?;
+            }
+            if let Some(ap) = app_path {
+                *ap = substitute_secrets(ap, resolved, defined)?;
+            }
+            if let Some(cmd) = launch_cmd {
+                *cmd = substitute_secrets(cmd, resolved, defined)?;
+            }
+        }
+        AppConfig::MacosNative {
+            bundle_id,
+            app_path,
+        } => {
+            if let Some(bid) = bundle_id {
+                *bid = substitute_secrets(bid, resolved, defined)?;
+            }
+            if let Some(ap) = app_path {
+                *ap = substitute_secrets(ap, resolved, defined)?;
             }
         }
     }
@@ -917,6 +978,39 @@ impl TaskDefinition {
                     }
                 }
             }
+        }
+
+        // Validate macOS app config: at least one launch method must be specified
+        match &self.app {
+            AppConfig::MacosTart {
+                base_image,
+                bundle_id,
+                app_path,
+                launch_cmd,
+                ..
+            } => {
+                if base_image.is_empty() {
+                    return Err(AppError::Config(
+                        "MacosTart app: 'base_image' must not be empty.".into(),
+                    ));
+                }
+                if bundle_id.is_none() && app_path.is_none() && launch_cmd.is_none() {
+                    return Err(AppError::Config(
+                        "MacosTart app: at least one of 'bundle_id', 'app_path', or 'launch_cmd' must be specified.".into(),
+                    ));
+                }
+            }
+            AppConfig::MacosNative {
+                bundle_id,
+                app_path,
+            } => {
+                if bundle_id.is_none() && app_path.is_none() {
+                    return Err(AppError::Config(
+                        "MacosNative app: at least one of 'bundle_id' or 'app_path' must be specified.".into(),
+                    ));
+                }
+            }
+            _ => {}
         }
 
         Ok(())
