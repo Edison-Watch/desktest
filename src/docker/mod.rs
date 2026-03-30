@@ -359,7 +359,9 @@ mod tests {
     #[ignore] // Requires Docker daemon
     async fn test_container_create_start_stop() {
         let config = test_config();
-        let session = DockerSession::create(&config, None, None, false, false).await.unwrap();
+        let session = DockerSession::create(&config, None, None, false, false)
+            .await
+            .unwrap();
 
         let inspect = session
             .client
@@ -381,7 +383,9 @@ mod tests {
     #[ignore] // Requires Docker daemon
     async fn test_exec_command() {
         let config = test_config();
-        let session = DockerSession::create(&config, None, None, false, false).await.unwrap();
+        let session = DockerSession::create(&config, None, None, false, false)
+            .await
+            .unwrap();
 
         let output = session.exec(&["echo", "hello"]).await.unwrap();
         assert!(output.trim().contains("hello"));
@@ -393,7 +397,9 @@ mod tests {
     #[ignore] // Requires Docker daemon
     async fn test_copy_file_into_container() {
         let config = test_config();
-        let session = DockerSession::create(&config, None, None, false, false).await.unwrap();
+        let session = DockerSession::create(&config, None, None, false, false)
+            .await
+            .unwrap();
 
         let tmp = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(tmp.path(), b"test content").unwrap();
@@ -465,7 +471,9 @@ mod tests {
     async fn test_attach_to_running_container() {
         // Create a container, then attach to it
         let config = test_config();
-        let session = DockerSession::create(&config, None, None, false, false).await.unwrap();
+        let session = DockerSession::create(&config, None, None, false, false)
+            .await
+            .unwrap();
         let container_id = session.container_id.clone();
 
         // Attach to it by ID
