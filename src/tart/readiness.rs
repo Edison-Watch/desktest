@@ -80,22 +80,31 @@ pub async fn wait_for_app_window_macos(
     }
 }
 
-/// Get the current list of GUI applications via AppleScript.
+/// Get the current list of visible GUI applications via `lsappinfo`.
 ///
-/// Returns process names of visible (non-background) applications.
+/// Uses `lsappinfo visibleProcessList` which does not require TCC Automation
+/// permissions (unlike `osascript` → System Events, which hangs indefinitely
+/// in Tart VMs without pre-granted TCC access).
+///
+/// Output format: `ASN:0x0-0xc00c-"Finder":` — one entry per visible app.
 pub async fn get_gui_process_list(session: &SessionKind) -> Result<Vec<String>, AppError> {
     let output = session
-        .exec(&[
-            "osascript",
-            "-e",
-            "tell application \"System Events\" to get name of every process whose background only is false",
-        ])
+        .exec(&["lsappinfo", "visibleProcessList"])
         .await?;
 
     let procs: Vec<String> = output
-        .split(", ")
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
+        .lines()
+        .filter_map(|line| {
+            // Parse: ASN:0x0-0xc00c-"AppName":
+            let start = line.find('"')?;
+            let end = line[start + 1..].find('"')?;
+            let name = &line[start + 1..start + 1 + end];
+            if name.is_empty() {
+                None
+            } else {
+                Some(name.to_string())
+            }
+        })
         .collect();
 
     Ok(procs)
