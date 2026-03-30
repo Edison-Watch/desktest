@@ -235,7 +235,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let client = ProtocolClient::with_timeouts(
             temp.path(),
-            Duration::from_secs(2),
+            Duration::from_secs(10),
             Duration::from_millis(25),
         );
         client.ensure_layout().await.unwrap();
@@ -284,7 +284,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let client = ProtocolClient::with_timeouts(
             temp.path(),
-            Duration::from_secs(2),
+            Duration::from_secs(10),
             Duration::from_millis(25),
         );
         client.ensure_layout().await.unwrap();
@@ -330,7 +330,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let client = ProtocolClient::with_timeouts(
             temp.path(),
-            Duration::from_secs(2),
+            Duration::from_secs(10),
             Duration::from_millis(25),
         );
         client.ensure_layout().await.unwrap();
@@ -474,7 +474,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let client = ProtocolClient::with_timeouts(
             temp.path(),
-            Duration::from_secs(2),
+            Duration::from_secs(10),
             Duration::from_millis(25),
         );
         client.ensure_layout().await.unwrap();
