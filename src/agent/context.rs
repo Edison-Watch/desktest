@@ -266,8 +266,28 @@ Do NOT use bash to launch GUI applications or perform actions that should be don
         ""
     };
 
+    let qa_diagnostic_commands = match platform {
+        Platform::Linux => {
+            r#"- `cat /tmp/app.log` — check application log for errors, stack traces, warnings
+- `ps aux | grep <app_name>` — verify process state (crashed? zombie? high CPU/memory?)
+- `dmesg | tail -20` — check for kernel-level issues (segfaults, OOM kills)
+- `ls -la <relevant_paths>` — verify file state (missing files, wrong permissions, corrupted output)
+- `cat /proc/$(pgrep <app_name>)/status` — check process memory and resource usage
+- `journalctl --no-pager -n 50 2>/dev/null || true` — check system logs for D-Bus errors, GTK warnings
+- `xdotool getactivewindow getwindowname 2>/dev/null || true` — verify current window state"#
+        }
+        Platform::Macos => {
+            r#"- `cat /tmp/app.log` — check application log for errors, stack traces, warnings
+- `ps aux | grep <app_name>` — verify process state (crashed? zombie? high CPU/memory?)
+- `ls -la <relevant_paths>` — verify file state (missing files, wrong permissions, corrupted output)
+- `log show --predicate 'process == "<app_name>"' --last 5m 2>/dev/null | tail -50` — check system logs
+- `osascript -e 'tell application "System Events" to get name of first process whose frontmost is true'` — verify current frontmost app"#
+        }
+    };
+
     let qa_section = if qa {
-        r#"
+        format!(
+            r##"
 
 ## QA Bug Reporting Mode (ACTIVE)
 
@@ -283,13 +303,7 @@ You are also acting as a QA tester. While completing your task, watch for **appl
 
 Before reporting a bug, use bash commands to gather diagnostic evidence. You have bash access — use it! Run these as appropriate:
 
-- `cat /tmp/app.log` — check application log for errors, stack traces, warnings
-- `ps aux | grep <app_name>` — verify process state (crashed? zombie? high CPU/memory?)
-- `dmesg | tail -20` — check for kernel-level issues (segfaults, OOM kills)
-- `ls -la <relevant_paths>` — verify file state (missing files, wrong permissions, corrupted output)
-- `cat /proc/$(pgrep <app_name>)/status` — check process memory and resource usage
-- `journalctl --no-pager -n 50 2>/dev/null || true` — check system logs for D-Bus errors, GTK warnings
-- `xdotool getactivewindow getwindowname 2>/dev/null || true` — verify current window state
+{qa_diagnostic_commands}
 
 Gather this evidence **before** emitting the BUG command so your report includes concrete data, not just visual observations.
 
@@ -306,9 +320,11 @@ BUG
 
 After reporting a bug, **continue your task normally**. You can include code blocks in the same response as a BUG report. The bug will be logged and you should proceed with your objective.
 
-You may report multiple bugs throughout the test run. Each will receive a unique ID."#
+You may report multiple bugs throughout the test run. Each will receive a unique ID."##,
+            qa_diagnostic_commands = qa_diagnostic_commands,
+        )
     } else {
-        ""
+        String::new()
     };
 
     let bug_command_line = if qa {
@@ -333,9 +349,28 @@ You may report multiple bugs throughout the test run. Each will receive a unique
         Platform::Macos => "command",
     };
 
+    let hotkey_examples = match platform {
+        Platform::Linux => "'ctrl', 'a'",
+        Platform::Macos => "'command', 'a'",
+    };
+
+    let hotkey_note = match platform {
+        Platform::Linux => " (ctrl+a, alt+f4, ctrl+shift+s, etc.)",
+        Platform::Macos => {
+            " (command+a, command+q, command+shift+s, etc.). **On macOS, use `command` instead of `ctrl` for most shortcuts.**"
+        }
+    };
+
     let xdotool_tip = match platform {
         Platform::Linux => {
             "\n- When using xdotool, prefer `windowfocus` over `windowactivate` if the target container has no window manager (`windowactivate` requires `_NET_ACTIVE_WINDOW` support and will silently fail without a WM)."
+        }
+        Platform::Macos => "",
+    };
+
+    let type_text_import = match platform {
+        Platform::Linux => {
+            "\n- `type_text(text, delay_ms=12)` — reliable text input via xdotool (handles special characters, Unicode, passwords)"
         }
         Platform::Macos => "",
     };
@@ -384,8 +419,7 @@ You may report multiple bugs throughout the test run. Each will receive a unique
 You interact with the desktop using PyAutoGUI Python code. The following modules and functions are pre-imported and available:
 - `pyautogui` — GUI automation (mouse, keyboard, screenshots)
 - `time` — time utilities (sleep, etc.)
-- `pyperclip` — clipboard access (copy/paste)
-- `type_text(text, delay_ms=12)` — reliable text input via xdotool (handles special characters, Unicode, passwords)
+- `pyperclip` — clipboard access (copy/paste){type_text_import}
 
 ### Mouse Actions
 - `pyautogui.click(x, y)` — left click at coordinates
@@ -401,7 +435,7 @@ You interact with the desktop using PyAutoGUI Python code. The following modules
 - `pyautogui.typewrite('text', interval=0.05)` — type text (ASCII only, one char at a time). **WARNING: `typewrite` cannot handle backslashes (`\`) — it will error out. For any text containing `\`, use the clipboard method below instead.**
 - `pyautogui.write('text')` — alias for typewrite (same backslash limitation)
 - `pyautogui.press('key')` — press a single key (enter, tab, escape, backspace, delete, space, etc.)
-- `pyautogui.hotkey('ctrl', 'a')` — press key combination (ctrl+a, alt+f4, ctrl+shift+s, etc.)
+- `pyautogui.hotkey('{hotkey_examples}') — press key combination{hotkey_note}
 - `pyautogui.keyDown('key')` — hold a key down
 - `pyautogui.keyUp('key')` — release a key
 
@@ -461,6 +495,9 @@ Use BOTH the screenshot and accessibility tree to understand the current state. 
         platform_desc = platform_desc,
         display_desc = display_desc,
         clipboard_paste_key = clipboard_paste_key,
+        type_text_import = type_text_import,
+        hotkey_examples = hotkey_examples,
+        hotkey_note = hotkey_note,
         xdotool_tip = xdotool_tip,
         type_text_section = type_text_section,
         clipboard_caveat = clipboard_caveat,
@@ -554,6 +591,19 @@ mod tests {
         assert!(prompt.contains("windowfocus"));
         assert!(prompt.contains("windowactivate"));
         assert!(prompt.contains("no window manager"));
+    }
+
+    #[test]
+    fn test_system_prompt_platform_macos() {
+        let prompt = build_system_prompt(1920, 1080, false, false, Platform::Macos);
+        assert!(prompt.contains("macOS desktop environment"));
+        assert!(prompt.contains("'command', 'v'"));
+        assert!(prompt.contains("'command', 'a'"));
+        assert!(!prompt.contains("Xvfb"));
+        assert!(!prompt.contains("xdotool"));
+        assert!(!prompt.contains("type_text"));
+        assert!(!prompt.contains("'ctrl', 'v'"));
+        assert!(!prompt.contains("'ctrl', 'a'"));
     }
 
     #[test]
