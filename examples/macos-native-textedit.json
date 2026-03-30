@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "id": "macos-native-textedit-hello",
+  "instruction": "Open a new document in TextEdit, type 'Hello World', and save the file as 'hello.txt' on the Desktop.",
+  "app": {
+    "type": "macos_native",
+    "bundle_id": "com.apple.TextEdit"
+  },
+  "config": [],
+  "evaluator": {
+    "mode": "hybrid",
+    "metrics": [
+      {
+        "type": "file_exists",
+        "path": "~/Desktop/hello.txt"
+      },
+      {
+        "type": "command_output",
+        "command": "cat ~/Desktop/hello.txt",
+        "match_mode": "contains",
+        "expected": "Hello World"
+      }
+    ]
+  },
+  "timeout": 120,
+  "max_steps": 15,
+  "metadata": {
+    "description": "Tests basic macOS text editing in native mode (no VM). Requires a local desktop session with Accessibility, Automation, and Screen Recording permissions.",
+    "tags": ["macos", "native", "textedit", "text-editing"],
+    "platform": "macos"
+  }
+}

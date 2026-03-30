@@ -45,7 +45,8 @@ pub fn check_tart() -> Result<(), AppError> {
 
 /// Check that we're running on macOS (required for native sessions).
 ///
-/// Performs best-effort TCC permission detection by probing screencapture.
+/// Performs best-effort TCC permission detection by probing screencapture
+/// and osascript (Automation).
 pub fn check_native_macos() -> Result<(), AppError> {
     if cfg!(not(target_os = "macos")) {
         return Err(AppError::Config(
@@ -53,8 +54,14 @@ pub fn check_native_macos() -> Result<(), AppError> {
         ));
     }
 
-    // Best-effort: probe screencapture to detect Screen Recording permission.
-    // Use a unique temp file to avoid races when multiple desktest instances run.
+    check_screen_recording()?;
+    check_automation()?;
+
+    Ok(())
+}
+
+/// Probe screencapture to detect Screen Recording permission and display availability.
+fn check_screen_recording() -> Result<(), AppError> {
     let probe_path =
         std::env::temp_dir().join(format!("desktest-preflight-{}.png", std::process::id()));
     let probe_str = probe_path.to_string_lossy().to_string();
@@ -67,26 +74,117 @@ pub fn check_native_macos() -> Result<(), AppError> {
     {
         Ok(output) if output.status.success() => {
             let _ = std::fs::remove_file(&probe_path);
+            Ok(())
         }
         Ok(output) => {
             let _ = std::fs::remove_file(&probe_path);
             let stderr = String::from_utf8_lossy(&output.stderr);
-            if stderr.contains("permission") || stderr.contains("TCC") {
-                return Err(AppError::Config(
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let combined = format!("{stderr}{stdout}");
+
+            if combined.contains("permission") || combined.contains("TCC") {
+                Err(AppError::Config(
                     "Screen Recording permission is not granted.\n\
                      Go to System Settings → Privacy & Security → Screen Recording\n\
                      and enable your terminal application."
                         .into(),
-                ));
+                ))
+            } else if combined.contains("could not create image") || combined.contains("no image") {
+                Err(AppError::Config(
+                    "screencapture failed: no display available.\n\
+                     This typically happens in SSH sessions or headless environments.\n\
+                     Native macOS testing requires a local desktop session (GUI login, VNC, or \
+                     Screen Sharing)."
+                        .into(),
+                ))
+            } else {
+                // Unknown screencapture failure — report it
+                Err(AppError::Config(format!(
+                    "screencapture failed (exit {}): {}\n\
+                     Native macOS testing requires a working display and Screen Recording \
+                     permission.",
+                    output.status.code().unwrap_or(-1),
+                    combined.trim()
+                )))
             }
-            // screencapture failed but not clearly a TCC issue — continue
         }
         Err(_) => {
             // screencapture not found — unexpected on macOS, but not fatal
+            Ok(())
         }
     }
+}
 
-    Ok(())
+/// Probe osascript to detect Automation (System Events) permission.
+///
+/// Uses a short timeout because osascript hangs indefinitely when macOS
+/// shows a TCC permission dialog (common in SSH sessions where nobody
+/// can click "Allow").
+fn check_automation() -> Result<(), AppError> {
+    use std::process::Stdio;
+    use std::time::Duration;
+
+    let timeout = Duration::from_secs(5);
+
+    let child = std::process::Command::new("osascript")
+        .args(["-e", "tell application \"System Events\" to return 1"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn();
+
+    let mut child = match child {
+        Ok(c) => c,
+        Err(_) => return Ok(()), // osascript not found — not fatal
+    };
+
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => return Ok(()),
+            Ok(Some(status)) => {
+                let stderr = child
+                    .stderr
+                    .take()
+                    .and_then(|mut s| {
+                        use std::io::Read;
+                        let mut buf = String::new();
+                        s.read_to_string(&mut buf).ok().map(|_| buf)
+                    })
+                    .unwrap_or_default();
+                return Err(AppError::Config(format!(
+                    "Automation permission check failed (exit {}).\n\
+                     {}\n\
+                     Go to System Settings → Privacy & Security → Automation\n\
+                     and enable your terminal application for System Events.",
+                    status.code().unwrap_or(-1),
+                    stderr.trim()
+                )));
+            }
+            Ok(None) => {
+                if start.elapsed() > timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(AppError::Config(
+                        "Automation permission check timed out.\n\
+                         osascript hung for 5s — this usually means macOS is showing a \
+                         permission dialog that cannot be dismissed (e.g., in an SSH session).\n\
+                         \n\
+                         Fix: grant Automation permission to your terminal app:\n\
+                         System Settings → Privacy & Security → Automation → enable System Events\n\
+                         \n\
+                         Or connect via Screen Sharing / VNC to dismiss the dialog."
+                            .into(),
+                    ));
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(e) => {
+                return Err(AppError::Infra(format!(
+                    "Failed to check Automation permission: {e}"
+                )));
+            }
+        }
+    }
 }
 
 /// Check that an API key is available for the configured provider.
@@ -188,13 +286,19 @@ pub async fn run_doctor(config: &Config) -> bool {
     if cfg!(target_os = "macos") {
         print!("Native macOS .... ");
         let _ = std::io::stdout().flush();
-        match check_native_macos() {
-            Ok(()) => {
-                println!("ok (Screen Recording permission available)");
+
+        let screen_result = check_screen_recording();
+        let automation_result = check_automation();
+
+        if screen_result.is_ok() && automation_result.is_ok() {
+            println!("ok (Screen Recording + Automation permissions available)");
+        } else {
+            println!("limited");
+            if let Err(e) = screen_result {
+                println!("  Screen Recording: {e}");
             }
-            Err(e) => {
-                println!("limited");
-                println!("  {e}");
+            if let Err(e) = automation_result {
+                println!("  Automation: {e}");
             }
         }
     } else {

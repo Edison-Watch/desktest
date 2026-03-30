@@ -47,6 +47,32 @@ desktest run examples/electron-todo.json
 
 See [ELECTRON_QUICKSTART.md](ELECTRON_QUICKSTART.md) for a complete guide to testing Electron apps.
 
+### `macos-textedit.json` — macOS TextEdit (Tart VM)
+
+Tests basic text editing on macOS inside a Tart VM. Requires Apple Silicon, Tart, and a golden image prepared with `desktest init-macos`.
+
+```bash
+desktest run examples/macos-textedit.json --config config.json
+```
+
+### `macos-electron.json` — macOS Electron App (Tart VM)
+
+Deploys and tests an Electron todo app inside a Tart VM. Requires the `desktest-macos-electron:latest` golden image.
+
+```bash
+desktest run examples/macos-electron.json --config config.json
+```
+
+### `macos-native-textedit.json` — macOS TextEdit (Native, No VM)
+
+Same TextEdit test but using `macos_native` mode — runs directly on the host macOS desktop with no VM isolation. Useful for quick local iteration without setting up Tart. Requires a local desktop session (not SSH) with Accessibility, Automation, and Screen Recording permissions granted.
+
+```bash
+desktest run examples/macos-native-textedit.json --config config.json
+```
+
+See [docs/macos-support.md](../docs/macos-support.md) for the full macOS testing guide.
+
 ## Custom Docker Images
 
 `Dockerfile.libreoffice` shows how to create a compatible custom image.
@@ -121,7 +147,7 @@ See `src/task.rs` for the full schema definition. Key fields:
   "id": "unique-test-id",
   "instruction": "What the agent should do",
   "completion_condition": "Optional — when the agent should consider the task done",
-  "app": { "type": "appimage|folder|docker_image|vnc_attach", "..." : "..." },
+  "app": { "type": "appimage|folder|docker_image|vnc_attach|macos_tart|macos_native", "..." : "..." },
   "config": [ { "type": "execute|copy|open|sleep", "..." : "..." } ],
   "evaluator": {
     "mode": "llm|programmatic|hybrid",

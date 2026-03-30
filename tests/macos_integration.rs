@@ -58,6 +58,11 @@ fn validate_macos_electron_example() {
     validate_task("examples/macos-electron.json");
 }
 
+#[test]
+fn validate_macos_native_textedit_example() {
+    validate_task("examples/macos-native-textedit.json");
+}
+
 // ── CLI preflight tests ─────────────────────────────────────────────
 
 #[test]
