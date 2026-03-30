@@ -127,28 +127,38 @@ def _safe_builtins():
     return safe
 
 
-def _type_text(text, delay_ms=12):
-    """Type text reliably using xdotool, handling special characters and Unicode.
+def _make_type_text():
+    """Factory that returns a type_text closure whose __globals__ doesn't
+    include the script's os/sys/pathlib imports — defense-in-depth against
+    sandbox escape via type_text.__globals__['os']."""
+    import subprocess as _sp
 
-    This is exposed as type_text() in the sandbox namespace. It bypasses
-    PyAutoGUI's typewrite() limitations (which can't handle @, (, ), \\, #, !,
-    etc.) by calling xdotool type --clearmodifiers directly.
+    def type_text(text, delay_ms=12):
+        """Type text reliably using xdotool, handling special characters and Unicode.
 
-    Args:
-        text: The string to type. Supports full UTF-8.
-        delay_ms: Delay between keystrokes in milliseconds (default 12).
-    """
-    import subprocess
-    delay_ms = max(0, int(delay_ms))
-    estimated_s = len(text) * delay_ms / 1000
-    effective_timeout = max(30, estimated_s + 5)
-    subprocess.run(
-        ["xdotool", "type", "--clearmodifiers", "--delay", str(delay_ms), "--", text],
-        check=True,
-        timeout=effective_timeout,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-    )
+        Exposed as type_text() in the sandbox namespace. Bypasses PyAutoGUI's
+        typewrite() limitations (which can't handle @, (, ), \\, #, !, etc.)
+        by calling xdotool type --clearmodifiers directly.
+
+        Args:
+            text: The string to type. Supports full UTF-8.
+            delay_ms: Delay between keystrokes in milliseconds (default 12).
+        """
+        delay_ms = max(0, int(delay_ms))
+        estimated_s = len(text) * delay_ms / 1000
+        effective_timeout = max(30, estimated_s + 5)
+        _sp.run(
+            ["xdotool", "type", "--clearmodifiers", "--delay", str(delay_ms), "--", text],
+            check=True,
+            timeout=effective_timeout,
+            stdout=_sp.DEVNULL,
+            stderr=_sp.PIPE,
+        )
+
+    return type_text
+
+
+_type_text = _make_type_text()
 
 
 def main():
