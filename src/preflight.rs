@@ -289,22 +289,18 @@ pub async fn run_doctor(config: &Config) -> bool {
         print!("Native macOS .... ");
         let _ = std::io::stdout().flush();
 
-        let screen_ok = check_screen_recording().is_ok();
-        let automation_ok = check_automation().is_ok();
+        let screen_result = check_screen_recording();
+        let automation_result = check_automation();
 
-        if screen_ok && automation_ok {
+        if screen_result.is_ok() && automation_result.is_ok() {
             println!("ok (Screen Recording + Automation permissions available)");
         } else {
             println!("limited");
-            if !screen_ok {
-                if let Err(e) = check_screen_recording() {
-                    println!("  Screen Recording: {e}");
-                }
+            if let Err(e) = screen_result {
+                println!("  Screen Recording: {e}");
             }
-            if !automation_ok {
-                if let Err(e) = check_automation() {
-                    println!("  Automation: {e}");
-                }
+            if let Err(e) = automation_result {
+                println!("  Automation: {e}");
             }
         }
     } else {
