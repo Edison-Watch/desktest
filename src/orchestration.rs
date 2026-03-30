@@ -1039,6 +1039,15 @@ async fn run_agent_loop(
         session,
         artifacts_dir,
     } = ctx;
+
+    // Deploy the embedded execute-action sandbox script to ensure it matches
+    // this binary's version (fixes stale Docker images missing type_text etc.)
+    // Skip for native sessions — they can't write to /usr/local/bin/ without
+    // root, and the execute-action sandbox isn't used on native macOS yet.
+    if session.as_native().is_none() {
+        agent::pyautogui::deploy_sandbox_script(session).await?;
+    }
+
     let llm_client = provider::create_provider(
         &config.provider,
         &config.api_key,
