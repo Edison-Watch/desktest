@@ -9,6 +9,13 @@
 use crate::observation::Observation;
 use crate::provider::{ChatMessage, system_message, user_image_message, user_message};
 
+/// Platform the agent is running on, used to tailor the system prompt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Platform {
+    Linux,
+    Macos,
+}
+
 /// Default number of recent trajectory turns to keep.
 pub const DEFAULT_MAX_TRAJECTORY_LENGTH: usize = 3;
 
@@ -46,8 +53,10 @@ impl ContextManager {
         max_trajectory_length: usize,
         bash_enabled: bool,
         qa: bool,
+        platform: Platform,
     ) -> Self {
-        let system_prompt = build_system_prompt(display_width, display_height, bash_enabled, qa);
+        let system_prompt =
+            build_system_prompt(display_width, display_height, bash_enabled, qa, platform);
         Self {
             system_prompt,
             instruction: instruction.to_string(),
@@ -222,6 +231,7 @@ pub fn build_system_prompt(
     display_height: u32,
     bash_enabled: bool,
     qa: bool,
+    platform: Platform,
 ) -> String {
     let bash_section = if bash_enabled {
         r#"
@@ -307,14 +317,30 @@ You may report multiple bugs throughout the test run. Each will receive a unique
         ""
     };
 
+    let (platform_desc, display_desc) = match platform {
+        Platform::Linux => (
+            "a Linux desktop environment",
+            "The display is a virtual X11 framebuffer (Xvfb) running XFCE desktop",
+        ),
+        Platform::Macos => (
+            "a macOS desktop environment",
+            "The display is a macOS desktop",
+        ),
+    };
+
+    let clipboard_paste_key = match platform {
+        Platform::Linux => "ctrl",
+        Platform::Macos => "command",
+    };
+
     format!(
-        r#"You are a professional software tester controlling a Linux desktop environment. Your task is to interact with the desktop GUI to complete a given objective.
+        r#"You are a professional software tester controlling {platform_desc}. Your task is to interact with the desktop GUI to complete a given objective.
 
 ## Display Information
 
 - Screen resolution: {display_width}x{display_height} pixels
 - Coordinate system: (0, 0) is the top-left corner; ({max_x}, {max_y}) is the bottom-right corner
-- The display is a virtual X11 framebuffer (Xvfb) running XFCE desktop
+- {display_desc}
 
 ## Action Space
 
@@ -342,7 +368,7 @@ You interact with the desktop using PyAutoGUI Python code. The following modules
 - `pyautogui.keyUp('key')` — release a key
 
 ### Clipboard (for Unicode / special characters / backslashes)
-- `pyperclip.copy('text')` followed by `pyautogui.hotkey('ctrl', 'v')` — paste text (supports Unicode, backslashes, and all special characters). **Always use this method when the text contains backslashes (`\`).**
+- `pyperclip.copy('text')` followed by `pyautogui.hotkey('{clipboard_paste_key}', 'v')` — paste text (supports Unicode, backslashes, and all special characters). **Always use this method when the text contains backslashes (`\`).**
 
 ### Timing
 - `time.sleep(seconds)` — wait for the specified duration
@@ -362,7 +388,7 @@ I can see the text editor is open with an empty document. I need to type "Hello 
 pyautogui.click(640, 400)
 time.sleep(0.3)
 pyperclip.copy('Hello World')
-pyautogui.hotkey('ctrl', 'v')
+pyautogui.hotkey('{clipboard_paste_key}', 'v')
 ```
 ```
 
@@ -373,7 +399,7 @@ pyautogui.hotkey('ctrl', 'v')
 - After clicking a menu or button, wait briefly (`time.sleep(0.5)`) for the UI to update
 - If an action doesn't produce the expected result, try a different approach rather than repeating the same action
 - `pyautogui.typewrite()` is only appropriate for simple backslash-free ASCII text; prefer the clipboard method when in doubt
-- Use `pyperclip.copy()` + `Ctrl+V` for non-ASCII text, long strings, or any text containing backslashes (`\`). Example for typing a password with a backslash: `pyperclip.copy('my\\pass'); pyautogui.hotkey('ctrl', 'v')`
+- Use `pyperclip.copy()` + `pyautogui.hotkey('{clipboard_paste_key}', 'v')` for non-ASCII text, long strings, or any text containing backslashes (`\`). Example for typing a password with a backslash: `pyperclip.copy('my\\pass'); pyautogui.hotkey('{clipboard_paste_key}', 'v')`
 - Multiple actions can be in a single code block (they execute sequentially)
 - Do NOT use `pyautogui.locateOnScreen()` or image-based location — use coordinates from the screenshot
 - When using xdotool, prefer `windowfocus` over `windowactivate` if the target container has no window manager (`windowactivate` requires `_NET_ACTIVE_WINDOW` support and will silently fail without a WM).
@@ -397,6 +423,9 @@ Use BOTH the screenshot and accessibility tree to understand the current state. 
 - Determining which element has focus
 - Reading text content that might be hard to see in the screenshot
 {qa_section}"#,
+        platform_desc = platform_desc,
+        display_desc = display_desc,
+        clipboard_paste_key = clipboard_paste_key,
         display_width = display_width,
         display_height = display_height,
         max_x = display_width.saturating_sub(1),
@@ -463,7 +492,7 @@ mod tests {
 
     #[test]
     fn test_system_prompt_contains_display_dimensions() {
-        let prompt = build_system_prompt(1920, 1080, false, false);
+        let prompt = build_system_prompt(1920, 1080, false, false, Platform::Linux);
         assert!(prompt.contains("1920x1080"));
         assert!(prompt.contains("1919"));
         assert!(prompt.contains("1079"));
@@ -471,7 +500,7 @@ mod tests {
 
     #[test]
     fn test_system_prompt_contains_action_space() {
-        let prompt = build_system_prompt(1280, 800, false, false);
+        let prompt = build_system_prompt(1280, 800, false, false, Platform::Linux);
         assert!(prompt.contains("pyautogui.click"));
         assert!(prompt.contains("pyautogui.typewrite"));
         assert!(prompt.contains("pyautogui.hotkey"));
@@ -481,7 +510,7 @@ mod tests {
 
     #[test]
     fn test_system_prompt_warns_about_windowactivate() {
-        let prompt = build_system_prompt(1280, 800, false, false);
+        let prompt = build_system_prompt(1280, 800, false, false, Platform::Linux);
         assert!(prompt.contains("windowfocus"));
         assert!(prompt.contains("windowactivate"));
         assert!(prompt.contains("no window manager"));
@@ -489,7 +518,7 @@ mod tests {
 
     #[test]
     fn test_system_prompt_contains_special_commands() {
-        let prompt = build_system_prompt(1280, 800, false, false);
+        let prompt = build_system_prompt(1280, 800, false, false, Platform::Linux);
         assert!(prompt.contains("DONE"));
         assert!(prompt.contains("FAIL"));
         assert!(prompt.contains("WAIT"));
@@ -497,7 +526,7 @@ mod tests {
 
     #[test]
     fn test_system_prompt_contains_output_format() {
-        let prompt = build_system_prompt(1280, 800, false, false);
+        let prompt = build_system_prompt(1280, 800, false, false, Platform::Linux);
         assert!(prompt.contains("Reflection"));
         assert!(prompt.contains("Action"));
         assert!(prompt.contains("```python"));
@@ -505,7 +534,7 @@ mod tests {
 
     #[test]
     fn test_system_prompt_contains_coordinate_system() {
-        let prompt = build_system_prompt(1280, 800, false, false);
+        let prompt = build_system_prompt(1280, 800, false, false, Platform::Linux);
         assert!(prompt.contains("(0, 0)"));
         assert!(prompt.contains("top-left"));
     }
@@ -514,7 +543,7 @@ mod tests {
 
     #[test]
     fn test_context_manager_new() {
-        let ctx = ContextManager::new(1920, 1080, "Click the button", 3, false, false);
+        let ctx = ContextManager::new(1920, 1080, "Click the button", 3, false, false, Platform::Linux);
         assert_eq!(ctx.trajectory_len(), 0);
         assert!(ctx.system_prompt.contains("1920x1080"));
         assert_eq!(ctx.instruction, "Click the button");
@@ -523,7 +552,7 @@ mod tests {
 
     #[test]
     fn test_build_messages_no_trajectory() {
-        let ctx = ContextManager::new(1920, 1080, "Click the button", 3, false, false);
+        let ctx = ContextManager::new(1920, 1080, "Click the button", 3, false, false, Platform::Linux);
         let obs = make_screenshot_observation();
         let messages = ctx.build_messages(&obs);
 
@@ -545,7 +574,7 @@ mod tests {
 
     #[test]
     fn test_build_messages_with_trajectory() {
-        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 3, false, false);
+        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 3, false, false, Platform::Linux);
         ctx.push_turn(TrajectoryTurn {
             observation: make_screenshot_observation(),
             response_text: "I see a button. I'll click it.".into(),
@@ -567,7 +596,7 @@ mod tests {
 
     #[test]
     fn test_build_messages_with_error_feedback() {
-        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 3, false, false);
+        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 3, false, false, Platform::Linux);
         ctx.push_turn(TrajectoryTurn {
             observation: make_screenshot_observation(),
             response_text: "I'll click at (100, 200)".into(),
@@ -587,7 +616,7 @@ mod tests {
 
     #[test]
     fn test_sliding_window_truncation() {
-        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 2, false, false);
+        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 2, false, false, Platform::Linux);
 
         // Push 4 turns
         for i in 0..4 {
@@ -618,7 +647,7 @@ mod tests {
 
     #[test]
     fn test_sliding_window_exact_fit() {
-        let mut ctx = ContextManager::new(1920, 1080, "test", 3, false, false);
+        let mut ctx = ContextManager::new(1920, 1080, "test", 3, false, false, Platform::Linux);
 
         // Push exactly 3 turns
         for i in 0..3 {
@@ -639,7 +668,7 @@ mod tests {
 
     #[test]
     fn test_fallback_messages_no_trajectory() {
-        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 3, false, false);
+        let mut ctx = ContextManager::new(1920, 1080, "Click the button", 3, false, false, Platform::Linux);
         ctx.push_turn(TrajectoryTurn {
             observation: make_screenshot_observation(),
             response_text: "Turn 0".into(),
@@ -661,7 +690,7 @@ mod tests {
 
     #[test]
     fn test_clear_trajectory() {
-        let mut ctx = ContextManager::new(1920, 1080, "test", 3, false, false);
+        let mut ctx = ContextManager::new(1920, 1080, "test", 3, false, false, Platform::Linux);
         ctx.push_turn(TrajectoryTurn {
             observation: make_screenshot_observation(),
             response_text: "Turn 0".into(),
@@ -759,7 +788,7 @@ mod tests {
 
     #[test]
     fn test_trajectory_with_mixed_observations() {
-        let mut ctx = ContextManager::new(1920, 1080, "test", 3, false, false);
+        let mut ctx = ContextManager::new(1920, 1080, "test", 3, false, false, Platform::Linux);
 
         // Turn 1: screenshot only
         ctx.push_turn(TrajectoryTurn {
@@ -795,7 +824,7 @@ mod tests {
 
     #[test]
     fn test_zero_trajectory_length() {
-        let mut ctx = ContextManager::new(1920, 1080, "test", 0, false, false);
+        let mut ctx = ContextManager::new(1920, 1080, "test", 0, false, false, Platform::Linux);
         ctx.push_turn(TrajectoryTurn {
             observation: make_screenshot_observation(),
             response_text: "Turn 0".into(),
@@ -812,7 +841,7 @@ mod tests {
 
     #[test]
     fn test_system_prompt_contains_qa_section_when_enabled() {
-        let prompt = build_system_prompt(1920, 1080, false, true);
+        let prompt = build_system_prompt(1920, 1080, false, true, Platform::Linux);
         assert!(prompt.contains("QA Bug Reporting Mode"));
         assert!(prompt.contains("BUG"));
         assert!(prompt.contains("cat /tmp/app.log"));
@@ -829,7 +858,7 @@ mod tests {
 
     #[test]
     fn test_system_prompt_no_qa_section_when_disabled() {
-        let prompt = build_system_prompt(1920, 1080, false, false);
+        let prompt = build_system_prompt(1920, 1080, false, false, Platform::Linux);
         assert!(!prompt.contains("QA Bug Reporting Mode"));
         // BUG should NOT appear in Special Commands when QA is disabled
         let special_cmds_idx = prompt.find("## Special Commands").unwrap();
