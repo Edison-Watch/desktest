@@ -1,6 +1,6 @@
 ---
 name: desktest
-description: Guide for using the desktest CLI to run, debug, and review desktop app E2E tests. Use when the user asks to run desktest, review test results, diagnose failures, or work with trajectory logs.
+description: Guide for using the desktest general computer use CLI to run, debug, and review E2E tests. Use when the user asks to run desktest, review test results, diagnose failures, or work with trajectory logs.
 user_invocable: false
 triggers:
   - desktest
@@ -12,7 +12,7 @@ triggers:
 
 # Desktest CLI Skill
 
-Desktest is a CLI tool for automated E2E testing of Linux desktop apps using LLM agents. It spins up a Docker container with a virtual XFCE desktop, deploys an app, and runs an agent that interacts via screenshots + PyAutoGUI.
+Desktest is a general computer use CLI for automated E2E testing of desktop applications using LLM agents. It spins up a Docker container (Linux) or Tart VM (macOS) with a desktop environment, deploys an app, and runs an agent that interacts via screenshots + PyAutoGUI.
 
 ## Key Commands
 

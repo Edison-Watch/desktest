@@ -134,6 +134,7 @@ impl<'a> AgentLoopV2<'a> {
             config.max_trajectory_length,
             config.bash_enabled,
             config.qa,
+            session.platform(),
         );
 
         let trajectory =
