@@ -106,6 +106,7 @@ async fn exec_with_timeout(
 ) -> Result<std::process::Output, AppError> {
     let child = Command::new(cmd_name)
         .args(args)
+        .kill_on_drop(true)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -115,9 +116,7 @@ async fn exec_with_timeout(
         Ok(result) => result
             .map_err(|e| AppError::Infra(format!("Failed to wait for '{cmd_name}': {e}"))),
         Err(_) => {
-            // wait_with_output consumed child, but on timeout it hasn't completed.
-            // The child is dropped here which will close its handles.
-            // We need to kill via PID as a fallback.
+            // child has kill_on_drop(true), so it will be killed when dropped here
             Err(AppError::Infra(format!(
                 "Command '{}' timed out after {}s \
                  (if running on macOS, check Accessibility/Automation permissions \
@@ -176,6 +175,7 @@ impl Session for NativeSession {
 
         let mut child = Command::new(cmd_name)
             .args(args)
+            .kill_on_drop(true)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

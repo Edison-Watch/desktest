@@ -53,18 +53,25 @@ pub fn check_native_macos() -> Result<(), AppError> {
         ));
     }
 
-    // Best-effort: probe screencapture to detect Screen Recording permission
+    // Best-effort: probe screencapture to detect Screen Recording permission.
+    // Use a unique temp file to avoid races when multiple desktest instances run.
+    let probe_path = std::env::temp_dir().join(format!(
+        "desktest-preflight-{}.png",
+        std::process::id()
+    ));
+    let probe_str = probe_path.to_string_lossy().to_string();
+
     match std::process::Command::new("screencapture")
-        .args(["-x", "/tmp/desktest-preflight-check.png"])
+        .args(["-x", &probe_str])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .output()
     {
         Ok(output) if output.status.success() => {
-            // Clean up probe file
-            let _ = std::fs::remove_file("/tmp/desktest-preflight-check.png");
+            let _ = std::fs::remove_file(&probe_path);
         }
         Ok(output) => {
+            let _ = std::fs::remove_file(&probe_path);
             let stderr = String::from_utf8_lossy(&output.stderr);
             if stderr.contains("permission") || stderr.contains("TCC") {
                 return Err(AppError::Config(

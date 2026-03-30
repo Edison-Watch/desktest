@@ -69,8 +69,10 @@ pub fn cleanup_stale_shared_dirs() {
 
 impl TartSession {
     pub async fn create(base_image: &str) -> Result<Self, AppError> {
-        // Opportunistically clean up shared dirs from crashed sessions
-        cleanup_stale_shared_dirs();
+        // Opportunistically clean up shared dirs from crashed sessions.
+        // Run on a blocking thread to avoid stalling the Tokio executor
+        // (cleanup does synchronous I/O and spawns `tart get` subprocesses).
+        let _ = tokio::task::spawn_blocking(cleanup_stale_shared_dirs).await;
 
         let vm_name = format!("desktest-tart-{}", protocol::next_request_id());
         let shared_dir = std::env::temp_dir().join(format!("{vm_name}-shared"));
