@@ -32,8 +32,8 @@ const EXECUTE_ACTION_PATH: &str = "/usr/local/bin/execute-action";
 /// ensuring the sandbox always has `type_text()` and other helpers regardless
 /// of the Docker image version. Safe to call multiple times (idempotent).
 pub async fn deploy_sandbox_script(session: &SessionKind) -> Result<(), AppError> {
-    let tmp_dir = tempfile::tempdir()
-        .map_err(|e| AppError::Infra(format!("Cannot create temp dir: {e}")))?;
+    let tmp_dir =
+        tempfile::tempdir().map_err(|e| AppError::Infra(format!("Cannot create temp dir: {e}")))?;
     let script_path = tmp_dir.path().join("execute-action");
     std::fs::write(&script_path, EXECUTE_ACTION_SCRIPT)
         .map_err(|e| AppError::Infra(format!("Cannot write sandbox script: {e}")))?;
