@@ -685,9 +685,13 @@ async fn run_eval_loop(
         }
     };
 
-    match eval_mode {
-        EvaluatorMode::Programmatic => {
-            info!("Programmatic mode: skipping agent loop, running evaluation...");
+    // Replay mode: skip the agent loop entirely — just run programmatic evaluation.
+    // Non-replay programmatic mode: run the agent loop, then evaluate programmatically.
+    let skip_agent = task_def.replay_mode;
+
+    match (eval_mode, skip_agent) {
+        (EvaluatorMode::Programmatic, true) => {
+            info!("Replay mode: skipping agent loop, running evaluation...");
 
             let evaluator = task_def.evaluator.as_ref().expect(
                 "Programmatic mode requires evaluator config (validated at task load time)",
@@ -875,7 +879,56 @@ async fn run_eval_loop(
                 agent_ran: false,
             })
         }
-        EvaluatorMode::Llm => {
+        (EvaluatorMode::Programmatic, false) => {
+            // Non-replay programmatic: run the agent loop, then evaluate with
+            // programmatic metrics only (agent self-assessment is ignored).
+            info!("Starting agent loop v2 (programmatic evaluation after agent)...");
+            let agent_loop_result =
+                run_agent_loop(ctx, run, recording.as_ref(), monitor, redactor).await;
+
+            if let Some(rec) = &recording {
+                rec.stop(session).await;
+                rec.collect(session, artifacts_dir).await;
+            }
+
+            let agent_outcome = agent_loop_result?;
+
+            info!("Agent loop complete, running programmatic evaluation...");
+            let evaluator = task_def
+                .evaluator
+                .as_ref()
+                .expect("Programmatic mode requires evaluator config (validated at task load time)");
+            let eval_result = evaluator::run_evaluation(session, evaluator, artifacts_dir).await?;
+
+            print_validation_results(Some(&agent_outcome), Some(&eval_result));
+
+            if let Some(m) = monitor {
+                m.send(monitor::MonitorEvent::TestComplete {
+                    test_id: task_def.id.clone(),
+                    passed: eval_result.passed,
+                    reasoning: format_evaluation_reasoning(
+                        Some(&agent_outcome),
+                        Some(&eval_result),
+                    ),
+                    duration_ms: start_time.elapsed().as_millis() as u64,
+                });
+            }
+
+            Ok(TaskRunResult {
+                outcome: AgentOutcome {
+                    passed: eval_result.passed,
+                    reasoning: format_evaluation_reasoning(
+                        Some(&agent_outcome),
+                        Some(&eval_result),
+                    ),
+                    screenshot_count: agent_outcome.screenshot_count,
+                    bugs_found: agent_outcome.bugs_found,
+                },
+                eval_result: Some(eval_result),
+                agent_ran: true,
+            })
+        }
+        (EvaluatorMode::Llm, _) => {
             info!("Starting agent loop v2 (LLM-only evaluation)...");
             let agent_loop_result =
                 run_agent_loop(ctx, run, recording.as_ref(), monitor, redactor).await;
@@ -894,7 +947,7 @@ async fn run_eval_loop(
                 agent_ran: true,
             })
         }
-        EvaluatorMode::Hybrid => {
+        (EvaluatorMode::Hybrid, _) => {
             info!("Starting agent loop v2 (hybrid evaluation)...");
             let agent_loop_result =
                 run_agent_loop(ctx, run, recording.as_ref(), monitor, redactor).await;
