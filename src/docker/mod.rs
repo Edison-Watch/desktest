@@ -36,15 +36,17 @@ impl DockerSession {
     /// built-in `desktest-desktop` base image. The custom image is NOT built —
     /// it must already exist locally or be pullable by Docker.
     ///
-    /// **Privileges:** No containers receive `CAP_SYS_ADMIN` or `/dev/fuse`.
-    /// AppImages are launched with `--appimage-extract-and-run`, bypassing
-    /// FUSE entirely. Custom Docker images that need FUSE for other reasons
-    /// are not currently supported — see `TODO.md` for a future `needs_fuse`
-    /// config escape hatch.
+    /// **Privileges:** By default, no containers receive `CAP_SYS_ADMIN` or
+    /// `/dev/fuse`. AppImages are launched with `--appimage-extract-and-run`,
+    /// bypassing FUSE entirely. Custom Docker images that need FUSE can opt in
+    /// via `needs_fuse: true` in the task's `app` config, which adds
+    /// `CAP_SYS_ADMIN` and maps `/dev/fuse` into the container.
     pub async fn create(
         config: &Config,
         custom_image: Option<&str>,
         extra_env: Option<&std::collections::HashMap<String, String>>,
+        no_network: bool,
+        needs_fuse: bool,
     ) -> Result<Self, AppError> {
         let client = Docker::connect_with_local_defaults()
             .map_err(|e| AppError::Infra(format!("Cannot connect to Docker: {e}")))?;
@@ -109,8 +111,6 @@ impl DockerSession {
             }
         }
 
-        // No SYS_ADMIN or /dev/fuse needed — AppImages are launched with
-        // --appimage-extract-and-run (see deploy.rs), which bypasses FUSE entirely.
         let mem = config
             .container_memory_bytes
             .unwrap_or(4 * 1024 * 1024 * 1024);
@@ -122,8 +122,27 @@ impl DockerSession {
             memory_swap: Some(mem), // No swap (equal to memory limit)
             nano_cpus: Some(config.container_nano_cpus.unwrap_or(4_000_000_000)),
             pids_limit: Some(config.container_pids_limit.unwrap_or(512)),
+            network_mode: if no_network {
+                Some("none".to_string())
+            } else {
+                None
+            },
             ..Default::default()
         };
+
+        if no_network {
+            info!("Container network disabled (--no-network)");
+        }
+
+        if needs_fuse {
+            host_config.cap_add = Some(vec!["SYS_ADMIN".to_string()]);
+            host_config.devices = Some(vec![bollard::models::DeviceMapping {
+                path_on_host: Some("/dev/fuse".to_string()),
+                path_in_container: Some("/dev/fuse".to_string()),
+                cgroup_permissions: Some("rwm".to_string()),
+            }]);
+            info!("FUSE enabled: added CAP_SYS_ADMIN and /dev/fuse device");
+        }
 
         let mut exposed_ports = std::collections::HashMap::new();
 
@@ -340,7 +359,9 @@ mod tests {
     #[ignore] // Requires Docker daemon
     async fn test_container_create_start_stop() {
         let config = test_config();
-        let session = DockerSession::create(&config, None, None).await.unwrap();
+        let session = DockerSession::create(&config, None, None, false, false)
+            .await
+            .unwrap();
 
         let inspect = session
             .client
@@ -362,7 +383,9 @@ mod tests {
     #[ignore] // Requires Docker daemon
     async fn test_exec_command() {
         let config = test_config();
-        let session = DockerSession::create(&config, None, None).await.unwrap();
+        let session = DockerSession::create(&config, None, None, false, false)
+            .await
+            .unwrap();
 
         let output = session.exec(&["echo", "hello"]).await.unwrap();
         assert!(output.trim().contains("hello"));
@@ -374,7 +397,9 @@ mod tests {
     #[ignore] // Requires Docker daemon
     async fn test_copy_file_into_container() {
         let config = test_config();
-        let session = DockerSession::create(&config, None, None).await.unwrap();
+        let session = DockerSession::create(&config, None, None, false, false)
+            .await
+            .unwrap();
 
         let tmp = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(tmp.path(), b"test content").unwrap();
@@ -446,7 +471,9 @@ mod tests {
     async fn test_attach_to_running_container() {
         // Create a container, then attach to it
         let config = test_config();
-        let session = DockerSession::create(&config, None, None).await.unwrap();
+        let session = DockerSession::create(&config, None, None, false, false)
+            .await
+            .unwrap();
         let container_id = session.container_id.clone();
 
         // Attach to it by ID

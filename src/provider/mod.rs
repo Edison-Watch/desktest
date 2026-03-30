@@ -100,6 +100,21 @@ pub fn user_image_message(data_url: &str) -> ChatMessage {
     }
 }
 
+// ---------- Error helpers ----------
+
+/// Maximum length for API error bodies included in error messages.
+const MAX_ERROR_BODY_LEN: usize = 500;
+
+/// Truncate an error body to avoid leaking large/sensitive API responses into logs.
+pub(crate) fn sanitize_error_body(body: &str) -> String {
+    if body.chars().count() <= MAX_ERROR_BODY_LEN {
+        body.to_string()
+    } else {
+        let truncated: String = body.chars().take(MAX_ERROR_BODY_LEN).collect();
+        format!("{truncated}... (truncated)")
+    }
+}
+
 // ---------- Provider factory ----------
 
 /// Create an LlmProvider from configuration fields.

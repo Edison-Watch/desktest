@@ -3,7 +3,7 @@ use std::pin::Pin;
 use reqwest::header::RETRY_AFTER;
 use tracing::info;
 
-use super::{ChatMessage, LlmProvider};
+use super::{ChatMessage, LlmProvider, sanitize_error_body};
 use crate::error::AppError;
 
 /// Response shape from the OpenAI chat completions endpoint.
@@ -86,6 +86,7 @@ impl HttpProvider {
                 .map(|value| format!("; retry-after: {value}"))
                 .unwrap_or_default();
             let error_body = response.text().await.unwrap_or_default();
+            let error_body = sanitize_error_body(&error_body);
             AppError::Agent(format!(
                 "{label} API error ({status}{retry_after}): {error_body}"
             ))

@@ -240,7 +240,9 @@ mod tests {
             container_pids_limit: None,
             integrations: Default::default(),
         };
-        let docker_session = DockerSession::create(&config, None, None).await.unwrap();
+        let docker_session = DockerSession::create(&config, None, None, false, false)
+            .await
+            .unwrap();
         let session = SessionKind::Docker(docker_session);
 
         let steps = vec![SetupStep::Execute {
@@ -279,7 +281,9 @@ mod tests {
             container_pids_limit: None,
             integrations: Default::default(),
         };
-        let docker_session = DockerSession::create(&config, None, None).await.unwrap();
+        let docker_session = DockerSession::create(&config, None, None, false, false)
+            .await
+            .unwrap();
         let session = SessionKind::Docker(docker_session);
 
         let tmp = tempfile::NamedTempFile::new().unwrap();
@@ -326,7 +330,9 @@ mod tests {
             container_pids_limit: None,
             integrations: Default::default(),
         };
-        let docker_session = DockerSession::create(&config, None, None).await.unwrap();
+        let docker_session = DockerSession::create(&config, None, None, false, false)
+            .await
+            .unwrap();
         let session = SessionKind::Docker(docker_session);
 
         let start = std::time::Instant::now();
@@ -366,7 +372,9 @@ mod tests {
             container_pids_limit: None,
             integrations: Default::default(),
         };
-        let docker_session = DockerSession::create(&config, None, None).await.unwrap();
+        let docker_session = DockerSession::create(&config, None, None, false, false)
+            .await
+            .unwrap();
         let session = SessionKind::Docker(docker_session);
 
         let steps = vec![SetupStep::Copy {
@@ -406,7 +414,9 @@ mod tests {
             container_pids_limit: None,
             integrations: Default::default(),
         };
-        let docker_session = DockerSession::create(&config, None, None).await.unwrap();
+        let docker_session = DockerSession::create(&config, None, None, false, false)
+            .await
+            .unwrap();
         let session = SessionKind::Docker(docker_session);
 
         let steps = vec![
