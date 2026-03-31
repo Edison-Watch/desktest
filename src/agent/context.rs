@@ -637,7 +637,7 @@ mod tests {
             1920,
             1080,
             "Click the button",
-            3,
+            DEFAULT_MAX_TRAJECTORY_LENGTH,
             false,
             false,
             Platform::Linux,
@@ -645,7 +645,7 @@ mod tests {
         assert_eq!(ctx.trajectory_len(), 0);
         assert!(ctx.system_prompt.contains("1920x1080"));
         assert_eq!(ctx.instruction, "Click the button");
-        assert_eq!(ctx.max_trajectory_length, 3);
+        assert_eq!(ctx.max_trajectory_length, DEFAULT_MAX_TRAJECTORY_LENGTH);
     }
 
     #[test]
