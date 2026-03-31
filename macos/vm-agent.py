@@ -74,6 +74,12 @@ def handle_request(shared_dir: Path, request_path: Path) -> dict:
                     check=True, capture_output=True,
                 )
                 if staged.is_dir():
+                    # Mirror shutil.copytree: remove existing dest first
+                    # to avoid nesting (cp -R src dest/ → dest/src_name/).
+                    subprocess.run(
+                        ["sudo", "rm", "-rf", str(final_dest)],
+                        check=False, capture_output=True,
+                    )
                     subprocess.run(
                         ["sudo", "cp", "-R", str(staged), str(final_dest)],
                         check=True, capture_output=True,

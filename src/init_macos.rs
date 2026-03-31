@@ -183,7 +183,7 @@ async fn provision_vm(vm_name: &str, with_electron: bool) -> Result<(), AppError
     // Run the provisioning script via SSH
     // Tart base images typically have user/password: admin/admin
     println!("Running provisioning script...");
-    let provision_result = run_provision_via_ssh(&vm_ip, &provision_dir).await;
+    let provision_result = run_provision_via_ssh(&vm_ip).await;
 
     // Wait for the VM to shut down gracefully. The provisioning script ends
     // with `sudo shutdown -h now`, so the `tart run` child should exit on its
@@ -429,7 +429,7 @@ async fn wait_for_vm_ip(
 ///
 /// Tart base images use admin/admin credentials by default.
 /// Requires `sshpass` to be installed on the host (checked at startup).
-async fn run_provision_via_ssh(vm_ip: &str, _provision_dir: &Path) -> Result<(), AppError> {
+async fn run_provision_via_ssh(vm_ip: &str) -> Result<(), AppError> {
     let ssh_target = format!("admin@{vm_ip}");
 
     // First, ensure we can SSH in (the VM may take a moment after getting an IP)
