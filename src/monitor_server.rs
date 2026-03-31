@@ -15,15 +15,19 @@ use tracing::warn;
 
 use crate::monitor::MonitorHandle;
 
-/// Start the monitor HTTP server on the given port.
+/// Maximum number of additional ports to try after the requested port fails.
+/// Total bind attempts = 1 (requested port) + PORT_EXTRA_PORTS_TO_TRY.
+const PORT_EXTRA_PORTS_TO_TRY: u16 = 10;
+
+/// Start the monitor HTTP server on the given port, falling back to nearby ports if busy.
 ///
-/// Binds the port synchronously (before spawning) so the caller knows immediately
-/// whether the server started successfully. Returns `None` if the port is unavailable.
+/// Tries `port`, then `port+1` through `port+PORT_EXTRA_PORTS_TO_TRY`. Returns the
+/// server task handle and the actual port bound, or `None` if no port was available.
 pub async fn start_monitor_server(
     handle: MonitorHandle,
     port: u16,
     bind_addr: &str,
-) -> Option<JoinHandle<()>> {
+) -> Option<(JoinHandle<()>, u16)> {
     let dashboard_html = build_live_dashboard();
 
     let state_handle = handle.clone();
@@ -35,21 +39,49 @@ pub async fn start_monitor_server(
             get(move || async move { state_handler(state_handle).await }),
         );
 
-    let listener =
-        match tokio::net::TcpListener::bind(crate::config::format_host_port(bind_addr, port)).await
-        {
-            Ok(l) => l,
-            Err(e) => {
-                warn!("Failed to bind monitor server on port {port}: {e}");
-                return None;
-            }
+    // Try the requested port, then fall back to subsequent ports.
+    let mut last_err = None;
+    for offset in 0..=PORT_EXTRA_PORTS_TO_TRY {
+        let candidate = match port.checked_add(offset) {
+            Some(p) => p,
+            None => break,
         };
-
-    Some(tokio::spawn(async move {
-        if let Err(e) = axum::serve(listener, app).await {
-            warn!("Monitor server error: {e}");
+        match tokio::net::TcpListener::bind(crate::config::format_host_port(bind_addr, candidate))
+            .await
+        {
+            Ok(listener) => {
+                if candidate != port {
+                    if candidate == port + 1 {
+                        eprintln!(
+                            "Note: port {port} was already in use; monitor dashboard using port {candidate} instead."
+                        );
+                    } else {
+                        eprintln!(
+                            "Note: ports {port}–{} were already in use; monitor dashboard using port {candidate} instead.",
+                            candidate - 1
+                        );
+                    }
+                }
+                let server = tokio::spawn(async move {
+                    if let Err(e) = axum::serve(listener, app).await {
+                        warn!("Monitor server error: {e}");
+                    }
+                });
+                return Some((server, candidate));
+            }
+            Err(e) => {
+                last_err = Some(e);
+            }
         }
-    }))
+    }
+
+    if let Some(e) = last_err {
+        warn!(
+            "Failed to bind monitor server on ports {port}–{}: {e}",
+            port.saturating_add(PORT_EXTRA_PORTS_TO_TRY)
+        );
+    }
+    None
 }
 
 /// Build the dashboard HTML configured for live mode.
