@@ -40,8 +40,9 @@ impl Observation {
     /// multiple times within the same step.
     pub fn load_screenshot_data_url(&self) -> Option<Result<String, AppError>> {
         self.screenshot_path.as_ref().map(|path| {
-            let bytes = std::fs::read(path)
-                .map_err(|e| AppError::Infra(format!("Cannot read screenshot {}: {e}", path.display())))?;
+            let bytes = std::fs::read(path).map_err(|e| {
+                AppError::Infra(format!("Cannot read screenshot {}: {e}", path.display()))
+            })?;
             let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
             Ok(format!("data:image/png;base64,{b64}"))
         })
