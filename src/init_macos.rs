@@ -478,8 +478,7 @@ async fn run_provision_via_ssh(vm_ip: &str, _provision_dir: &Path) -> Result<(),
     // We avoid piping via stdin (`bash -s`) because commands like `brew`
     // can consume stdin, eating the rest of the script.
     // Quote the path for the remote shell — it contains spaces.
-    let vm_script_path =
-        "bash '/Volumes/My Shared Files/desktest/provision/provision.sh'";
+    let vm_script_path = "bash '/Volumes/My Shared Files/desktest/provision/provision.sh'";
 
     let status = tokio::process::Command::new("sshpass")
         .args([

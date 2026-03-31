@@ -1067,7 +1067,9 @@ pub(crate) async fn build_agent_loop_config(
     // adds a screenshot + a11y tree to the LLM context, increasing response time.
     let max_trajectory_length = crate::agent::context::DEFAULT_MAX_TRAJECTORY_LENGTH;
     let step_timeout_secs = 30 + (max_trajectory_length as u64 * 10);
-    info!("Step timeout: {step_timeout_secs}s (scaled for {max_trajectory_length}-step sliding window)");
+    info!(
+        "Step timeout: {step_timeout_secs}s (scaled for {max_trajectory_length}-step sliding window)"
+    );
 
     agent::loop_v2::AgentLoopV2Config {
         max_steps,
