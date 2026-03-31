@@ -15,12 +15,13 @@ use tracing::warn;
 
 use crate::monitor::MonitorHandle;
 
-/// Maximum number of alternative ports to try when the requested port is unavailable.
-const PORT_FALLBACK_ATTEMPTS: u16 = 10;
+/// Maximum number of additional ports to try after the requested port fails.
+/// Total bind attempts = 1 (requested port) + PORT_EXTRA_PORTS_TO_TRY.
+const PORT_EXTRA_PORTS_TO_TRY: u16 = 10;
 
 /// Start the monitor HTTP server on the given port, falling back to nearby ports if busy.
 ///
-/// Tries `port`, then `port+1` through `port+PORT_FALLBACK_ATTEMPTS`. Returns the
+/// Tries `port`, then `port+1` through `port+PORT_EXTRA_PORTS_TO_TRY`. Returns the
 /// server task handle and the actual port bound, or `None` if no port was available.
 pub async fn start_monitor_server(
     handle: MonitorHandle,
@@ -40,7 +41,7 @@ pub async fn start_monitor_server(
 
     // Try the requested port, then fall back to subsequent ports.
     let mut last_err = None;
-    for offset in 0..=PORT_FALLBACK_ATTEMPTS {
+    for offset in 0..=PORT_EXTRA_PORTS_TO_TRY {
         let candidate = match port.checked_add(offset) {
             Some(p) => p,
             None => break,
@@ -50,9 +51,16 @@ pub async fn start_monitor_server(
         {
             Ok(listener) => {
                 if candidate != port {
-                    eprintln!(
-                        "Note: port {port} was already in use; monitor dashboard using port {candidate} instead."
-                    );
+                    if candidate == port + 1 {
+                        eprintln!(
+                            "Note: port {port} was already in use; monitor dashboard using port {candidate} instead."
+                        );
+                    } else {
+                        eprintln!(
+                            "Note: ports {port}–{} were already in use; monitor dashboard using port {candidate} instead.",
+                            candidate - 1
+                        );
+                    }
                 }
                 let server = tokio::spawn(async move {
                     if let Err(e) = axum::serve(listener, app).await {
@@ -70,7 +78,7 @@ pub async fn start_monitor_server(
     if let Some(e) = last_err {
         warn!(
             "Failed to bind monitor server on ports {port}–{}: {e}",
-            port.saturating_add(PORT_FALLBACK_ATTEMPTS)
+            port.saturating_add(PORT_EXTRA_PORTS_TO_TRY)
         );
     }
     None
