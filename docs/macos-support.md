@@ -112,15 +112,16 @@ For quick iteration without a VM, use `macos_native`:
 
 ### Permissions (TCC)
 
-macOS requires explicit grants for Accessibility and Screen Recording. These must be pre-configured in the Tart golden image:
+macOS requires explicit grants for Accessibility and Screen Recording. **`desktest init-macos` handles this automatically** — it inserts TCC database entries with proper code signing requirement (`csreq`) blobs during provisioning. This requires SIP to be disabled in the base image (the Cirrus Labs base images ship with SIP disabled).
 
-- **Accessibility** (`kTCCServiceAccessibility`) — required for PyAutoGUI mouse/keyboard control
-- **Screen Recording** (`kTCCServiceScreenCapture`) — required for `screencapture` and PyAutoGUI screenshot functions
+The permissions granted automatically:
 
-For the Tart golden image, the recommended setup is:
-1. Boot the VM, open System Settings > Privacy & Security
-2. Grant Accessibility and Screen Recording to Terminal.app and Python
-3. Alternatively, disable SIP in Recovery and insert grants into the TCC database directly (see [TCC Database Setup](#tcc-database-setup) below)
+- **Accessibility** (`kTCCServiceAccessibility`) — for PyAutoGUI mouse/keyboard control and the a11y-helper
+- **Screen Recording** (`kTCCServiceScreenCapture`) — for `screencapture` and PyAutoGUI screenshot functions
+- **Post Event** (`kTCCServicePostEvent`) — for synthesizing keyboard/mouse input
+- **Automation** (`kTCCServiceAppleEvents`) — for osascript → System Events
+
+If you need to grant permissions manually, see [TCC Database Setup](#tcc-database-setup) below.
 
 ## Apple Terms of Service
 
@@ -170,7 +171,7 @@ Many widely-used open source projects perform macOS UI automation without any kn
 | Parallel tests per host | Unlimited (Docker containers) | Max 2 (Apple VM limit) |
 | Environment startup | ~5s (container start) | ~5-7s (VM clone + resume) |
 | State isolation | Complete (container destroyed) | Complete (VM clone destroyed) |
-| Accessibility tree | pyatspi / AT-SPI2 (mature) | AXUIElement via Swift helper (limited) |
+| Accessibility tree | pyatspi / AT-SPI2 (mature) | AXUIElement via Swift helper (via SSH localhost) |
 | Action execution | PyAutoGUI via X11 | PyAutoGUI via Quartz/CoreGraphics |
 | Screenshots | scrot (X11) | screencapture (built-in) |
 | Video recording | ffmpeg x11grab | screencapture -V (built-in) |
@@ -183,7 +184,7 @@ Many widely-used open source projects perform macOS UI automation without any kn
 
 Tart VMs provide clean state through an ephemeral clone workflow:
 
-1. **Prepare golden image**: Create a Tart VM with macOS, install test tools (Python, PyAutoGUI, Swift a11y helper), configure TCC permissions, optionally install the app under test
+1. **Prepare golden image**: `desktest init-macos` creates a Tart VM with macOS, installs Python, PyAutoGUI, the Swift a11y helper, execute-action script, sets up SSH keys for a11y access, configures TCC permissions, and optionally installs Node.js for Electron
 2. **Before each test**: `tart clone golden-image test-run-N` (near-instant, APFS copy-on-write)
 3. **Run test**: Boot the clone, run desktest agent loop against it
 4. **After test**: `tart delete test-run-N` (clone destroyed, golden image unchanged)
@@ -196,39 +197,89 @@ For local development, `macos_native` mode skips the VM entirely and runs on the
 
 ## TCC Database Setup
 
-For automated CI environments, you can pre-grant permissions by modifying the TCC database in the golden image:
+`desktest init-macos` handles TCC permission grants automatically. This section documents the manual process for custom images or debugging.
 
-1. Boot the Tart VM into Recovery Mode
-2. Disable SIP: `csrutil disable`
-3. Reboot normally
-4. Insert permission grants:
+**Important**: TCC entries require valid **code signing requirement** (`csreq`) blobs on modern macOS. Entries with NULL csreq may be silently ignored even with SIP disabled.
+
+### Prerequisites
+
+- SIP must be disabled in the VM (`csrutil disable` from Recovery Mode)
+- The Cirrus Labs base images ship with SIP disabled
+
+### Granting permissions with csreq blobs
 
 ```bash
-# Grant Accessibility and Screen Recording to Terminal
-sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" \
-  "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) \
-   VALUES ('kTCCServiceAccessibility', 'com.apple.Terminal', 0, 2, 0, 1);"
+# Helper function to grant a TCC permission with proper csreq
+grant_tcc() {
+    local SERVICE="$1"
+    local CLIENT="$2"   # absolute path to binary
+    local INDIRECT="${3:-UNUSED}"
 
-sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" \
-  "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) \
-   VALUES ('kTCCServiceScreenCapture', 'com.apple.Terminal', 0, 2, 0, 1);"
+    # Generate csreq blob from the binary's code signing requirement
+    local REQ=$(codesign -d -r- "$CLIENT" 2>&1 | sed -n 's/.*designated => //p')
+    local CSREQ_SQL="NULL"
+    if [ -n "$REQ" ]; then
+        local HEX=$(echo "$REQ" | csreq -r- -b /dev/stdout 2>/dev/null | xxd -p | tr -d '\n')
+        if [ -n "$HEX" ]; then
+            CSREQ_SQL="X'${HEX}'"
+        fi
+    fi
 
-# Grant Accessibility and Screen Recording to Python (required for PyAutoGUI)
-# Adjust the path to match your Python installation in the golden image
-PYTHON_PATH="/usr/local/bin/python3"
+    sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" \
+      "INSERT OR REPLACE INTO access \
+        (service, client, client_type, auth_value, auth_reason, auth_version, \
+         csreq, policy_id, indirect_object_identifier_type, indirect_object_identifier, \
+         indirect_object_code_identity, flags, last_modified) \
+        VALUES ('${SERVICE}', '${CLIENT}', 1, 2, 4, 1, \
+                ${CSREQ_SQL}, NULL, 0, '${INDIRECT}', NULL, 0, \
+                $(date +%s));"
+}
 
-sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" \
-  "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) \
-   VALUES ('kTCCServiceAccessibility', '${PYTHON_PATH}', 1, 2, 0, 1);"
+# Grant permissions to the a11y-helper
+grant_tcc kTCCServiceAccessibility /usr/local/bin/a11y-helper
 
-sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" \
-  "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) \
-   VALUES ('kTCCServiceScreenCapture', '${PYTHON_PATH}', 1, 2, 0, 1);"
+# Grant permissions to Python (use the Homebrew path, not /usr/bin/python3)
+PYTHON_BIN="/opt/homebrew/bin/python3"
+grant_tcc kTCCServiceAccessibility "$PYTHON_BIN"
+grant_tcc kTCCServiceScreenCapture "$PYTHON_BIN"
+grant_tcc kTCCServicePostEvent "$PYTHON_BIN"
+grant_tcc kTCCServiceAppleEvents "$PYTHON_BIN" com.apple.systemevents
+
+# Grant Screen Recording to screencapture
+grant_tcc kTCCServiceScreenCapture /usr/sbin/screencapture
 ```
 
-> **Note**: `client_type` is `0` for bundle IDs (e.g., `com.apple.Terminal`) and `1` for absolute paths (e.g., `/usr/local/bin/python3`). If Python is installed via Homebrew, the path may be `/opt/homebrew/bin/python3`.
+### Key details
 
-5. Optionally re-enable SIP: `csrutil enable` (from Recovery)
-6. Save the VM as the golden image: `tart push golden-image ghcr.io/yourorg/macos-test:latest`
+- `client_type=1` means absolute path. Use `client_type=0` for bundle IDs (e.g., `com.apple.Terminal`)
+- `auth_value=2` means allowed, `auth_reason=4` signals admin override (SIP-disabled context)
+- The `csreq` blob is generated from the binary's code signature via `codesign -d -r-` and the `csreq` tool. Ad-hoc signed binaries (like Homebrew Python) work — the cdhash is used as the requirement
+- TCC entries are stored in the **system-level** database at `/Library/Application Support/com.apple.TCC/TCC.db` (not the user-level one)
 
-> **Note**: The exact TCC database schema varies between macOS versions. Verify column names against your target macOS version before inserting.
+### Accessibility tree and SSH localhost
+
+The a11y-helper must be invoked via `ssh localhost` rather than directly, because:
+
+- The vm-agent runs as a LaunchAgent, which gets a **restricted Aqua session** from macOS
+- Direct subprocess calls from this context return empty accessibility trees
+- SSH sessions inherit full TCC permissions from `sshd-keygen-wrapper` and get a proper Aqua session handle
+
+`desktest init-macos` sets up passwordless SSH keys automatically. For manual setup:
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q
+cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+```
+
+### Saving the golden image
+
+After configuring permissions, shut down the VM **gracefully** to ensure filesystem changes are flushed:
+
+```bash
+sudo shutdown -h now
+```
+
+Then clone it on the host: `tart clone work-vm desktest-macos:latest`
+
+> **Note**: `tart stop` does not guarantee filesystem flush. Always use `sudo shutdown -h now` inside the VM before cloning.
