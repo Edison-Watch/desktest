@@ -89,10 +89,10 @@ pub async fn run_init_macos(
     );
     println!("  2. Run: desktest run your-task.json");
     println!();
-    println!("Important: The VM must have Accessibility permissions granted for the");
-    println!("a11y-helper and PyAutoGUI to work. If tests fail with permission errors,");
-    println!("boot the image manually and grant permissions in System Settings → Privacy");
-    println!("& Security → Accessibility.");
+    println!("TCC permissions (Accessibility, Screen Recording) were granted automatically.");
+    println!("This requires SIP to be disabled in the base image. If tests fail with");
+    println!("permission errors, boot the image and grant permissions in System Settings");
+    println!("→ Privacy & Security → Accessibility.");
 
     Ok(())
 }
@@ -129,6 +129,16 @@ async fn provision_vm(vm_name: &str, with_electron: bool) -> Result<(), AppError
     let a11y_dir = macos_dir.join("a11y-helper");
     if a11y_dir.exists() {
         copy_dir_recursive(&a11y_dir, &provision_dir.join("a11y-helper"))?;
+    }
+
+    // Copy execute-action.py (PyAutoGUI executor — used by the agent loop)
+    let docker_dir = macos_dir.parent().unwrap().join("docker");
+    let execute_action_src = docker_dir.join("execute-action.py");
+    if execute_action_src.exists() {
+        std::fs::copy(&execute_action_src, provision_dir.join("execute-action.py"))
+            .map_err(|e| AppError::Infra(format!("Cannot copy execute-action.py: {e}")))?;
+    } else {
+        tracing::warn!("execute-action.py not found at {}", execute_action_src.display());
     }
 
     // Write the provisioning script
@@ -229,10 +239,91 @@ if [ -d "$SHARED/a11y-helper" ]; then
     if [ -f ".build/release/a11y-helper" ]; then
         sudo cp .build/release/a11y-helper /usr/local/bin/a11y-helper
         sudo chmod 755 /usr/local/bin/a11y-helper
+        xattr -d com.apple.quarantine /usr/local/bin/a11y-helper 2>/dev/null || true
         echo "Installed a11y-helper to /usr/local/bin/"
     fi
     cd -
 fi
+
+# Install execute-action (PyAutoGUI executor used by the agent loop)
+echo "Installing execute-action..."
+if [ -f "$SHARED/execute-action.py" ]; then
+    sudo cp "$SHARED/execute-action.py" /usr/local/bin/execute-action
+    sudo chmod 755 /usr/local/bin/execute-action
+    echo "Installed execute-action to /usr/local/bin/"
+else
+    echo "WARNING: execute-action.py not found in shared directory"
+fi
+
+# Set up passwordless SSH to localhost (required for a11y-helper to get a proper
+# Aqua session — LaunchAgent processes get a restricted accessibility context,
+# but SSH sessions inherit full TCC permissions from sshd-keygen-wrapper)
+echo "Setting up SSH keys for localhost..."
+if [ ! -f ~/.ssh/id_ed25519 ]; then
+    ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q
+fi
+cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+# Verify
+ssh -o StrictHostKeyChecking=no -o BatchMode=yes localhost echo "SSH localhost OK" 2>&1 || echo "WARNING: SSH localhost setup failed"
+
+# Ensure /opt/homebrew/bin is in the default PATH for all processes
+echo "Configuring Homebrew PATH..."
+echo '/opt/homebrew/bin' | sudo tee /etc/paths.d/homebrew >/dev/null
+echo '/opt/homebrew/sbin' | sudo tee -a /etc/paths.d/homebrew >/dev/null
+
+# Grant TCC permissions (requires SIP to be disabled in the base image)
+echo "Granting TCC permissions..."
+
+grant_tcc() {
+    local SERVICE="$1"
+    local CLIENT="$2"
+    local CLIENT_TYPE="$3"
+    local INDIRECT="${4:-UNUSED}"
+    local DB="/Library/Application Support/com.apple.TCC/TCC.db"
+
+    local CSREQ_SQL="NULL"
+    if [ "$CLIENT_TYPE" -eq 1 ] && [ -f "$CLIENT" ]; then
+        # Generate csreq blob from the binary's code signing requirement
+        local REQ
+        REQ=$(codesign -d -r- "$CLIENT" 2>&1 | sed -n 's/.*designated => //p')
+        if [ -n "$REQ" ]; then
+            local HEX
+            HEX=$(echo "$REQ" | csreq -r- -b /dev/stdout 2>/dev/null | xxd -p | tr -d '\n')
+            if [ -n "$HEX" ]; then
+                CSREQ_SQL="X'${HEX}'"
+            fi
+        fi
+    fi
+
+    sudo sqlite3 "$DB" "INSERT OR REPLACE INTO access \
+        (service, client, client_type, auth_value, auth_reason, auth_version, \
+         csreq, policy_id, indirect_object_identifier_type, indirect_object_identifier, \
+         indirect_object_code_identity, flags, last_modified) \
+        VALUES ('${SERVICE}', '${CLIENT}', ${CLIENT_TYPE}, 2, 4, 1, \
+                ${CSREQ_SQL}, NULL, 0, '${INDIRECT}', NULL, 0, \
+                $(date +%s));" 2>&1 || echo "  WARNING: Failed to grant ${SERVICE} for ${CLIENT}"
+}
+
+PYTHON_BIN="$(command -v python3)"
+
+# a11y-helper needs Accessibility to read the UI tree
+grant_tcc kTCCServiceAccessibility /usr/local/bin/a11y-helper 1
+
+# Python needs Accessibility (for PyAutoGUI), Screen Recording (for screenshots),
+# and Automation (for osascript to System Events)
+grant_tcc kTCCServiceAccessibility "$PYTHON_BIN" 1
+grant_tcc kTCCServiceScreenCapture "$PYTHON_BIN" 1
+grant_tcc kTCCServicePostEvent "$PYTHON_BIN" 1
+grant_tcc kTCCServiceAppleEvents "$PYTHON_BIN" 1 com.apple.systemevents
+
+# screencapture needs Screen Recording
+grant_tcc kTCCServiceScreenCapture /usr/sbin/screencapture 1
+
+# Verify grants
+echo "TCC grants:"
+sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" \
+    "SELECT service, client, auth_value FROM access;" 2>&1 || true
 
 "#,
     );

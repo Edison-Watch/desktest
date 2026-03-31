@@ -30,6 +30,11 @@ cat > "${LAUNCH_AGENT}" <<PLIST
   <true/>
   <key>KeepAlive</key>
   <true/>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
   <key>StandardOutPath</key>
   <string>/tmp/desktest-vm-agent.log</string>
   <key>StandardErrorPath</key>
