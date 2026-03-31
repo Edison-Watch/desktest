@@ -88,9 +88,7 @@ pub async fn wait_for_app_window_macos(
 ///
 /// Output format: `ASN:0x0-0xc00c-"Finder":` — one entry per visible app.
 pub async fn get_gui_process_list(session: &SessionKind) -> Result<Vec<String>, AppError> {
-    let output = session
-        .exec(&["lsappinfo", "visibleProcessList"])
-        .await?;
+    let output = session.exec(&["lsappinfo", "visibleProcessList"]).await?;
 
     let procs: Vec<String> = output
         .lines()

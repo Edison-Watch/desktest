@@ -138,7 +138,10 @@ async fn provision_vm(vm_name: &str, with_electron: bool) -> Result<(), AppError
         std::fs::copy(&execute_action_src, provision_dir.join("execute-action.py"))
             .map_err(|e| AppError::Infra(format!("Cannot copy execute-action.py: {e}")))?;
     } else {
-        tracing::warn!("execute-action.py not found at {}", execute_action_src.display());
+        tracing::warn!(
+            "execute-action.py not found at {}",
+            execute_action_src.display()
+        );
     }
 
     // Write the provisioning script
