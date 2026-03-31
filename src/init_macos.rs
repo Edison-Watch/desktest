@@ -265,7 +265,9 @@ echo "Setting up SSH keys for localhost..."
 if [ ! -f ~/.ssh/id_ed25519 ]; then
     ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q
 fi
-cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys
+if ! grep -qF "$(cat ~/.ssh/id_ed25519.pub)" ~/.ssh/authorized_keys 2>/dev/null; then
+    cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys
+fi
 chmod 600 ~/.ssh/authorized_keys
 # Verify
 ssh -o StrictHostKeyChecking=no -o BatchMode=yes localhost echo "SSH localhost OK" 2>&1 || echo "WARNING: SSH localhost setup failed"
@@ -299,12 +301,17 @@ grant_tcc() {
         fi
     fi
 
+    # Escape single quotes in paths to prevent malformed SQL
+    local SERVICE_ESC="${SERVICE//\'/\'\'}"
+    local CLIENT_ESC="${CLIENT//\'/\'\'}"
+    local INDIRECT_ESC="${INDIRECT//\'/\'\'}"
+
     sudo sqlite3 "$DB" "INSERT OR REPLACE INTO access \
         (service, client, client_type, auth_value, auth_reason, auth_version, \
          csreq, policy_id, indirect_object_identifier_type, indirect_object_identifier, \
          indirect_object_code_identity, flags, last_modified) \
-        VALUES ('${SERVICE}', '${CLIENT}', ${CLIENT_TYPE}, 2, 4, 1, \
-                ${CSREQ_SQL}, NULL, 0, '${INDIRECT}', NULL, 0, \
+        VALUES ('${SERVICE_ESC}', '${CLIENT_ESC}', ${CLIENT_TYPE}, 2, 4, 1, \
+                ${CSREQ_SQL}, NULL, 0, '${INDIRECT_ESC}', NULL, 0, \
                 $(date +%s));" 2>&1 || echo "  WARNING: Failed to grant ${SERVICE} for ${CLIENT}"
 }
 
