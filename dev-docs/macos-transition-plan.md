@@ -58,7 +58,7 @@ The VM agent is a Python script (~150 lines) that polls `requests/` for new file
 
 ---
 
-## Phase 1: Extract Session Trait + SessionKind Enum
+## Phase 1: Extract Session Trait + SessionKind Enum ✅
 
 **Type**: Pure refactor. No behavior change. No new features.
 
@@ -104,7 +104,7 @@ Every function that currently takes `&DockerSession` will take `&SessionKind` in
 
 ---
 
-## Phase 2: Shared-Directory Protocol + TartSession
+## Phase 2: Shared-Directory Protocol + TartSession ✅
 
 **Type**: New feature. macOS VM communication layer.
 
@@ -136,7 +136,7 @@ Every function that currently takes `&DockerSession` will take `&SessionKind` in
 
 ---
 
-## Phase 3: Swift Accessibility Helper
+## Phase 3: Swift Accessibility Helper ✅
 
 **Type**: New feature. macOS a11y tree extraction.
 
@@ -164,7 +164,7 @@ Every function that currently takes `&DockerSession` will take `&SessionKind` in
 
 ---
 
-## Phase 4: macOS Orchestration
+## Phase 4: macOS Orchestration ✅
 
 **Type**: New feature. Wires everything together into a usable macOS testing flow.
 
@@ -178,7 +178,7 @@ Every function that currently takes `&DockerSession` will take `&SessionKind` in
 
 **`src/tart/readiness.rs`** — macOS-specific readiness:
 - Poll for agent sentinel + verify screencapture works
-- Detect app windows via AppleScript or process list
+- Detect app windows via `lsappinfo` (not AppleScript — `osascript` hangs in Tart VMs due to TCC)
 
 **`src/init_macos.rs`** — `desktest init-macos` command:
 - Pull Tart base image
@@ -207,7 +207,7 @@ Every function that currently takes `&DockerSession` will take `&SessionKind` in
 
 ---
 
-## Phase 5: Integration Testing + Polish
+## Phase 5: Integration Testing + Polish ✅
 
 **Type**: Stabilization. Examples, tests, edge cases.
 
@@ -234,6 +234,45 @@ Every function that currently takes `&DockerSession` will take `&SessionKind` in
 - Full E2E: `desktest run examples/macos-electron.json` passes
 - Existing: `desktest suite examples/` passes on Linux
 - `desktest doctor` on Linux shows macOS as "not configured" (informational)
+
+---
+
+## Post-Phase 5: E2E Infrastructure Fixes ✅
+
+**Type**: Bug fixes discovered during first real E2E run on Apple Silicon Mac mini.
+
+**PR**: #90 (`fix/macos-tart-e2e-infra`)
+
+### Issues Discovered and Fixed
+
+| Issue | Root Cause | Fix |
+|-------|-----------|-----|
+| `osascript` hangs in VM | TCC Automation permission can't be granted programmatically for LaunchAgent processes | Replaced with `lsappinfo visibleProcessList` in `readiness.rs` — no TCC needed |
+| Empty accessibility tree | vm-agent LaunchAgent gets restricted Aqua session from macOS | Route a11y-helper through `ssh localhost` — SSH sessions get proper Aqua handle |
+| `execute-action` not found | `docker/execute-action.py` was never copied during provisioning | Added copy step to `provision_vm()` and install step to provisioning script |
+| PyAutoGUI import errors | vm-agent subprocess used system Python (no PyAutoGUI) | Added `EnvironmentVariables` with Homebrew PATH to LaunchAgent plist |
+| TCC grants not honored | Entries had NULL `csreq` column | Generate csreq blobs via `codesign -d -r-` + `csreq` tool |
+| `PYTHON_BIN` resolves wrong binary | `command -v python3` runs before `/etc/paths.d/homebrew` takes effect | Prefer `/opt/homebrew/bin/python3` with fallback |
+| VM filesystem not flushed | `tart stop` + `child.kill()` interrupts shutdown | Provisioning script ends with `sudo shutdown -h now`; Rust side waits for child to exit |
+| `AXIsProcessTrustedWithOptions` false in LaunchAgent | TCC check returns false even when AX API calls succeed | Made check non-fatal (warning instead of exit) |
+
+### Key Architectural Discovery: SSH Localhost for A11y
+
+The most significant finding was that **LaunchAgent processes get a restricted Aqua session** from macOS. Even with valid TCC entries, AXUIElement API calls return empty/minimal trees when the calling process is in a background session context.
+
+The workaround: `ssh localhost /usr/local/bin/a11y-helper`. SSH sessions inherit TCC permissions from `sshd-keygen-wrapper` (pre-granted in Tart base images) and get a proper Aqua session handle, giving full accessibility tree access (976+ lines vs ~22 empty lines).
+
+This requires passwordless SSH keys set up during golden image provisioning.
+
+### Files Changed
+
+| File | What changed |
+|------|-------------|
+| `src/tart/readiness.rs` | `osascript` → `lsappinfo visibleProcessList` |
+| `src/observation.rs` | `MACOS_A11Y_CMD` wraps a11y-helper in `ssh localhost` |
+| `src/init_macos.rs` | Install execute-action, SSH keys, TCC grants with csreq, Homebrew PATH, graceful shutdown |
+| `macos/vm-agent-install.sh` | `EnvironmentVariables` with Homebrew PATH in LaunchAgent plist |
+| `macos/a11y-helper/Sources/A11yHelperCLI/main.swift` | `AXIsProcessTrustedWithOptions` check non-fatal |
 
 ---
 
@@ -273,10 +312,13 @@ Every function that currently takes `&DockerSession` will take `&SessionKind` in
 |------|--------|------------|
 | Phase 1 touches every consumer file | High (breakage) | Purely mechanical refactor. Full test suite validates. No behavioral change. |
 | Shared-dir polling adds latency | Low (10-50ms/command) | Acceptable for desktop testing where actions take seconds. Use small poll intervals. |
-| TCC permissions break on macOS updates | Medium | Document manual fallback. `init-macos` re-run should fix. |
+| TCC permissions break on macOS updates | Medium | `init-macos` generates csreq blobs from the actual binary signatures. Re-run after macOS updates. |
+| LaunchAgent restricted Aqua session | High (empty a11y tree) | **Discovered in Phase 5+.** Workaround: route a11y-helper through `ssh localhost`. |
+| `osascript` hangs without TCC Automation | High (VM agent blocks) | **Discovered in Phase 5+.** Replaced with `lsappinfo` which needs no TCC. |
+| `tart stop` doesn't flush filesystem | Medium (lost state) | **Discovered in Phase 5+.** Provisioning ends with `sudo shutdown -h now`. |
 | Tart 2-VM limit constrains parallelism | Low | Documented limitation. Suite runs serialize macOS tests. |
 | `tart run --dir` requires desktest to start VM | Low | Acceptable constraint. No "attach to running VM" for macOS initially. |
-| Rust async fn in traits edge cases | Low | Enum dispatch avoids dyn-trait issues. Fallback: `async-trait` crate. |
+| Cross-platform rustfmt divergence | Low (CI failures) | Shorten method chain strings to stay under the threshold where both platforms agree. |
 
 ---
 
