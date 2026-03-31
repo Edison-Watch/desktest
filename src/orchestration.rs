@@ -894,10 +894,9 @@ async fn run_eval_loop(
             let agent_outcome = agent_loop_result?;
 
             info!("Agent loop complete, running programmatic evaluation...");
-            let evaluator = task_def
-                .evaluator
-                .as_ref()
-                .expect("Programmatic mode requires evaluator config (validated at task load time)");
+            let evaluator = task_def.evaluator.as_ref().expect(
+                "Programmatic mode requires evaluator config (validated at task load time)",
+            );
             let eval_result = evaluator::run_evaluation(session, evaluator, artifacts_dir).await?;
 
             print_validation_results(Some(&agent_outcome), Some(&eval_result));
