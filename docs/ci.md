@@ -26,7 +26,7 @@ Docker is pre-installed on GitHub Actions `ubuntu-latest` runners. For `--replay
 
 Any CI with Docker support works: GitLab CI, CircleCI, Buildkite, Jenkins, etc. The only requirements are Docker and (optionally) an LLM API key.
 
-## macOS Tests (Tart VM) — Planned
+## macOS Tests (Tart VM)
 
 macOS tests require **Apple Silicon runners**. This is a hard constraint — Apple's Virtualization.framework only supports macOS guests on ARM64 hardware.
 
@@ -40,12 +40,14 @@ jobs:
     runs-on: macos-14  # Apple Silicon (M1)
     steps:
       - uses: actions/checkout@v4
-      - name: Install Tart
-        run: brew install cirruslabs/cli/tart
-      - name: Pull golden image
-        run: tart pull ghcr.io/yourorg/macos-test:latest
+      - name: Install dependencies
+        run: |
+          brew install cirruslabs/cli/tart
+          brew install hudochenkov/sshpass/sshpass
       - name: Install desktest
         run: curl -fsSL https://raw.githubusercontent.com/Edison-Watch/desktest/master/install.sh | sh
+      - name: Prepare golden image
+        run: desktest init-macos
       - name: Run macOS tests
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -53,6 +55,8 @@ jobs:
 ```
 
 > **Important**: `macos-13` runners are Intel-based and cannot run macOS VMs via Virtualization.framework. You must use `macos-14` or later.
+
+> **Tip**: Cache the golden image between runs to avoid re-provisioning. The Tart VM images are stored in `~/.tart/vms/`. Alternatively, push the golden image to a container registry with `tart push` and pull it in CI.
 
 ### Cirrus CI
 
@@ -104,14 +108,26 @@ For Linux tests, there is no such limit — Docker containers scale freely.
 
 ### Golden Image Preparation
 
-Your CI pipeline needs a pre-built Tart golden image with:
-- macOS with TCC permissions configured (Accessibility + Screen Recording)
-- Python 3 + PyAutoGUI installed
-- The desktest Swift accessibility helper installed
-- The desktest VM agent installed (auto-started via LaunchAgent)
-- Optionally, the app(s) under test pre-installed
+Run `desktest init-macos` to create a golden image. This automatically installs and configures:
+- Python 3 + PyAutoGUI (Quartz backend)
+- Swift accessibility helper (`a11y-helper`) with TCC Accessibility grants
+- PyAutoGUI action executor (`execute-action`)
+- VM agent (LaunchAgent with Homebrew PATH)
+- Passwordless SSH keys for localhost (required for a11y tree extraction)
+- TCC permissions with proper code signing requirement (`csreq`) blobs
+- Homebrew PATH in `/etc/paths.d`
 
-See [macOS Support](macos-support.md) for golden image setup instructions.
+The base image must have SIP disabled (Cirrus Labs base images ship with this). For Electron app testing, add `--with-electron` to install Node.js.
+
+```bash
+# Basic golden image
+desktest init-macos
+
+# With Electron support
+desktest init-macos --with-electron
+```
+
+See [macOS Support](macos-support.md) for details on TCC permissions and the SSH localhost workaround for accessibility.
 
 ## Windows Tests — Planned
 
