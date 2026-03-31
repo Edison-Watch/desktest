@@ -93,16 +93,13 @@ Uses your existing ChatGPT login or `CODEX_API_KEY`. Screenshots are passed dire
 - Docker daemon running (Docker Desktop, OrbStack, Colima, etc.)
 - An LLM API key (OpenAI, Anthropic, or compatible), **or** a CLI-based provider: [Claude Code](https://claude.ai/code) (`--provider claude-cli`) or [Codex CLI](https://github.com/openai/codex) (`--provider codex-cli`) — not needed for `--replay` mode
 
-<details>
-<summary><b>To run tests (macOS apps — planned)</b></summary>
-
+**To run tests (macOS apps):**
 - Apple Silicon Mac (M1 or later) running macOS 13+
 - [Tart](https://github.com/cirruslabs/tart) installed (`brew install cirruslabs/cli/tart`)
-- A Tart golden image with TCC permissions pre-configured (Accessibility + Screen Recording)
-- An LLM API key (same as Linux)
-- **2-VM limit**: Apple's macOS SLA and Virtualization.framework permit a maximum of 2 macOS VMs running simultaneously per physical Mac. This limits parallel test execution for suite runs. See [macOS Support](docs/macos-support.md) for details, including Apple TOS compliance.
-
-</details>
+- [sshpass](https://github.com/hudochenkov/sshpass) installed (`brew install hudochenkov/sshpass/sshpass`) — for golden image provisioning
+- A golden image prepared via `desktest init-macos` (handles Python, PyAutoGUI, a11y helper, TCC permissions, and SSH key setup automatically)
+- An LLM API key (same as Linux), **or** `--provider claude-cli` to use your Claude Code subscription
+- **2-VM limit**: Apple's macOS SLA and Virtualization.framework permit max 2 macOS VMs simultaneously per Mac. See [macOS Support](docs/macos-support.md) for details and Apple TOS compliance.
 
 <details>
 <summary><b>To run tests (Windows apps — planned)</b></summary>
@@ -169,6 +166,7 @@ Commands:
   review        Generate interactive HTML trajectory viewer
   logs          View trajectory logs in the terminal (supports --steps N, N-M, or N,M,X-Y)
   monitor       Start a persistent monitor server for multi-phase runs
+  init-macos    Prepare a macOS golden image for Tart VM testing
   doctor        Check that all prerequisites are installed and configured
   update        Update desktest to the latest release from GitHub
 
@@ -226,8 +224,8 @@ See `examples/` for more examples including folder deploys and custom Docker ima
 | `folder` | Deploy a directory with an entrypoint script |
 | `docker_image` | Use a pre-built custom Docker image |
 | `vnc_attach` | Attach to an existing running desktop (see [Attach Mode](docs/attach-mode.md)) |
-| `macos_tart` | **(Planned)** macOS app in a Tart VM (see [macOS Support](docs/macos-support.md)) |
-| `macos_native` | **(Planned)** macOS app on host desktop, no VM isolation (see [macOS Support](docs/macos-support.md)) |
+| `macos_tart` | macOS app in a Tart VM — isolated, destroyed after test (see [macOS Support](docs/macos-support.md)) |
+| `macos_native` | macOS app on host desktop, no VM isolation (see [macOS Support](docs/macos-support.md)) |
 | `windows` | **(Planned)** Windows app in a VM — details TBD |
 
 > **Electron apps**: Add `"electron": true` to your app config to use the `desktest-desktop:electron` image with Node.js pre-installed. See [examples/ELECTRON_QUICKSTART.md](examples/ELECTRON_QUICKSTART.md).
@@ -314,35 +312,32 @@ Or set the `DESKTEST_SLACK_WEBHOOK_URL` environment variable (takes precedence o
 Developer writes task.json
         │
         ▼
-   ┌─────────┐
-   │ desktest CLI │  validate / run / suite / interactive
-   └────┬─────┘
+   ┌──────────────┐
+   │ desktest CLI  │  validate / run / suite / interactive
+   └────┬─────────┘
         │
-        ▼
-   ┌──────────────────────────────────┐
-   │  Docker Container                │
-   │  ┌──────┐  ┌─────┐  ┌────────┐  │
-   │  │ Xvfb │  │XFCE │  │x11vnc  │  │
-   │  └──┬───┘  └──┬──┘  └────────┘  │
-   │     │  virtual desktop           │
-   │  ┌──┴─────────┴──┐              │
-   │  │  Your App      │              │
-   │  └───────────────┘              │
-   └──────────┬───────────────────────┘
-              │ screenshot + a11y tree
-              ▼
-   ┌──────────────────┐
-   │  LLM Agent Loop  │  observe → think → act → repeat
-   │  (PyAutoGUI code) │
-   └────────┬─────────┘
-            │
-            ▼
-   ┌──────────────────┐
-   │  Evaluator        │  programmatic checks / LLM judge / hybrid
-   └────────┬─────────┘
-            │
-            ▼
-   results.json + recording.mp4 + trajectory.jsonl
+        ├─── Linux ────────────────────┐     ├─── macOS ────────────────────┐
+        │  Docker Container            │     │  Tart VM (or native host)    │
+        │  Xvfb + XFCE + x11vnc       │     │  Native macOS desktop        │
+        │  PyAutoGUI (X11)             │     │  PyAutoGUI (Quartz)          │
+        │  pyatspi (AT-SPI2)           │     │  a11y-helper (AXUIElement)   │
+        │  scrot (screenshot)          │     │  screencapture (screenshot)  │
+        └──────────┬───────────────────┘     └──────────┬───────────────────┘
+                   │ screenshot + a11y tree              │
+                   └──────────────┬──────────────────────┘
+                                  ▼
+                     ┌──────────────────┐
+                     │  LLM Agent Loop  │  observe → think → act → repeat
+                     │  (PyAutoGUI code) │
+                     └────────┬─────────┘
+                              │
+                              ▼
+                     ┌──────────────────┐
+                     │  Evaluator        │  programmatic checks / LLM judge / hybrid
+                     └────────┬─────────┘
+                              │
+                              ▼
+                     results.json + recording.mp4 + trajectory.jsonl
 ```
 
 </details>
