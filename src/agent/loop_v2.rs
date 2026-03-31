@@ -1095,7 +1095,7 @@ mod tests {
             config.total_timeout,
             Duration::from_secs(DEFAULT_TOTAL_TIMEOUT_SECS)
         );
-        assert_eq!(config.max_trajectory_length, 3);
+        assert_eq!(config.max_trajectory_length, 6);
         assert!(!config.debug);
         assert!(!config.verbose);
         assert!(!config.bash_enabled);

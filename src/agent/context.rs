@@ -17,7 +17,7 @@ pub enum Platform {
 }
 
 /// Default number of recent trajectory turns to keep.
-pub const DEFAULT_MAX_TRAJECTORY_LENGTH: usize = 3;
+pub const DEFAULT_MAX_TRAJECTORY_LENGTH: usize = 6;
 
 /// A single turn in the agent trajectory (one observe-think-act cycle).
 #[derive(Debug, Clone)]
