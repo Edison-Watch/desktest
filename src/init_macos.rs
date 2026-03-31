@@ -325,7 +325,10 @@ grant_tcc() {
                 $(date +%s));" 2>&1 || echo "  WARNING: Failed to grant ${SERVICE} for ${CLIENT}"
 }
 
-PYTHON_BIN="$(command -v python3)"
+PYTHON_BIN="/opt/homebrew/bin/python3"
+if [ ! -f "$PYTHON_BIN" ]; then
+    PYTHON_BIN="$(command -v python3)"
+fi
 
 # a11y-helper needs Accessibility to read the UI tree
 grant_tcc kTCCServiceAccessibility /usr/local/bin/a11y-helper 1
