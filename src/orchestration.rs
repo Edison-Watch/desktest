@@ -693,9 +693,10 @@ async fn run_eval_loop(
         (EvaluatorMode::Programmatic, true) => {
             info!("Replay mode: skipping agent loop, running evaluation...");
 
-            let evaluator = task_def.evaluator.as_ref().expect(
-                "Programmatic mode requires evaluator config (validated at task load time)",
-            );
+            let evaluator = task_def
+                .evaluator
+                .as_ref()
+                .expect("evaluator config required for programmatic mode");
 
             // ScriptReplay metrics write their own trajectory with per-step screenshots,
             // so skip the generic pre/post trajectory for replay runs.
@@ -894,9 +895,10 @@ async fn run_eval_loop(
             let agent_outcome = agent_loop_result?;
 
             info!("Agent loop complete, running programmatic evaluation...");
-            let evaluator = task_def.evaluator.as_ref().expect(
-                "Programmatic mode requires evaluator config (validated at task load time)",
-            );
+            let evaluator = task_def
+                .evaluator
+                .as_ref()
+                .expect("evaluator config required for hybrid mode");
             let eval_result = evaluator::run_evaluation(session, evaluator, artifacts_dir).await?;
 
             print_validation_results(Some(&agent_outcome), Some(&eval_result));
@@ -962,7 +964,7 @@ async fn run_eval_loop(
             let evaluator = task_def
                 .evaluator
                 .as_ref()
-                .expect("Hybrid mode requires evaluator config (validated at task load time)");
+                .expect("evaluator config required for hybrid mode");
             let eval_result = evaluator::run_evaluation(session, evaluator, artifacts_dir).await?;
 
             let both_passed = agent_outcome.passed && eval_result.passed;

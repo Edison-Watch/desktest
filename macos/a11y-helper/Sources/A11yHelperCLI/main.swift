@@ -4,14 +4,18 @@ import ApplicationServices
 
 let opts = parseArgs(CommandLine.arguments)
 
-// Check accessibility permissions
+// Check accessibility permissions.
+// AXIsProcessTrustedWithOptions queries tccd, which may return false for
+// LaunchAgent-spawned processes even when the actual AXUIElement API calls
+// succeed (due to "responsible process" attribution). We log a warning but
+// continue — the AX calls themselves will return empty trees if truly denied.
 let trusted = AXIsProcessTrustedWithOptions(
     [kAXTrustedCheckOptionPrompt.takeRetainedValue(): false] as CFDictionary)
 if !trusted {
     fputs(
-        "error: accessibility permissions not granted. Enable in System Settings > Privacy & Security > Accessibility.\n",
+        "warning: AXIsProcessTrustedWithOptions returned false — accessibility tree may be empty. "
+        + "Grant permission in System Settings > Privacy & Security > Accessibility.\n",
         stderr)
-    exit(1)
 }
 
 // Print header (matches Linux get-a11y-tree.py format)

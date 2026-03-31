@@ -64,8 +64,26 @@ pub const LINUX_A11Y_CMD: &[&str] = &["/usr/local/bin/get-a11y-tree"];
 /// Screenshot command for macOS (screencapture).
 pub const MACOS_SCREENSHOT_CMD: &[&str] = &["screencapture", "-x", "/tmp/screenshot.png"];
 
-/// A11y tree command for macOS (Swift AXUIElement helper).
-pub const MACOS_A11Y_CMD: &[&str] = &["/usr/local/bin/a11y-helper"];
+/// A11y tree command for macOS (Swift AXUIElement helper, via SSH localhost).
+///
+/// Running a11y-helper through `ssh localhost` is required because the vm-agent
+/// runs as a LaunchAgent, which has a restricted Aqua session that provides only
+/// an empty accessibility tree. SSH sessions get a proper Aqua session handle from
+/// `sshd-keygen-wrapper`, which already has TCC Accessibility permissions in the
+/// Tart base images. This gives a11y-helper full access to the UI element tree.
+///
+/// Requires passwordless SSH keys set up during golden image provisioning.
+pub const MACOS_A11Y_CMD: &[&str] = &[
+    "ssh",
+    "-o",
+    "StrictHostKeyChecking=no",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=5",
+    "localhost",
+    "/usr/local/bin/a11y-helper",
+];
 
 impl Default for ObservationConfig {
     fn default() -> Self {
@@ -553,7 +571,20 @@ mod tests {
             macos_screenshot,
             vec!["screencapture", "-x", "/tmp/screenshot.png"]
         );
-        assert_eq!(macos_a11y, vec!["/usr/local/bin/a11y-helper"]);
+        assert_eq!(
+            macos_a11y,
+            vec![
+                "ssh",
+                "-o",
+                "StrictHostKeyChecking=no",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "ConnectTimeout=5",
+                "localhost",
+                "/usr/local/bin/a11y-helper",
+            ]
+        );
     }
 
     #[test]
