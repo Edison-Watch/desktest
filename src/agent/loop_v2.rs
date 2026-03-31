@@ -876,7 +876,11 @@ impl<'a> AgentLoopV2<'a> {
             let thought = crate::trajectory::extract_thought(data.response_text, data.code_blocks);
             let action_code = data.code_blocks.join("\n\n");
             let screenshot_base64 = observation.load_screenshot_data_url().and_then(|r| {
-                r.ok().and_then(|url| {
+                r.map_err(|e| {
+                    warn!("Failed to load screenshot for monitor event: {e}");
+                })
+                .ok()
+                .and_then(|url| {
                     url.strip_prefix("data:image/png;base64,")
                         .map(|s| s.to_string())
                 })
@@ -984,7 +988,12 @@ fn build_judge_messages(prompt: &str, observation: &Observation) -> Vec<ChatMess
     let mut messages = vec![system];
 
     // Build observation content (screenshot + a11y tree)
-    let data_url = observation.load_screenshot_data_url().and_then(|r| r.ok());
+    let data_url = observation.load_screenshot_data_url().and_then(|r| {
+        r.map_err(|e| {
+            tracing::warn!("Failed to load screenshot for judge message: {e}");
+        })
+        .ok()
+    });
     match (data_url.as_deref(), &observation.a11y_tree_text) {
         (Some(data_url), Some(a11y_text)) => {
             messages.push(ChatMessage {
