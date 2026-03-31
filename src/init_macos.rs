@@ -185,11 +185,21 @@ async fn provision_vm(vm_name: &str, with_electron: bool) -> Result<(), AppError
     println!("Running provisioning script...");
     let provision_result = run_provision_via_ssh(&vm_ip, &provision_dir).await;
 
-    // Stop the VM and clean up regardless of provisioning result
-    println!("Stopping VM...");
-    let _ = crate::tart::run_tart_command(["stop", vm_name]).await;
-    let _ = child.kill().await;
-    let _ = child.wait().await;
+    // Wait for the VM to shut down gracefully. The provisioning script ends
+    // with `sudo shutdown -h now`, so the `tart run` child should exit on its
+    // own once the guest powers off (filesystem fully flushed). We wait up to
+    // 60 seconds before falling back to `tart stop` + force kill.
+    println!("Waiting for VM to shut down...");
+    let shutdown_timeout = std::time::Duration::from_secs(60);
+    match tokio::time::timeout(shutdown_timeout, child.wait()).await {
+        Ok(_) => info!("VM shut down gracefully"),
+        Err(_) => {
+            tracing::warn!("VM did not shut down within {shutdown_timeout:?}, forcing stop");
+            let _ = crate::tart::run_tart_command(["stop", vm_name]).await;
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+        }
+    }
     let _ = std::fs::remove_dir_all(&shared_dir);
 
     provision_result
@@ -355,6 +365,12 @@ echo "$NODE_PATH_LINE" >> ~/.bash_profile
 
     script.push_str(
         r#"echo "=== Provisioning complete ==="
+
+# Gracefully shut down the VM so the filesystem is fully flushed before
+# the host runs `tart clone`. Without this, TCC DB writes, SSH keys,
+# and other provisioning artifacts may not be persisted to disk.
+echo "Shutting down VM..."
+sudo shutdown -h now
 "#,
     );
 
