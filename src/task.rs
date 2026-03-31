@@ -82,6 +82,12 @@ pub struct TaskDefinition {
     /// The normal evaluator still runs afterward to determine the final verdict.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub early_exit: Option<EarlyExitConfig>,
+
+    /// Internal flag: set by `apply_replay_override()` to indicate this task is
+    /// in deterministic replay mode (no agent loop, just programmatic evaluation).
+    /// Not serialized — this is runtime-only state.
+    #[serde(skip)]
+    pub(crate) replay_mode: bool,
 }
 
 fn default_timeout() -> u64 {
@@ -591,6 +597,8 @@ impl TaskDefinition {
             AppError::Config("--replay requires a 'replay_script' path in the task JSON".into())
         })?;
 
+        self.replay_mode = true;
+
         let replay_metric = MetricConfig::ScriptReplay {
             script_path,
             screenshots_dir: self.replay_screenshots_dir.clone(),
@@ -689,11 +697,18 @@ impl TaskDefinition {
         Ok(())
     }
 
-    /// Returns true if this task uses programmatic-only evaluation (no LLM agent loop).
+    /// Returns true if this task needs no LLM agent loop at all.
+    ///
+    /// Only true in replay mode — the agent loop is skipped entirely and only
+    /// programmatic evaluation runs. Non-replay tasks with a `Programmatic`
+    /// evaluator still run the agent loop; the evaluator mode only controls
+    /// how success is measured.
     pub fn is_programmatic_only(&self) -> bool {
-        self.evaluator
-            .as_ref()
-            .is_some_and(|e| matches!(e.mode, EvaluatorMode::Programmatic))
+        self.replay_mode
+            && self
+                .evaluator
+                .as_ref()
+                .is_some_and(|e| matches!(e.mode, EvaluatorMode::Programmatic))
     }
 
     /// Build the full instruction string, appending the completion condition if present.

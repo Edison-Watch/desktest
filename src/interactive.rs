@@ -414,7 +414,11 @@ async fn run_interactive_step_inner(
         }
     };
 
-    // 5. Run agent loop in step mode
+    // 5. Deploy sandbox script and run agent loop in step mode
+    if session.as_native().is_none() {
+        agent::pyautogui::deploy_sandbox_script(session).await?;
+    }
+
     info!("Starting agent loop v2 in step mode...");
     let llm_client = provider::create_provider(
         &config.provider,
