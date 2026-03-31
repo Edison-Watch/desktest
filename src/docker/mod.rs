@@ -272,6 +272,15 @@ impl DockerSession {
         let script = script_parts.join("; ");
         let output = self.exec(&["sh", "-c", &script]).await?;
 
+        // Guard: if the script produced no output, the results are untrustworthy
+        // (e.g. script was killed, OOM, or container issue).
+        if output.trim().is_empty() {
+            return Err(AppError::Infra(
+                "Custom image validation script produced no output; cannot verify dependencies"
+                    .into(),
+            ));
+        }
+
         // Parse structured output to reconstruct per-check results
         let mut missing: Vec<String> = Vec::new();
 
