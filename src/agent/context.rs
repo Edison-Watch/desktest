@@ -537,8 +537,6 @@ pub fn is_context_length_error(error_msg: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
-
     fn make_screenshot_observation() -> Observation {
         // Write a real temp file so load_screenshot_data_url() works in tests
         let path = std::env::temp_dir().join("desktest_test_step_001.png");
