@@ -93,13 +93,17 @@ Uses your existing ChatGPT login or `CODEX_API_KEY`. Screenshots are passed dire
 - Docker daemon running (Docker Desktop, OrbStack, Colima, etc.)
 - An LLM API key (OpenAI, Anthropic, or compatible), **or** a CLI-based provider: [Claude Code](https://claude.ai/code) (`--provider claude-cli`) or [Codex CLI](https://github.com/openai/codex) (`--provider codex-cli`) — not needed for `--replay` mode
 
-**To run tests (macOS apps):**
+<details>
+<summary><b>To run tests (macOS apps)</b></summary>
+
 - Apple Silicon Mac (M1 or later) running macOS 13+
 - [Tart](https://github.com/cirruslabs/tart) installed (`brew install cirruslabs/cli/tart`)
 - [sshpass](https://github.com/hudochenkov/sshpass) installed (`brew install hudochenkov/sshpass/sshpass`) — for golden image provisioning
 - A golden image prepared via `desktest init-macos` (handles Python, PyAutoGUI, a11y helper, TCC permissions, and SSH key setup automatically)
 - An LLM API key (same as Linux), **or** `--provider claude-cli` to use your Claude Code subscription
 - **2-VM limit**: Apple's macOS SLA and Virtualization.framework permit max 2 macOS VMs simultaneously per Mac. See [macOS Support](docs/macos-support.md) for details and Apple TOS compliance.
+
+</details>
 
 <details>
 <summary><b>To run tests (Windows apps — planned)</b></summary>
