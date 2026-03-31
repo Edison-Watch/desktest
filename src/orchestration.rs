@@ -1063,9 +1063,16 @@ pub(crate) async fn build_agent_loop_config(
         adjusted_total, per_step_overhead
     );
 
+    // Scale step timeout with the sliding window size: each step in the window
+    // adds a screenshot + a11y tree to the LLM context, increasing response time.
+    let max_trajectory_length = crate::agent::context::DEFAULT_MAX_TRAJECTORY_LENGTH;
+    let step_timeout_secs = 30 + (max_trajectory_length as u64 * 10);
+    info!("Step timeout: {step_timeout_secs}s (scaled for {max_trajectory_length}-step sliding window)");
+
     agent::loop_v2::AgentLoopV2Config {
         max_steps,
         total_timeout,
+        step_timeout: Duration::from_secs(step_timeout_secs),
         observation_config: obs_config,
         llm_max_retries: run.llm_max_retries,
         debug: run.debug,
@@ -1075,6 +1082,7 @@ pub(crate) async fn build_agent_loop_config(
         display_width: config.display_width,
         display_height: config.display_height,
         early_exit: task_def.early_exit.clone(),
+        max_trajectory_length,
         ..Default::default()
     }
 }

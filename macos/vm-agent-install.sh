@@ -8,9 +8,9 @@ LAUNCH_AGENT="${HOME}/Library/LaunchAgents/dev.desktest.vm-agent.plist"
 SHARED_DIR="${1:-/Volumes/My Shared Files/desktest}"
 PYTHON_BIN="${PYTHON_BIN:-$(command -v python3)}"
 
-mkdir -p "$(dirname "${INSTALL_PATH}")"
-cp "${AGENT_SRC}" "${INSTALL_PATH}"
-chmod 755 "${INSTALL_PATH}"
+sudo mkdir -p "$(dirname "${INSTALL_PATH}")"
+sudo cp "${AGENT_SRC}" "${INSTALL_PATH}"
+sudo chmod 755 "${INSTALL_PATH}"
 
 mkdir -p "$(dirname "${LAUNCH_AGENT}")"
 cat > "${LAUNCH_AGENT}" <<PLIST

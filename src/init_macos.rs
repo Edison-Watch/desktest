@@ -429,7 +429,7 @@ async fn wait_for_vm_ip(
 ///
 /// Tart base images use admin/admin credentials by default.
 /// Requires `sshpass` to be installed on the host (checked at startup).
-async fn run_provision_via_ssh(vm_ip: &str, provision_dir: &Path) -> Result<(), AppError> {
+async fn run_provision_via_ssh(vm_ip: &str, _provision_dir: &Path) -> Result<(), AppError> {
     let ssh_target = format!("admin@{vm_ip}");
 
     // First, ensure we can SSH in (the VM may take a moment after getting an IP)
@@ -453,6 +453,10 @@ async fn run_provision_via_ssh(vm_ip: &str, provision_dir: &Path) -> Result<(), 
                 "-o",
                 "UserKnownHostsFile=/dev/null",
                 "-o",
+                "PreferredAuthentications=password",
+                "-o",
+                "PubkeyAuthentication=no",
+                "-o",
                 "ConnectTimeout=5",
                 &ssh_target,
                 "echo",
@@ -470,12 +474,14 @@ async fn run_provision_via_ssh(vm_ip: &str, provision_dir: &Path) -> Result<(), 
         }
     }
 
-    // Run the provisioning script by piping it to bash via stdin
-    let script_path = provision_dir.join("provision.sh");
-    let script_content = std::fs::read_to_string(&script_path)
-        .map_err(|e| AppError::Infra(format!("Cannot read provision script: {e}")))?;
+    // Run the provisioning script as a file from the shared directory.
+    // We avoid piping via stdin (`bash -s`) because commands like `brew`
+    // can consume stdin, eating the rest of the script.
+    // Quote the path for the remote shell — it contains spaces.
+    let vm_script_path =
+        "bash '/Volumes/My Shared Files/desktest/provision/provision.sh'";
 
-    let mut child = tokio::process::Command::new("sshpass")
+    let status = tokio::process::Command::new("sshpass")
         .args([
             "-p",
             "admin",
@@ -484,39 +490,27 @@ async fn run_provision_via_ssh(vm_ip: &str, provision_dir: &Path) -> Result<(), 
             "StrictHostKeyChecking=no",
             "-o",
             "UserKnownHostsFile=/dev/null",
+            "-o",
+            "PreferredAuthentications=password",
+            "-o",
+            "PubkeyAuthentication=no",
             &ssh_target,
-            "bash",
-            "-s",
+            vm_script_path,
         ])
-        .stdin(Stdio::piped())
+        .stdin(Stdio::null())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
-        .spawn()
-        .map_err(|e| AppError::Infra(format!("Failed to SSH into VM: {e}")))?;
-
-    // Write the script to stdin
-    if let Some(mut stdin) = child.stdin.take() {
-        use tokio::io::AsyncWriteExt;
-        stdin
-            .write_all(script_content.as_bytes())
-            .await
-            .map_err(|e| {
-                AppError::Infra(format!(
-                    "Failed to write provisioning script to SSH stdin: {e}"
-                ))
-            })?;
-        // Drop stdin to close it and signal EOF
-    }
-
-    let status = child
-        .wait()
+        .status()
         .await
         .map_err(|e| AppError::Infra(format!("SSH provisioning failed: {e}")))?;
 
-    if !status.success() {
+    // Exit code 255 is expected: the script ends with `sudo shutdown -h now`,
+    // which kills the SSH connection. SSH reports 255 when the remote end
+    // drops the connection.
+    let code = status.code().unwrap_or(-1);
+    if !status.success() && code != 255 {
         return Err(AppError::Infra(format!(
-            "Provisioning script failed with exit code: {}",
-            status.code().unwrap_or(-1)
+            "Provisioning script failed with exit code: {code}",
         )));
     }
 

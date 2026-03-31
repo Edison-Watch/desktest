@@ -62,8 +62,31 @@ def handle_request(shared_dir: Path, request_path: Path) -> dict:
         elif kind == "copy_to_vm":
             staged = shared_dir / transfer_path
             destination_root = Path(dest_path)
-            destination_root.mkdir(parents=True, exist_ok=True)
-            copy_path(staged, destination_root / staged.name)
+            final_dest = destination_root / staged.name
+            try:
+                destination_root.mkdir(parents=True, exist_ok=True)
+                copy_path(staged, final_dest)
+            except PermissionError:
+                # Destination may be a system path (e.g. /usr/local/bin);
+                # fall back to sudo for the copy and chmod.
+                subprocess.run(
+                    ["sudo", "mkdir", "-p", str(destination_root)],
+                    check=True, capture_output=True,
+                )
+                if staged.is_dir():
+                    subprocess.run(
+                        ["sudo", "cp", "-R", str(staged), str(final_dest)],
+                        check=True, capture_output=True,
+                    )
+                else:
+                    subprocess.run(
+                        ["sudo", "cp", str(staged), str(final_dest)],
+                        check=True, capture_output=True,
+                    )
+                subprocess.run(
+                    ["sudo", "chmod", "755", str(final_dest)],
+                    check=True, capture_output=True,
+                )
         elif kind == "copy_from_vm":
             source = Path(src_path)
             staged_root = shared_dir / transfer_path
