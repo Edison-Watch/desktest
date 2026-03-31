@@ -146,10 +146,10 @@ async fn maybe_start_monitor(
         return None;
     }
     let handle = monitor::MonitorHandle::new(32);
-    if let Some(_server) =
+    if let Some((_server, actual_port)) =
         monitor_server::start_monitor_server(handle.clone(), monitor_port, monitor_bind_addr).await
     {
-        print_monitor_url(monitor_bind_addr, monitor_port);
+        print_monitor_url(monitor_bind_addr, actual_port);
         Some(handle)
     } else {
         None
@@ -899,8 +899,8 @@ async fn main() {
             )
             .await
             {
-                Some(server) => {
-                    print_monitor_url(monitor_addr, port);
+                Some((server, actual_port)) => {
+                    print_monitor_url(monitor_addr, actual_port);
                     println!(
                         "Watching {} for phase directories (Ctrl+C to stop)",
                         watch_dir.display()
