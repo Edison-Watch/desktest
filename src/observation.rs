@@ -28,10 +28,24 @@ pub enum ObservationType {
 pub struct Observation {
     /// Local path to the saved screenshot file (None if a11y-tree-only mode).
     pub screenshot_path: Option<PathBuf>,
-    /// Base64 data URL of the screenshot (None if a11y-tree-only mode).
-    pub screenshot_data_url: Option<String>,
     /// Linearized accessibility tree text (None if screenshot-only mode or extraction failed).
     pub a11y_tree_text: Option<String>,
+}
+
+impl Observation {
+    /// Load the screenshot as a base64 data URL on demand from the file path.
+    ///
+    /// Returns `None` if no screenshot path is set. Reads the file from disk
+    /// and encodes it each time — callers should cache the result if needed
+    /// multiple times within the same step.
+    pub fn load_screenshot_data_url(&self) -> Option<Result<String, AppError>> {
+        self.screenshot_path.as_ref().map(|path| {
+            let bytes = std::fs::read(path)
+                .map_err(|e| AppError::Infra(format!("Cannot read screenshot {}: {e}", path.display())))?;
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            Ok(format!("data:image/png;base64,{b64}"))
+        })
+    }
 }
 
 /// Configuration for the observation pipeline.
@@ -126,7 +140,7 @@ pub async fn capture_observation(
 
     match config.observation_type {
         ObservationType::Screenshot => {
-            let (path, data_url) = capture_screenshot_with_retry(
+            let path = capture_screenshot_with_retry(
                 session,
                 artifacts_dir,
                 step_index,
@@ -135,7 +149,6 @@ pub async fn capture_observation(
             .await?;
             Ok(Observation {
                 screenshot_path: Some(path),
-                screenshot_data_url: Some(data_url),
                 a11y_tree_text: None,
             })
         }
@@ -151,7 +164,6 @@ pub async fn capture_observation(
             match a11y_text {
                 Ok(text) => Ok(Observation {
                     screenshot_path: None,
-                    screenshot_data_url: None,
                     a11y_tree_text: Some(text),
                 }),
                 Err(e) => {
@@ -179,7 +191,7 @@ pub async fn capture_observation(
                 ),
             );
 
-            let (path, data_url) = screenshot_result?;
+            let path = screenshot_result?;
 
             let a11y_text = match a11y_result {
                 Ok(text) => Some(text),
@@ -191,7 +203,6 @@ pub async fn capture_observation(
 
             Ok(Observation {
                 screenshot_path: Some(path),
-                screenshot_data_url: Some(data_url),
                 a11y_tree_text: a11y_text,
             })
         }
@@ -200,13 +211,14 @@ pub async fn capture_observation(
 
 /// Capture a screenshot with retry logic: 3 attempts, 5s interval between retries.
 ///
-/// Returns the local file path and a base64 data URL.
+/// Returns the local file path. Use `Observation::load_screenshot_data_url()` to
+/// get the base64 data URL on demand.
 pub async fn capture_screenshot_with_retry(
     session: &SessionKind,
     artifacts_dir: &Path,
     step_index: usize,
     screenshot_cmd: &[String],
-) -> Result<(PathBuf, String), AppError> {
+) -> Result<PathBuf, AppError> {
     let mut last_err = None;
 
     for attempt in 1..=SCREENSHOT_MAX_RETRIES {
@@ -234,7 +246,7 @@ async fn capture_screenshot_once(
     artifacts_dir: &Path,
     step_index: usize,
     screenshot_cmd: &[String],
-) -> Result<(PathBuf, String), AppError> {
+) -> Result<PathBuf, AppError> {
     // Capture screenshot inside container
     let cmd_refs: Vec<&str> = screenshot_cmd.iter().map(|s| s.as_str()).collect();
     session.exec(&cmd_refs).await?;
@@ -245,15 +257,8 @@ async fn capture_screenshot_once(
         .copy_from("/tmp/screenshot.png", &local_path)
         .await?;
 
-    // Read and encode as base64 data URL
-    let bytes = std::fs::read(&local_path)
-        .map_err(|e| AppError::Infra(format!("Cannot read screenshot: {e}")))?;
-
-    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-    let data_url = format!("data:image/png;base64,{b64}");
-
     debug!("Screenshot captured: {}", local_path.display());
-    Ok((local_path, data_url))
+    Ok(local_path)
 }
 
 /// Extract the accessibility tree from the container via the helper script.
@@ -463,11 +468,9 @@ mod tests {
     fn test_observation_struct_fields() {
         let obs = Observation {
             screenshot_path: Some(PathBuf::from("/tmp/test.png")),
-            screenshot_data_url: Some("data:image/png;base64,abc".into()),
             a11y_tree_text: Some("button\tOK\t\tGtkButton".into()),
         };
         assert!(obs.screenshot_path.is_some());
-        assert!(obs.screenshot_data_url.is_some());
         assert!(obs.a11y_tree_text.is_some());
     }
 
@@ -475,7 +478,6 @@ mod tests {
     fn test_observation_struct_screenshot_only() {
         let obs = Observation {
             screenshot_path: Some(PathBuf::from("/tmp/test.png")),
-            screenshot_data_url: Some("data:image/png;base64,abc".into()),
             a11y_tree_text: None,
         };
         assert!(obs.screenshot_path.is_some());
@@ -486,12 +488,32 @@ mod tests {
     fn test_observation_struct_a11y_only() {
         let obs = Observation {
             screenshot_path: None,
-            screenshot_data_url: None,
             a11y_tree_text: Some("panel\troot".into()),
         };
         assert!(obs.screenshot_path.is_none());
-        assert!(obs.screenshot_data_url.is_none());
         assert!(obs.a11y_tree_text.is_some());
+    }
+
+    #[test]
+    fn test_load_screenshot_data_url_no_path() {
+        let obs = Observation {
+            screenshot_path: None,
+            a11y_tree_text: None,
+        };
+        assert!(obs.load_screenshot_data_url().is_none());
+    }
+
+    #[test]
+    fn test_load_screenshot_data_url_from_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let png_path = dir.path().join("test.png");
+        std::fs::write(&png_path, b"fake-png-bytes").unwrap();
+        let obs = Observation {
+            screenshot_path: Some(png_path),
+            a11y_tree_text: None,
+        };
+        let result = obs.load_screenshot_data_url().unwrap().unwrap();
+        assert!(result.starts_with("data:image/png;base64,"));
     }
 
     #[tokio::test]

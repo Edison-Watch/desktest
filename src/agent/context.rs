@@ -165,15 +165,21 @@ impl ContextManager {
 
 /// Convert an Observation into one or more user messages for the LLM.
 ///
-/// Returns a Vec because we may need separate messages for image and text content,
-/// or a combined message with both.
+/// Loads the screenshot data URL on demand from disk. Returns a Vec because
+/// we may need separate messages for image and text content, or a combined
+/// message with both.
 fn observation_to_message(observation: &Observation) -> Vec<ChatMessage> {
     let mut messages = Vec::new();
 
-    match (
-        &observation.screenshot_data_url,
-        &observation.a11y_tree_text,
-    ) {
+    // Lazy-load: read the screenshot from disk only when building LLM messages
+    let data_url = observation.load_screenshot_data_url().and_then(|r| {
+        r.map_err(|e| {
+            tracing::warn!("Failed to load screenshot for LLM message: {e}");
+        })
+        .ok()
+    });
+
+    match (data_url.as_deref(), &observation.a11y_tree_text) {
         (Some(data_url), Some(a11y_text)) => {
             // Combined: screenshot image + a11y tree text in a single user message
             messages.push(ChatMessage {
@@ -534,17 +540,20 @@ mod tests {
     use std::path::PathBuf;
 
     fn make_screenshot_observation() -> Observation {
+        // Write a real temp file so load_screenshot_data_url() works in tests
+        let path = std::env::temp_dir().join("desktest_test_step_001.png");
+        std::fs::write(&path, b"fake-png").ok();
         Observation {
-            screenshot_path: Some(PathBuf::from("/tmp/step_001.png")),
-            screenshot_data_url: Some("data:image/png;base64,abc123".into()),
+            screenshot_path: Some(path),
             a11y_tree_text: None,
         }
     }
 
     fn make_full_observation() -> Observation {
+        let path = std::env::temp_dir().join("desktest_test_step_001.png");
+        std::fs::write(&path, b"fake-png").ok();
         Observation {
-            screenshot_path: Some(PathBuf::from("/tmp/step_001.png")),
-            screenshot_data_url: Some("data:image/png;base64,abc123".into()),
+            screenshot_path: Some(path),
             a11y_tree_text: Some("button\tOK\t\tGtkButton".into()),
         }
     }
@@ -552,7 +561,6 @@ mod tests {
     fn make_a11y_only_observation() -> Observation {
         Observation {
             screenshot_path: None,
-            screenshot_data_url: None,
             a11y_tree_text: Some("panel\troot\t\tGtkWindow".into()),
         }
     }
@@ -560,7 +568,6 @@ mod tests {
     fn make_empty_observation() -> Observation {
         Observation {
             screenshot_path: None,
-            screenshot_data_url: None,
             a11y_tree_text: None,
         }
     }

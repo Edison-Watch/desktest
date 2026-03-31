@@ -243,36 +243,53 @@ impl DockerSession {
 
     /// Validate that a custom Docker image has all required dependencies.
     ///
-    /// Checks for required binaries and Python packages by running commands
-    /// inside the container. Returns `AppError::Config` (exit code 2) if
-    /// any dependency is missing.
+    /// Runs a single batched shell script inside the container to check all
+    /// required binaries, Python packages, and files. Returns `AppError::Config`
+    /// (exit code 2) if any dependency is missing.
     pub async fn validate_custom_image(&self) -> Result<(), AppError> {
+        // Build a single validation script that checks everything in one exec call.
+        // Each check echoes a structured line: "CHECK:<tag>:<status>" where status
+        // is OK or MISSING. Using `;` (not `&&`) ensures all checks run regardless
+        // of individual failures.
+        let mut script_parts: Vec<String> = Vec::new();
+
+        for binary in Self::REQUIRED_BINARIES {
+            script_parts.push(format!(
+                "if command -v {binary} >/dev/null 2>&1; then echo 'CHECK:BIN_{binary}:OK'; else echo 'CHECK:BIN_{binary}:MISSING'; fi"
+            ));
+        }
+
+        for (package, _apt_name) in Self::REQUIRED_PYTHON_PACKAGES {
+            script_parts.push(format!(
+                "if python3 -c 'import {package}' 2>/dev/null; then echo 'CHECK:PY_{package}:OK'; else echo 'CHECK:PY_{package}:MISSING'; fi"
+            ));
+        }
+
+        script_parts.push(
+            "if test -f /home/tester/.Xauthority; then echo 'CHECK:XAUTHORITY:OK'; else echo 'CHECK:XAUTHORITY:MISSING'; fi".to_string()
+        );
+
+        let script = script_parts.join("; ");
+        let output = self.exec(&["sh", "-c", &script]).await?;
+
+        // Parse structured output to reconstruct per-check results
         let mut missing: Vec<String> = Vec::new();
 
-        // Check required binaries
         for binary in Self::REQUIRED_BINARIES {
-            let result = self.exec(&["which", binary]).await;
-            if result.is_err() || result.as_ref().is_ok_and(|o| o.trim().is_empty()) {
+            let tag = format!("CHECK:BIN_{binary}:MISSING");
+            if output.contains(&tag) {
                 missing.push(format!("{binary} (binary)"));
             }
         }
 
-        // Check required Python packages
         for (package, apt_name) in Self::REQUIRED_PYTHON_PACKAGES {
-            let (_, exit_code) = self
-                .exec_with_exit_code(&["python3", "-c", &format!("import {package}")])
-                .await?;
-            if exit_code != 0 {
+            let tag = format!("CHECK:PY_{package}:MISSING");
+            if output.contains(&tag) {
                 missing.push(format!("{apt_name} (Python package '{package}')"));
             }
         }
 
-        // Check that ~/.Xauthority exists — PyAutoGUI/python-xlib will crash without it.
-        // This is a common pitfall when building custom images (see docker/Dockerfile).
-        let (_, xauth_exit) = self
-            .exec_with_exit_code(&["test", "-f", "/home/tester/.Xauthority"])
-            .await?;
-        if xauth_exit != 0 {
+        if output.contains("CHECK:XAUTHORITY:MISSING") {
             tracing::warn!(
                 "~/.Xauthority not found — PyAutoGUI will fail to connect to the X display. \
                  Add `RUN touch /home/tester/.Xauthority` to your Dockerfile after `USER tester`."
