@@ -47,6 +47,15 @@ desktest run examples/electron-todo.json
 
 See [ELECTRON_QUICKSTART.md](ELECTRON_QUICKSTART.md) for a complete guide to testing Electron apps.
 
+### `multi-app-terminal-gedit.json` — Multi-App Workflow (Hard)
+
+A harder test that exercises multi-app coordination: curl a CSV from a local HTTP server in a terminal, open it in gedit, find-and-replace ERROR→FIXED, save, and verify with grep. Tests app switching, dialog navigation, terminal interaction, and multi-step evaluation (4 metrics).
+
+```bash
+desktest run examples/multi-app-terminal-gedit.json
+desktest run examples/multi-app-terminal-gedit.json --monitor
+```
+
 ### `macos-textedit.json` — macOS TextEdit (Tart VM)
 
 Tests basic text editing on macOS inside a Tart VM. Requires Apple Silicon, Tart, and a golden image prepared with `desktest init-macos`.
