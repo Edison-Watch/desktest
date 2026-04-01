@@ -59,24 +59,24 @@ fn print_banner(version: &str) -> usize {
         for line in LOGO_LINES {
             println!("{line}");
         }
-        println!("  Desktest CLI v{version} \u{2014} Playwright for full-computer tests");
+        println!(
+            "  Desktest CLI v{version} \u{2014} Computer-use CLI for scalable E2E desktop testing"
+        );
         println!();
         return 0;
     }
 
-    // Compute the version tagline to measure its width
-    // Note: 1 leading space here — the format adds another ` ` prefix (like logo lines)
-    let tagline_plain = format!(" Desktest CLI v{version}");
-    let tagline_suffix = " \u{2014} Playwright for full-computer tests";
-    let tagline_len = tagline_plain.chars().count() + tagline_suffix.chars().count();
-
+    // Tagline inside box (without version), version goes below
+    let tagline_inside = " Desktest CLI \u{2014} Computer-use CLI for scalable E2E desktop testing";
+    let tagline_inside_len = tagline_inside.chars().count();
+    let version_line = format!("v{version}");
     // Inner width = max of all content lines (logo + tagline) + 2 for left/right padding
     let max_logo = LOGO_LINES
         .iter()
         .map(|l| l.chars().count())
         .max()
         .unwrap_or(0);
-    let inner = std::cmp::max(max_logo, tagline_len) + 2; // +2 for 1-char padding each side
+    let inner = std::cmp::max(max_logo, tagline_inside_len) + 2; // +2 for 1-char padding each side
     let box_width = inner + 2; // total width including both █ borders
     let tag_width = (box_width * 40) / 100; // 40% of box width per brand spec
 
@@ -102,15 +102,18 @@ fn print_banner(version: &str) -> usize {
         println!("{CYAN}█{RESET} {line}{}{CYAN}█{RESET}", " ".repeat(padding));
     }
 
-    // Version tagline inside the box (same ` ` prefix as logo lines)
-    let tagline_pad = inner.saturating_sub(tagline_len + 1); // +1 for the space prefix
+    // Tagline inside the box
+    let tagline_pad = inner.saturating_sub(tagline_inside_len + 1);
     println!(
-        "{CYAN}█{RESET} {WHITE_BOLD}{tagline_plain}{GREY}{tagline_suffix}{}{CYAN}█{RESET}",
+        "{CYAN}█{RESET} {WHITE_BOLD}{tagline_inside}{RESET}{}{CYAN}█{RESET}",
         " ".repeat(tagline_pad),
     );
 
     // Bottom border: half-height bar (▀ = upper half block, hugs content)
     println!("{CYAN}{}{RESET}", "▀".repeat(box_width));
+
+    // Version below the box (2-space indent aligns with box interior content)
+    println!("  {GREY}{version_line}{RESET}");
 
     println!();
     box_width
