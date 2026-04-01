@@ -69,7 +69,7 @@ fn print_banner(version: &str) -> usize {
     // Tagline inside box (without version), version goes below
     let tagline_inside = " Desktest CLI \u{2014} Computer-use CLI for scalable E2E desktop testing";
     let tagline_inside_len = tagline_inside.chars().count();
-    let version_line = format!(" v{version}");
+    let version_line = format!("v{version}");
     // Inner width = max of all content lines (logo + tagline) + 2 for left/right padding
     let max_logo = LOGO_LINES
         .iter()
@@ -112,8 +112,8 @@ fn print_banner(version: &str) -> usize {
     // Bottom border: half-height bar (▀ = upper half block, hugs content)
     println!("{CYAN}{}{RESET}", "▀".repeat(box_width));
 
-    // Version below the box
-    println!(" {GREY}{version_line}{RESET}");
+    // Version below the box (2-space indent aligns with box interior content)
+    println!("  {GREY}{version_line}{RESET}");
 
     println!();
     box_width
