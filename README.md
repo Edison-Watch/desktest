@@ -148,10 +148,10 @@ TLDR: `desktest --help`
 desktest [OPTIONS] <COMMAND>
 
 Commands:
-  run           Run a single test from a task JSON file
+  run           Run a single test from a task JSON file (supports --replay for deterministic mode)
   suite         Run all *.json task files in a directory
   interactive   Start container and pause for debugging
-  attach        Attach to an existing running container
+  attach        Attach to an existing running container (supports --replay)
   validate      Check task JSON against schema without running
   codify        Convert trajectory to deterministic Python replay script
   review        Generate interactive HTML trajectory viewer
@@ -169,13 +169,19 @@ Options:
   --record                   Enable video recording
   --monitor                  Enable live monitoring web dashboard
   --monitor-port <PORT>      Port for the monitoring dashboard (default: 7860)
+  --monitor-bind-addr <ADDR> Bind address for dashboard (default: 127.0.0.1, use 0.0.0.0 for remote)
   --resolution <WxH>         Display resolution (e.g., 1280x720, 1920x1080, or preset: 720p, 1080p)
   --artifacts-dir <DIR>      Directory for trajectory logs, screenshots, and a11y snapshots
+  --no-artifacts             Skip artifact collection entirely
+  --artifacts-timeout <SECS> Timeout for artifact collection (default: 120, 0 = no limit)
+  --artifacts-exclude <GLOB> Glob patterns to exclude from artifact collection (repeatable)
   --qa                       Enable QA mode: agent reports app bugs during testing
   --with-bash                Allow the agent to run bash commands inside the container (disabled by default)
+  --no-network               Disable outbound network from the container (Docker network mode "none")
   --provider <PROVIDER>      LLM provider: anthropic, openai, openrouter, cerebras, gemini, claude-cli, codex-cli, custom
   --model <MODEL>            LLM model name (overrides config file)
   --api-key <KEY>            API key for the LLM provider (prefer env vars to avoid shell history exposure)
+  --llm-max-retries <N>      Max retry attempts for retryable LLM API failures
 ```
 
 </details>
