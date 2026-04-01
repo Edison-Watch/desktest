@@ -1,4 +1,4 @@
-<img width="580" height="173" alt="Screenshot 2026-04-01 at 20 26 24" src="https://github.com/user-attachments/assets/f93a0558-1b83-495e-9595-b103138a1e38" />
+<img width="571" height="174" alt="Screenshot 2026-04-01 at 20 38 16" src="https://github.com/user-attachments/assets/fe2bf5aa-cba4-4e20-ad8f-93beb6399988" />
 
 > Virtualised computer-use CLI for scalable E2E testing with LLM-powered agents
 
