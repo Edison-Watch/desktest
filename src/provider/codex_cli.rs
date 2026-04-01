@@ -13,9 +13,9 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use base64::Engine;
 use tracing::info;
 
+use super::helpers::{extract_text, extract_text_and_images, save_screenshot};
 use super::{ChatMessage, LlmProvider};
 use crate::error::AppError;
 
@@ -380,100 +380,6 @@ fn assemble_prompt(
 }
 
 // ---------------------------------------------------------------------------
-// File I/O helpers
-// ---------------------------------------------------------------------------
-
-/// Save a base64-encoded screenshot to the temp directory.
-fn save_screenshot(
-    temp_dir: &std::path::Path,
-    step: usize,
-    data_url: &str,
-) -> Result<PathBuf, AppError> {
-    let base64_data = data_url
-        .split(',')
-        .nth(1)
-        .ok_or_else(|| AppError::Agent("Invalid image data URL format".into()))?;
-
-    // Extract extension from MIME type: "data:image/jpeg;base64,..." → "jpeg"
-    let ext = data_url
-        .split(';')
-        .next()
-        .and_then(|s| s.split('/').nth(1))
-        .unwrap_or("png");
-
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(base64_data)
-        .map_err(|e| AppError::Agent(format!("Failed to decode base64 image: {e}")))?;
-
-    let path = temp_dir.join(format!("step_{step:03}_screenshot.{ext}"));
-    std::fs::write(&path, &bytes)
-        .map_err(|e| AppError::Agent(format!("Failed to write screenshot: {e}")))?;
-
-    Ok(path)
-}
-
-/// Extract plain text content from a ChatMessage.
-fn extract_text(msg: &ChatMessage) -> Option<String> {
-    match &msg.content {
-        Some(serde_json::Value::String(s)) => Some(s.clone()),
-        Some(serde_json::Value::Array(arr)) => {
-            let texts: Vec<String> = arr
-                .iter()
-                .filter_map(|item| {
-                    if item.get("type")?.as_str()? == "text" {
-                        item.get("text")?.as_str().map(|s| s.to_string())
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            if texts.is_empty() {
-                None
-            } else {
-                Some(texts.join("\n"))
-            }
-        }
-        _ => None,
-    }
-}
-
-/// Extract text and image data URLs from a ChatMessage.
-fn extract_text_and_images(msg: &ChatMessage) -> (String, Vec<String>) {
-    let mut texts = Vec::new();
-    let mut images = Vec::new();
-
-    match &msg.content {
-        Some(serde_json::Value::String(s)) => {
-            texts.push(s.clone());
-        }
-        Some(serde_json::Value::Array(arr)) => {
-            for item in arr {
-                match item.get("type").and_then(|t| t.as_str()) {
-                    Some("text") => {
-                        if let Some(t) = item.get("text").and_then(|t| t.as_str()) {
-                            texts.push(t.to_string());
-                        }
-                    }
-                    Some("image_url") => {
-                        if let Some(url) = item
-                            .get("image_url")
-                            .and_then(|u| u.get("url"))
-                            .and_then(|u| u.as_str())
-                        {
-                            images.push(url.to_string());
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        _ => {}
-    }
-
-    (texts.join("\n"), images)
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -631,52 +537,6 @@ mod tests {
         assert!(result.prompt_text.contains("</system-instructions>"));
 
         let _ = std::fs::remove_dir_all(&result.temp_dir);
-    }
-
-    #[test]
-    fn test_save_screenshot_jpeg_extension() {
-        let temp_dir = std::env::temp_dir().join("desktest_codex_test_jpeg");
-        let _ = std::fs::create_dir_all(&temp_dir);
-
-        let data_url = "data:image/jpeg;base64,/9j/4AAQ";
-        let path = save_screenshot(&temp_dir, 1, data_url).unwrap();
-        assert!(path.to_str().unwrap().ends_with(".jpeg"));
-        assert_eq!(path.file_name().unwrap(), "step_001_screenshot.jpeg");
-
-        let _ = std::fs::remove_dir_all(&temp_dir);
-    }
-
-    #[test]
-    fn test_save_screenshot_invalid_data_url() {
-        let temp_dir = std::env::temp_dir().join("desktest_codex_test_invalid");
-        let _ = std::fs::create_dir_all(&temp_dir);
-
-        let result = save_screenshot(&temp_dir, 1, "not-a-data-url");
-        assert!(result.is_err());
-
-        let _ = std::fs::remove_dir_all(&temp_dir);
-    }
-
-    #[test]
-    fn test_extract_text_string_content() {
-        let msg = user_message("Hello");
-        assert_eq!(extract_text(&msg), Some("Hello".to_string()));
-    }
-
-    #[test]
-    fn test_extract_text_and_images_mixed() {
-        let msg = ChatMessage {
-            role: "user".into(),
-            content: Some(serde_json::json!([
-                {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}},
-                {"type": "text", "text": "A11y tree here"},
-            ])),
-            tool_calls: None,
-            tool_call_id: None,
-        };
-        let (text, images) = extract_text_and_images(&msg);
-        assert_eq!(text, "A11y tree here");
-        assert_eq!(images, vec!["data:image/png;base64,abc"]);
     }
 
     #[test]

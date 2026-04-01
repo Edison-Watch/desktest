@@ -4,6 +4,7 @@ pub mod anthropic;
 pub mod claude_cli;
 pub mod codex_cli;
 pub mod custom;
+mod helpers;
 pub mod http_base;
 pub mod openai;
 
