@@ -1,8 +1,10 @@
 <img width="571" height="174" alt="Screenshot 2026-04-01 at 20 38 16" src="https://github.com/user-attachments/assets/fe2bf5aa-cba4-4e20-ad8f-93beb6399988" />
 
-Desktest is a general computer use CLI for automated end-to-end virtualised testing of desktop applications using LLM-powered agents. It spins up a disposable Docker container (Linux) or Tart VM (macOS) with a desktop environment, deploys your app, and runs an agent that interacts with it like a real user — clicking, typing, and reading the screen. Deterministic programmatic checks then validate correctness.
+Desktest is a general computer use CLI for automated end-to-end virtualised testing of desktop applications using LLM-powered agents. Spins up a disposable 🐳 Docker container (Linux) or [Tart VM (macOS)](https://tart.run/) with a desktop environment, deploys any apps, and runs a computer-use agent that interacts with it based on your prompt. Built with coding agents in mind as first-class citizen users of `desktest`. 
 
-> **Warning:** Desktest is beta software under active development. APIs, task schema, and CLI flags may change between releases.
+Once happy -> Convert agent trajectories to deterministic CI code
+
+> **⚠️ Warning:** Desktest is beta software under active development. APIs, task schema, and CLI flags may change between releases.
 
 ## Agent Quickstart
 
