@@ -129,26 +129,25 @@ impl TartSession {
                 info!("Launching app bundle: {path}");
                 self.exec_detached_with_log(&["bash", "-lc", &cmd], "/tmp/app.log")
                     .await?;
-            } else if electron && std::path::Path::new(path).extension().is_none() {
-                // Electron directory deploy — launch via npx inside the directory
+            } else if electron {
+                // Electron non-.app path: could be a directory (npm project) or
+                // a standalone binary. Use a shell runtime check since `path` is
+                // a VM path that we can't stat from the host.
                 let escaped = shell_escape::escape(path.into());
+                let flags = "--no-sandbox --in-process-gpu --force-renderer-accessibility";
                 let cmd = format!(
-                    "cd {escaped} && npx electron . \
-                     --no-sandbox --in-process-gpu --force-renderer-accessibility"
+                    "if [ -d {escaped} ]; then \
+                     cd {escaped} && npx electron . {flags}; \
+                     else {escaped} {flags}; fi"
                 );
-                info!("Launching Electron app from directory: {path}");
+                info!("Launching Electron app: {path}");
                 self.exec_detached_with_log(&["bash", "-lc", &cmd], "/tmp/app.log")
                     .await?;
             } else {
-                // Direct executable
-                let mut args: Vec<&str> = vec![path];
-                if electron {
-                    args.push("--no-sandbox");
-                    args.push("--in-process-gpu");
-                    args.push("--force-renderer-accessibility");
-                }
+                // Direct executable (non-Electron)
                 info!("Launching executable: {path}");
-                self.exec_detached_with_log(&args, "/tmp/app.log").await?;
+                self.exec_detached_with_log(&[path], "/tmp/app.log")
+                    .await?;
             }
         }
 
