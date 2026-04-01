@@ -330,6 +330,11 @@ if [ ! -f "$PYTHON_BIN" ]; then
     PYTHON_BIN="$(command -v python3)"
 fi
 
+# Also resolve the versioned Python binary (e.g. python3.14) — Homebrew's
+# python3 is a symlink, but TCC matches by real binary path, so we need
+# grants for both the symlink target and the unversioned name.
+PYTHON_REAL="$(readlink -f "$PYTHON_BIN" 2>/dev/null || echo "")"
+
 # a11y-helper needs Accessibility to read the UI tree
 grant_tcc kTCCServiceAccessibility /usr/local/bin/a11y-helper 1
 
@@ -340,6 +345,15 @@ grant_tcc kTCCServiceScreenCapture "$PYTHON_BIN" 1
 grant_tcc kTCCServicePostEvent "$PYTHON_BIN" 1
 grant_tcc kTCCServiceAppleEvents "$PYTHON_BIN" 1 com.apple.systemevents
 
+# Grant the same permissions to the versioned binary if it differs
+if [ -n "$PYTHON_REAL" ] && [ "$PYTHON_REAL" != "$PYTHON_BIN" ]; then
+    echo "Also granting TCC for versioned Python: $PYTHON_REAL"
+    grant_tcc kTCCServiceAccessibility "$PYTHON_REAL" 1
+    grant_tcc kTCCServiceScreenCapture "$PYTHON_REAL" 1
+    grant_tcc kTCCServicePostEvent "$PYTHON_REAL" 1
+    grant_tcc kTCCServiceAppleEvents "$PYTHON_REAL" 1 com.apple.systemevents
+fi
+
 # screencapture needs Screen Recording
 grant_tcc kTCCServiceScreenCapture /usr/sbin/screencapture 1
 
@@ -347,6 +361,22 @@ grant_tcc kTCCServiceScreenCapture /usr/sbin/screencapture 1
 echo "TCC grants:"
 sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" \
     "SELECT service, client, auth_value FROM access;" 2>&1 || true
+
+# Suppress Sequoia's "bypass private window picker" dialog.
+# macOS 15+ has a separate replayd-based consent layer that shows a dialog
+# even when kTCCServiceScreenCapture is granted in TCC.db. Pre-populating
+# the ScreenCaptureApprovals plist prevents the dialog from appearing.
+echo "Suppressing Sequoia screen capture picker dialog..."
+PLIST_DIR="$HOME/Library/Group Containers/group.com.apple.replayd"
+PLIST_FILE="$PLIST_DIR/ScreenCaptureApprovals.plist"
+mkdir -p "$PLIST_DIR"
+FUTURE_DATE="3024-01-01 00:00:00 +0000"
+defaults write "$PLIST_FILE" "$PYTHON_BIN" -date "$FUTURE_DATE"
+if [ -n "$PYTHON_REAL" ] && [ "$PYTHON_REAL" != "$PYTHON_BIN" ]; then
+    defaults write "$PLIST_FILE" "$PYTHON_REAL" -date "$FUTURE_DATE"
+fi
+defaults write "$PLIST_FILE" /usr/sbin/screencapture -date "$FUTURE_DATE"
+killall replayd 2>/dev/null || true
 
 "#,
     );
