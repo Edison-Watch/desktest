@@ -6,90 +6,57 @@ Once happy -> Convert agent trajectories to deterministic CI code
 
 > **⚠️ Warning:** Desktest is beta software under active development. APIs, task schema, and CLI flags may change between releases.
 
-## Agent Quickstart
+## 🤖 Agent Quickstart
 
-Copy-paste the following prompt into Claude Code (or any coding agent) to install desktest and set up the agent skill:
+Copy-paste the following prompt into Claude Code/Cursor/Codex (or any coding agent) to install desktest and set up the agent skill:
+
+<details>
+<summary>*📋📋📋 Copy this prompt into your agrent*📋📋📋</summary> 
 
 ```
 Install the desktest CLI by running `curl -fsSL https://raw.githubusercontent.com/Edison-Watch/desktest/master/install.sh | sh`. Then copy `skills/desktest-skill.md` from the desktest repo (https://raw.githubusercontent.com/Edison-Watch/desktest/master/skills/desktest-skill.md) to `~/.claude/skills/desktest/SKILL.md` so you have context on how to use it.
 ```
-<img width="831" height="549" alt="Screenshot 2026-03-25 at 21 04 46" src="https://github.com/user-attachments/assets/fc07dd36-2c49-4ac7-ada9-105a55e85629" />
+</details>
+
 
 
 ## Features
 
-**Testing & Execution**
-- **[Structured JSON task definitions](#task-definition)** with schema validation
-- **OSWorld-style agent loop**: observe (screenshot + accessibility tree) → think → act (PyAutoGUI) → repeat
-- **Programmatic evaluation**: file comparison, command output checks, file existence, exit codes
-- **Three validation modes**: LLM-only, programmatic-only, or hybrid (both must pass)
-- **Test suites**: run a directory of tests with aggregated results
+- **Prompt → Computer use**: Flexible evaluation metrics (see [task definitions]((#task-definition)))
+- **Observability**: Live monitoring dashboard, video recordings, `desktest logs` for agents
+- **Virtualized OS**: Linux, MacOS, Windows (WIP) + Any docker image you want
+- **[CI integration](docs/ci.md)**: Run suite of tests, codified deterministic agent trajectories
+- **QA agent** (`--qa`): Autonomous QA reports via slack webhooks/markdown
+- **[SSH monitoring](docs/remote-monitoring.md)**: access the dashboard and VNC from another machine via SSH or direct network access
 
-**Observability & Debugging**
-- **Live monitoring dashboard**: real-time web UI to watch agent actions as they happen
-- **Video recording**: ffmpeg captures every test session
-- **Trajectory logging**: step-by-step JSONL logs with screenshots and accessibility trees
-- **Interactive mode**: step through agent actions one at a time for debugging
+## Use Cases
 
-**Extensibility**
-- **Custom Docker images**: bring your own image for apps with complex dependencies
-- **[Attach mode](docs/attach-mode.md)**: connect to an already-running container for integration with external orchestration
-- **[CI integration](docs/ci.md)**: run tests in GitHub Actions, Cirrus CI, EC2 Mac, and other CI environments
-- **[Remote monitoring](docs/remote-monitoring.md)**: access the dashboard and VNC from another machine via SSH or direct network access
-- **QA mode** (`--qa`): agent reports application bugs it encounters as structured markdown reports
-- **Slack notifications**: send QA bug reports to Slack channels via Incoming Webhooks
+### Workflow 1: Prompt → Human monitors computer use → Deterministic CI
 
-## Developer Workflows
+1. Define task & config in `task_name.json`
+2. Monitor your agent using the computer/desktop app: `desktest run task_name.json --monitor`
+3. Keep looping steps 2,3 until happy with agent computer-use.
+   1. → if ✅ → Codify → deterministic python script (reusable for CI/CD) (`desktest codify trajectory.jsonl`)
+   2. → if ❌ → debug with coding agents via `desktest logs desktest_artifacts/`
+4. `desktest run task_name.json --replay` (Deterministic replay, reusing agent trajectory with PyAutoGUI code)
 
-### Workflow 1: Test Authoring (Explore → Codify → CI)
 
-Build deterministic regression tests by watching an LLM agent explore your app, then converting the trajectory into a replayable script:
+### Workflow 2: QA Mode → open-ended exploration → reports any bugs it encounters on Slack
 
-```
-1. EXPLORE   →  desktest run task.json --monitor     # LLM agent explores your app (watch live!)
-2. REVIEW    →  desktest review desktest_artifacts/   # Inspect trajectory in web viewer
-3. CODIFY    →  desktest codify trajectory.jsonl --overwrite task.json  # Generate script + update task JSON
-4. REPLAY    →  desktest run task.json --replay       # Deterministic replay (no LLM, no API costs)
-5. CI        →  Run codified tests on every commit
-```
+1. Define task & config in `task_name.json`
+2. Monitor your agent using the computer/desktop app: `desktest run task_name.json --monitor --qa`
+3. Bugs reported via slack & markdown!
 
-> **Step 4 detail:** `--replay` switches to fully deterministic execution — the codified PyAutoGUI script drives the app directly with zero LLM calls and zero API costs. The same evaluator metrics validate the result. Without `--replay`, the LLM agent runs as normal (useful for re-recording).
 
-### Workflow 2: Live Monitoring + Agent-Assisted Debugging
-
-Use desktest as the eyes for your coding agent. You watch the test live, then hand off investigation to your coding agent (e.g. Claude Code) via the CLI-friendly `logs` command:
-
-```
-1. RUN       →  desktest run task.json --monitor     # Watch the agent live in the browser
-2. DIAGNOSE  →  desktest logs desktest_artifacts/              # Hand off to your coding agent for analysis
-                desktest logs desktest_artifacts/ --steps 3-7  # Or drill into specific steps
-3. FIX       →  Coding agent reads the logs, diagnoses the issue, and fixes the code
-4. RERUN     →  desktest run task.json --monitor     # Verify the fix
-```
-
-`--monitor` is designed for human eyes (real-time web dashboard), while `logs` is designed for agent consumption (structured terminal output). Together they close the loop between observing a failure and fixing it.
-
-## CLI-Based Providers (No API Key Needed)
-
-Desktest can shell out to locally-installed coding agent CLIs instead of calling LLM APIs directly:
-
-### Claude Code CLI
-
-```bash
-desktest run task.json --provider claude-cli
-```
-
-Uses your existing Claude Code subscription. Each step shells out to `claude -p`, saves trajectory screenshots and accessibility trees as files, and instructs Claude to read them via its Read tool. See [docs/claude-cli-provider.md](docs/claude-cli-provider.md).
-
-### OpenAI Codex CLI
-
-```bash
-desktest run task.json --provider codex-cli
-```
-
-Uses your existing ChatGPT login or `CODEX_API_KEY`. Screenshots are passed directly as `-i` flags (native image input), and accessibility trees are embedded inline in the prompt. See [docs/codex-cli-provider.md](docs/codex-cli-provider.md).
 
 ## Requirements
+
+TLDR: Run `desktest doctor` to verify your setup.
+
+
+<details>
+<summary>Expand</summary>
+
 
 **To run tests (Linux — default):**
 - Linux or macOS host
@@ -120,21 +87,32 @@ Uses your existing ChatGPT login or `CODEX_API_KEY`. Screenshots are passed dire
 - Git
 - Xcode Command Line Tools (for macOS a11y helper binary — macOS only)
 
-Run `desktest doctor` to verify your setup.
+
+</details>
 
 ## Installation
 
-```bash
-# One-line install (downloads pre-built binary)
-curl -fsSL https://raw.githubusercontent.com/Edison-Watch/desktest/master/install.sh | sh
+One-line install (pre-built binary)
 
+```bash
+curl -fsSL https://raw.githubusercontent.com/Edison-Watch/desktest/master/install.sh | sh
+```
+
+<details>
+<summary>⚙️ Building from source</summary>
+
+```
 # Or build from source
 git clone https://github.com/Edison-Watch/desktest.git
 cd desktest
 make install_cli
 ```
 
-## Main Commands
+</details>
+
+## Example Commands
+
+TLDR: See interactive examples in [/examples/README.md](examples/README.md)
 
 <details>
 <summary>Expand</summary>
@@ -158,7 +136,13 @@ desktest interactive elcalc-test.json --step
 
 </details>
 
-## CLI
+## CLI Commands
+
+TLDR: `desktest --help`
+
+<details>
+<summary>Expand</summary>
+
 
 ```
 desktest [OPTIONS] <COMMAND>
@@ -194,7 +178,9 @@ Options:
   --api-key <KEY>            API key for the LLM provider (prefer env vars to avoid shell history exposure)
 ```
 
-## Task Definition
+</details>
+
+## Computer Use Agent Task Definition
 
 <details>
 <summary>Expand</summary>
@@ -252,6 +238,11 @@ See `examples/` for more examples including folder deploys and custom Docker ima
 
 ## Live Monitoring
 
+TLDR: Do `desktest run task_name.json --monitor` to launch real-time agent monitoring dashboard, `desktest review` for post-run dashboad.
+
+<details>
+<summary>Expand</summary>
+
 Add `--monitor` to any `run` or `suite` command to launch a real-time web dashboard that streams the agent's actions as they happen:
 
 ```bash
@@ -273,7 +264,14 @@ Open `http://localhost:7860` in your browser to see:
 
 The dashboard uses the same UI as `desktest review` — a sidebar with step navigation, main panel with screenshot/thought/action details. The difference is that steps stream in via Server-Sent Events (SSE) instead of being loaded from a static file.
 
+</details>
+
 ## QA Mode
+
+TLDR: Let the agent report bugs in your application on slack, with some guidance
+
+<details>
+<summary>Expand</summary>
 
 Add `--qa` to any `run`, `suite`, or `attach` command to enable bug reporting. The agent will complete its task as normal, but also watch for application bugs and report them as markdown files:
 
@@ -295,6 +293,9 @@ When `--qa` is enabled:
 
 ### Slack Notifications
 
+<details>
+<summary>Expand</summary>
+
 Optionally send bug reports to Slack as they're discovered. Add an `integrations` section to your config JSON:
 
 ```json
@@ -309,6 +310,9 @@ Optionally send bug reports to Slack as they're discovered. Add an `integrations
 ```
 
 Or set the `DESKTEST_SLACK_WEBHOOK_URL` environment variable (takes precedence over config). The `channel` field is optional — webhooks already target a default channel. Notifications are fire-and-forget and never block the test.
+
+</details>
+</details>
 
 ## Architecture
 
@@ -349,7 +353,9 @@ Developer writes task.json
 
 </details>
 
-## Artifacts
+## File Artifacts
+
+Files generated as a result of a desktest run.
 
 <details>
 <summary>Expand</summary>
@@ -389,6 +395,8 @@ desktest_artifacts/
 
 
 ## Environment Variables
+
+TLDR: LLM API keys + Webhooks for QA mode
 
 <details>
 <summary>Expand</summary>
