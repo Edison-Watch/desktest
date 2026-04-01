@@ -55,13 +55,17 @@ To bump after merge:
 ```sh
 git checkout master && git pull
 make bump_version VERSION=<next>
+```
+
+Then, to trigger the release workflow, push the commit and tag:
+```sh
 git push && git push --tags
 ```
 
-Or if you'd prefer a different bump:
-- Patch: `make bump_version VERSION=<patch>`
-- Minor: `make bump_version VERSION=<minor>`
-- Major: `make bump_version VERSION=<major>`
+Or if you'd prefer a different bump (fill in the computed version number):
+- Patch: `make bump_version VERSION=<computed-patch-version, e.g. 0.2.2>`
+- Minor: `make bump_version VERSION=<computed-minor-version, e.g. 0.3.0>`
+- Major: `make bump_version VERSION=<computed-major-version, e.g. 1.0.0>`
 
 Would you like me to proceed with the [bump type] bump, or do you want a different version?
 
