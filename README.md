@@ -11,7 +11,7 @@ Once happy -> Convert agent trajectories to deterministic CI code
 Copy-paste the following prompt into Claude Code/Cursor/Codex (or any coding agent) to install desktest and set up the agent skill:
 
 <details>
-<summary>*📋📋📋 Copy this prompt into your agrent*📋📋📋</summary> 
+<summary>*📋📋📋 Copy this prompt into your agent*📋📋📋</summary> 
 
 ```
 Install the desktest CLI by running `curl -fsSL https://raw.githubusercontent.com/Edison-Watch/desktest/master/install.sh | sh`. Then copy `skills/desktest-skill.md` from the desktest repo (https://raw.githubusercontent.com/Edison-Watch/desktest/master/skills/desktest-skill.md) to `~/.claude/skills/desktest/SKILL.md` so you have context on how to use it.
@@ -22,7 +22,7 @@ Install the desktest CLI by running `curl -fsSL https://raw.githubusercontent.co
 
 ## Features
 
-- **Prompt → Computer use**: Flexible evaluation metrics (see [task definitions]((#task-definition)))
+- **Prompt → Computer use**: Flexible evaluation metrics (see [task definitions](#computer-use-agent-task-definition))
 - **Observability**: Live monitoring dashboard, video recordings, `desktest logs` for agents
 - **Virtualized OS**: Linux, MacOS, Windows (WIP) + Any docker image you want
 - **[CI integration](docs/ci.md)**: Run suite of tests, codified deterministic agent trajectories
@@ -238,7 +238,7 @@ See `examples/` for more examples including folder deploys and custom Docker ima
 
 ## Live Monitoring
 
-TLDR: Do `desktest run task_name.json --monitor` to launch real-time agent monitoring dashboard, `desktest review` for post-run dashboad.
+TLDR: Do `desktest run task_name.json --monitor` to launch real-time agent monitoring dashboard, `desktest review` for post-run dashboard.
 
 <details>
 <summary>Expand</summary>
