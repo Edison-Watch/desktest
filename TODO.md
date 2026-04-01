@@ -30,7 +30,7 @@ Items identified during a security audit (2026-03-23). Prioritized by impact.
 
 - **VNC authentication option**: Add an optional `vnc_password` config field for users who need LAN-accessible VNC. Default is now localhost-only, but password auth would be useful for remote debugging workflows.
 
-- **Monitor bind address override**: Add a `monitor_bind_addr` config field (defaulting to `127.0.0.1`) to match the VNC pattern. Users running desktest on remote machines currently have no way to expose the monitor dashboard to their workstation.
+- ~~**Monitor bind address override**~~: Done — `--monitor-bind-addr` CLI flag added (defaults to `127.0.0.1`, use `0.0.0.0` for remote access). See `docs/remote-monitoring.md`.
 
 - **Image digest pinning**: Allow task JSON or config to specify image digests (`image@sha256:...`) for custom Docker images, enabling reproducible and tamper-resistant builds in CI.
 

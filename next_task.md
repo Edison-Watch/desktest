@@ -2,13 +2,13 @@
 
 Items identified during the structural refactoring that are worth addressing but were out of scope for the split.
 
-## 1. Legacy agent removal
+## ~~1. Legacy agent removal~~ ✅
 
-`src/agent/mod.rs`, `src/agent/tools.rs`, and `src/agent/openai.rs` (654 lines total) implement the v1 tool-call-based agent loop, fully superseded by v2 (`loop_v2.rs`). The only remaining caller is `run_inner()` in `orchestration.rs` (the legacy CLI path). Removing these requires migrating or deprecating the legacy CLI path.
+~~`src/agent/mod.rs`, `src/agent/tools.rs`, and `src/agent/openai.rs` (654 lines total) implement the v1 tool-call-based agent loop, fully superseded by v2 (`loop_v2.rs`).~~ Done — `tools.rs` and `openai.rs` removed, `mod.rs` now contains only module declarations.
 
 ## 2. Blanket `#![allow(dead_code)]` cleanup
 
-~10 files have `#![allow(dead_code)]` at the top where the code is actively used. Remove the blanket allows and address any actual dead code warnings individually.
+~8 files have `#![allow(dead_code)]` at the top where the code is actively used. Remove the blanket allows and address any actual dead code warnings individually.
 
 ## 3. System prompt splitting
 

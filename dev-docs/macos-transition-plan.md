@@ -8,7 +8,7 @@ This document describes the phased implementation plan for adding macOS desktop 
 |----------|--------|-----------|
 | Session abstraction | Enum dispatch (`SessionKind`) with `Session` trait | Closed set of backends (Docker, Tart, Native). Zero-overhead dispatch. Native `async fn` in trait — no `async-trait` crate needed. |
 | macOS VM | [Tart](https://github.com/cirruslabs/tart) (Apple Virtualization.framework) | Open source, CLI-driven, OCI registry support, ephemeral clone workflow mirrors Docker model. |
-| Host ↔ VM communication | Shared directory (`tart run --dir`) + lightweight VM agent | No SSH key management. Near-instant file access for screenshots/a11y trees. Simple Python agent watches for command files. |
+| Host ↔ VM communication | Shared directory (`tart run --dir`) + lightweight VM agent + SSH for a11y | Near-instant file access for screenshots via shared dir. SSH localhost used for accessibility tree extraction (LaunchAgent gets restricted Aqua session). Passwordless SSH keys set up during provisioning. |
 | Accessibility | Swift helper binary (AXUIElement API) | No pyatspi on macOS. Outputs same TSV format as Linux `get-a11y-tree.py`. Separate binary installed in golden image. |
 | Action execution | PyAutoGUI (Quartz/CoreGraphics backend) | Same as Linux, different backend. Requires Screen Recording + Accessibility TCC permissions. |
 | Screenshots | `screencapture -x` | Built-in macOS utility, no dependencies. |

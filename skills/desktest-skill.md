@@ -250,7 +250,7 @@ test-results/
   "instruction": "What the agent should do",
   "completion_condition": "Optional — when the agent should consider the task done",
   "app": {
-    "type": "appimage|folder|docker_image|vnc_attach",
+    "type": "appimage|folder|docker_image|vnc_attach|macos_tart|macos_native",
     "path": "./app.AppImage",
     "electron": true
   },
