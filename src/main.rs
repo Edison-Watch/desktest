@@ -59,7 +59,9 @@ fn print_banner(version: &str) -> usize {
         for line in LOGO_LINES {
             println!("{line}");
         }
-        println!("  Desktest CLI v{version} \u{2014} Computer-use CLI for scalable E2E desktop testing");
+        println!(
+            "  Desktest CLI v{version} \u{2014} Computer-use CLI for scalable E2E desktop testing"
+        );
         println!();
         return 0;
     }
