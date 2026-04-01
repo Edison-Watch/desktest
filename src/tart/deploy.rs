@@ -146,8 +146,7 @@ impl TartSession {
             } else {
                 // Direct executable (non-Electron)
                 info!("Launching executable: {path}");
-                self.exec_detached_with_log(&[path], "/tmp/app.log")
-                    .await?;
+                self.exec_detached_with_log(&[path], "/tmp/app.log").await?;
             }
         }
 
