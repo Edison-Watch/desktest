@@ -1050,22 +1050,33 @@ pub(crate) async fn build_agent_loop_config(
     };
     obs_config.a11y_timeout = a11y_timeout;
 
-    // Compute adjusted total timeout to account for per-step observation overhead.
-    // Uses the a11y timeout ceiling (not measured time) intentionally — this is the
-    // worst-case wait per step, so total_timeout must budget for it.
-    // 1.0s accounts for fixed per-step overhead (screenshot capture).
-    let per_step_overhead = obs_config.sleep_after_action + 1.0 + a11y_timeout.as_secs_f64();
-    let base_timeout = task_def.timeout;
-    let adjusted_total = base_timeout as f64 + (per_step_overhead * max_steps as f64);
+    // Scale step timeout with the sliding window size: each step in the window
+    // adds a screenshot + a11y tree to the LLM context, increasing response time.
+    let max_trajectory_length = crate::agent::context::DEFAULT_MAX_TRAJECTORY_LENGTH;
+    let step_timeout_secs = 30 + (max_trajectory_length as u64 * 10);
+    info!(
+        "Step timeout: {step_timeout_secs}s (scaled for {max_trajectory_length}-step sliding window)"
+    );
+
+    // Compute adjusted total timeout. Each step needs time for:
+    // - LLM response (up to step_timeout_secs)
+    // - Observation overhead (a11y extraction + screenshot + post-action sleep)
+    // The base timeout from the task is a floor, not an additive component.
+    let obs_overhead = obs_config.sleep_after_action + 1.0 + a11y_timeout.as_secs_f64();
+    let per_step_budget = step_timeout_secs as f64 + obs_overhead;
+    let base_timeout = task_def.timeout as f64;
+    let step_based_total = per_step_budget * max_steps as f64;
+    let adjusted_total = base_timeout.max(step_based_total);
     let total_timeout = Duration::from_secs_f64(adjusted_total);
     info!(
-        "Total timeout: {:.0}s (base {base_timeout}s + {:.1}s overhead/step × {max_steps} steps)",
-        adjusted_total, per_step_overhead
+        "Total timeout: {:.0}s (max of base {:.0}s, {:.1}s/step × {max_steps} steps)",
+        adjusted_total, base_timeout, per_step_budget
     );
 
     agent::loop_v2::AgentLoopV2Config {
         max_steps,
         total_timeout,
+        step_timeout: Duration::from_secs(step_timeout_secs),
         observation_config: obs_config,
         llm_max_retries: run.llm_max_retries,
         debug: run.debug,
@@ -1075,6 +1086,7 @@ pub(crate) async fn build_agent_loop_config(
         display_width: config.display_width,
         display_height: config.display_height,
         early_exit: task_def.early_exit.clone(),
+        max_trajectory_length,
         ..Default::default()
     }
 }
