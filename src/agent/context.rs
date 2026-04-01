@@ -165,15 +165,21 @@ impl ContextManager {
 
 /// Convert an Observation into one or more user messages for the LLM.
 ///
-/// Returns a Vec because we may need separate messages for image and text content,
-/// or a combined message with both.
+/// Loads the screenshot data URL on demand from disk. Returns a Vec because
+/// we may need separate messages for image and text content, or a combined
+/// message with both.
 fn observation_to_message(observation: &Observation) -> Vec<ChatMessage> {
     let mut messages = Vec::new();
 
-    match (
-        &observation.screenshot_data_url,
-        &observation.a11y_tree_text,
-    ) {
+    // Lazy-load: read the screenshot from disk only when building LLM messages
+    let data_url = observation.load_screenshot_data_url().and_then(|r| {
+        r.map_err(|e| {
+            tracing::warn!("Failed to load screenshot for LLM message: {e}");
+        })
+        .ok()
+    });
+
+    match (data_url.as_deref(), &observation.a11y_tree_text) {
         (Some(data_url), Some(a11y_text)) => {
             // Combined: screenshot image + a11y tree text in a single user message
             messages.push(ChatMessage {
@@ -531,28 +537,30 @@ pub fn is_context_length_error(error_msg: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
-
-    fn make_screenshot_observation() -> Observation {
-        Observation {
-            screenshot_path: Some(PathBuf::from("/tmp/step_001.png")),
-            screenshot_data_url: Some("data:image/png;base64,abc123".into()),
+    fn make_screenshot_observation() -> (Observation, tempfile::NamedTempFile) {
+        // Each test gets its own temp file to avoid parallel-test races
+        let f = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(f.path(), b"fake-png").unwrap();
+        let obs = Observation {
+            screenshot_path: Some(f.path().to_path_buf()),
             a11y_tree_text: None,
-        }
+        };
+        (obs, f)
     }
 
-    fn make_full_observation() -> Observation {
-        Observation {
-            screenshot_path: Some(PathBuf::from("/tmp/step_001.png")),
-            screenshot_data_url: Some("data:image/png;base64,abc123".into()),
+    fn make_full_observation() -> (Observation, tempfile::NamedTempFile) {
+        let f = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(f.path(), b"fake-png").unwrap();
+        let obs = Observation {
+            screenshot_path: Some(f.path().to_path_buf()),
             a11y_tree_text: Some("button\tOK\t\tGtkButton".into()),
-        }
+        };
+        (obs, f)
     }
 
     fn make_a11y_only_observation() -> Observation {
         Observation {
             screenshot_path: None,
-            screenshot_data_url: None,
             a11y_tree_text: Some("panel\troot\t\tGtkWindow".into()),
         }
     }
@@ -560,7 +568,6 @@ mod tests {
     fn make_empty_observation() -> Observation {
         Observation {
             screenshot_path: None,
-            screenshot_data_url: None,
             a11y_tree_text: None,
         }
     }
@@ -659,7 +666,7 @@ mod tests {
             false,
             Platform::Linux,
         );
-        let obs = make_screenshot_observation();
+        let (obs, _f) = make_screenshot_observation();
         let messages = ctx.build_messages(&obs);
 
         // Should have: system + instruction + current observation
@@ -689,14 +696,15 @@ mod tests {
             false,
             Platform::Linux,
         );
+        let (obs1, _f1) = make_screenshot_observation();
         ctx.push_turn(TrajectoryTurn {
-            observation: make_screenshot_observation(),
+            observation: obs1,
             response_text: "I see a button. I'll click it.".into(),
             error_feedback: None,
             bash_output: None,
         });
 
-        let obs = make_full_observation();
+        let (obs, _f2) = make_full_observation();
         let messages = ctx.build_messages(&obs);
 
         // system + instruction + (prev obs + prev response) + current obs
@@ -719,14 +727,15 @@ mod tests {
             false,
             Platform::Linux,
         );
+        let (obs1, _f1) = make_screenshot_observation();
         ctx.push_turn(TrajectoryTurn {
-            observation: make_screenshot_observation(),
+            observation: obs1,
             response_text: "I'll click at (100, 200)".into(),
             error_feedback: Some("NameError: name 'foo' is not defined".into()),
             bash_output: None,
         });
 
-        let obs = make_screenshot_observation();
+        let (obs, _f2) = make_screenshot_observation();
         let messages = ctx.build_messages(&obs);
 
         // system + instruction + (prev obs + prev response + error feedback) + current obs
@@ -748,10 +757,13 @@ mod tests {
             Platform::Linux,
         );
 
-        // Push 4 turns
+        // Push 4 turns — keep temp files alive for the sliding window
+        let mut _files = Vec::new();
         for i in 0..4 {
+            let (obs, f) = make_screenshot_observation();
+            _files.push(f);
             ctx.push_turn(TrajectoryTurn {
-                observation: make_screenshot_observation(),
+                observation: obs,
                 response_text: format!("Turn {i}"),
                 error_feedback: None,
                 bash_output: None,
@@ -760,7 +772,7 @@ mod tests {
 
         assert_eq!(ctx.trajectory_len(), 4);
 
-        let obs = make_screenshot_observation();
+        let (obs, _f) = make_screenshot_observation();
         let messages = ctx.build_messages(&obs);
 
         // system + instruction + 2 turns * (obs + response) + current obs = 2 + 4 + 1 = 7
@@ -780,16 +792,19 @@ mod tests {
         let mut ctx = ContextManager::new(1920, 1080, "test", 3, false, false, Platform::Linux);
 
         // Push exactly 3 turns
+        let mut _files = Vec::new();
         for i in 0..3 {
+            let (obs, f) = make_screenshot_observation();
+            _files.push(f);
             ctx.push_turn(TrajectoryTurn {
-                observation: make_screenshot_observation(),
+                observation: obs,
                 response_text: format!("Turn {i}"),
                 error_feedback: None,
                 bash_output: None,
             });
         }
 
-        let obs = make_screenshot_observation();
+        let (obs, _f) = make_screenshot_observation();
         let messages = ctx.build_messages(&obs);
 
         // system + instruction + 3 turns * (obs + response) + current obs = 2 + 6 + 1 = 9
@@ -807,14 +822,15 @@ mod tests {
             false,
             Platform::Linux,
         );
+        let (obs1, _f1) = make_screenshot_observation();
         ctx.push_turn(TrajectoryTurn {
-            observation: make_screenshot_observation(),
+            observation: obs1,
             response_text: "Turn 0".into(),
             error_feedback: None,
             bash_output: None,
         });
 
-        let obs = make_full_observation();
+        let (obs, _f2) = make_full_observation();
         let messages = ctx.build_fallback_messages(&obs);
 
         // system + instruction (with context drop note) + current observation
@@ -829,8 +845,9 @@ mod tests {
     #[test]
     fn test_clear_trajectory() {
         let mut ctx = ContextManager::new(1920, 1080, "test", 3, false, false, Platform::Linux);
+        let (obs1, _f1) = make_screenshot_observation();
         ctx.push_turn(TrajectoryTurn {
-            observation: make_screenshot_observation(),
+            observation: obs1,
             response_text: "Turn 0".into(),
             error_feedback: None,
             bash_output: None,
@@ -845,7 +862,7 @@ mod tests {
 
     #[test]
     fn test_observation_to_message_screenshot_only() {
-        let obs = make_screenshot_observation();
+        let (obs, _f) = make_screenshot_observation();
         let msgs = observation_to_message(&obs);
         assert_eq!(msgs.len(), 1);
         assert_eq!(msgs[0].role, "user");
@@ -857,7 +874,7 @@ mod tests {
 
     #[test]
     fn test_observation_to_message_full() {
-        let obs = make_full_observation();
+        let (obs, _f) = make_full_observation();
         let msgs = observation_to_message(&obs);
         assert_eq!(msgs.len(), 1);
         // Should be a combined message with image + text
@@ -929,16 +946,18 @@ mod tests {
         let mut ctx = ContextManager::new(1920, 1080, "test", 3, false, false, Platform::Linux);
 
         // Turn 1: screenshot only
+        let (obs1, _f1) = make_screenshot_observation();
         ctx.push_turn(TrajectoryTurn {
-            observation: make_screenshot_observation(),
+            observation: obs1,
             response_text: "Clicked button".into(),
             error_feedback: None,
             bash_output: None,
         });
 
         // Turn 2: full observation
+        let (obs2, _f2) = make_full_observation();
         ctx.push_turn(TrajectoryTurn {
-            observation: make_full_observation(),
+            observation: obs2,
             response_text: "Typed text".into(),
             error_feedback: None,
             bash_output: None,
@@ -952,7 +971,7 @@ mod tests {
             bash_output: None,
         });
 
-        let obs = make_full_observation();
+        let (obs, _f3) = make_full_observation();
         let messages = ctx.build_messages(&obs);
 
         // system + instruction + 3 turns * (obs + response) + error_feedback + current obs
@@ -963,14 +982,15 @@ mod tests {
     #[test]
     fn test_zero_trajectory_length() {
         let mut ctx = ContextManager::new(1920, 1080, "test", 0, false, false, Platform::Linux);
+        let (obs1, _f1) = make_screenshot_observation();
         ctx.push_turn(TrajectoryTurn {
-            observation: make_screenshot_observation(),
+            observation: obs1,
             response_text: "Turn 0".into(),
             error_feedback: None,
             bash_output: None,
         });
 
-        let obs = make_screenshot_observation();
+        let (obs, _f2) = make_screenshot_observation();
         let messages = ctx.build_messages(&obs);
 
         // system + instruction + current obs only (no trajectory)

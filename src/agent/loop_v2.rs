@@ -875,9 +875,15 @@ impl<'a> AgentLoopV2<'a> {
         if let Some(ref m) = self.monitor {
             let thought = crate::trajectory::extract_thought(data.response_text, data.code_blocks);
             let action_code = data.code_blocks.join("\n\n");
-            let screenshot_base64 = observation.screenshot_data_url.as_ref().and_then(|url| {
-                url.strip_prefix("data:image/png;base64,")
-                    .map(|s| s.to_string())
+            let screenshot_base64 = observation.load_screenshot_data_url().and_then(|r| {
+                r.map_err(|e| {
+                    warn!("Failed to load screenshot for monitor event: {e}");
+                })
+                .ok()
+                .and_then(|url| {
+                    url.strip_prefix("data:image/png;base64,")
+                        .map(|s| s.to_string())
+                })
             });
             let timestamp = crate::trajectory::chrono_iso8601_now();
             m.send(MonitorEvent::StepComplete {
@@ -951,7 +957,6 @@ impl<'a> AgentLoopV2<'a> {
         // Build the current message state for logging
         let dummy_obs = Observation {
             screenshot_path: None,
-            screenshot_data_url: None,
             a11y_tree_text: None,
         };
         let messages = self.context.build_messages(&dummy_obs);
@@ -983,10 +988,13 @@ fn build_judge_messages(prompt: &str, observation: &Observation) -> Vec<ChatMess
     let mut messages = vec![system];
 
     // Build observation content (screenshot + a11y tree)
-    match (
-        &observation.screenshot_data_url,
-        &observation.a11y_tree_text,
-    ) {
+    let data_url = observation.load_screenshot_data_url().and_then(|r| {
+        r.map_err(|e| {
+            tracing::warn!("Failed to load screenshot for judge message: {e}");
+        })
+        .ok()
+    });
+    match (data_url.as_deref(), &observation.a11y_tree_text) {
         (Some(data_url), Some(a11y_text)) => {
             messages.push(ChatMessage {
                 role: "user".into(),

@@ -733,7 +733,7 @@ async fn run_eval_loop(
 
             // Capture pre-evaluation screenshot (non-replay only)
             if !has_replay {
-                if let Ok((path, _)) = observation::capture_screenshot_with_retry(
+                if let Ok(path) = observation::capture_screenshot_with_retry(
                     session,
                     artifacts_dir,
                     1,
@@ -767,7 +767,7 @@ async fn run_eval_loop(
 
             // Capture post-evaluation screenshot (non-replay only)
             if !has_replay {
-                if let Ok((path, _)) = observation::capture_screenshot_with_retry(
+                if let Ok(path) = observation::capture_screenshot_with_retry(
                     session,
                     artifacts_dir,
                     2,
