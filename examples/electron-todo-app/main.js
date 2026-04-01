@@ -8,6 +8,8 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 800,
     height: 600,
+    show: false,
+    backgroundColor: '#ffffff',
     webPreferences: {
       nodeIntegration: true,       // NOTE: insecure; acceptable only in isolated test containers
       contextIsolation: false,     // NOTE: insecure; acceptable only in isolated test containers
@@ -15,6 +17,14 @@ function createWindow() {
   });
 
   win.loadFile('index.html');
+
+  // Show window after content is ready — ensures the Chromium compositor
+  // has finished initializing, which is required in VM environments (Tart)
+  // where the default show-on-create path can produce invisible windows.
+  win.once('ready-to-show', () => {
+    win.show();
+    win.focus();
+  });
 }
 
 app.whenReady().then(createWindow);

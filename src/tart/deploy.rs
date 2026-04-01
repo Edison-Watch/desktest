@@ -97,6 +97,10 @@ impl TartSession {
             Some(deployed_path)
         };
 
+        // Electron apps in Tart VMs need --in-process-gpu to work around a
+        // Chromium compositor bug where the window is logically created but not
+        // painted to the screen buffer. Running the GPU compositor in-process
+        // avoids the IPC path that breaks under Apple Virtualization.framework.
         if let Some(cmd) = launch_cmd {
             // Arbitrary launch command — run directly
             info!("Launching app via launch_cmd: {cmd}");
@@ -106,7 +110,9 @@ impl TartSession {
             // Launch by bundle identifier
             let mut cmd = format!("open -b {}", shell_escape::escape(bid.into()));
             if electron {
-                cmd.push_str(" --args --force-renderer-accessibility");
+                cmd.push_str(
+                    " --args --no-sandbox --in-process-gpu --force-renderer-accessibility",
+                );
             }
             info!("Launching app via bundle_id: {bid}");
             self.exec_detached_with_log(&["bash", "-lc", &cmd], "/tmp/app.log")
@@ -116,19 +122,31 @@ impl TartSession {
             if path.ends_with(".app") {
                 let mut cmd = format!("open {}", shell_escape::escape(path.into()));
                 if electron {
-                    cmd.push_str(" --args --force-renderer-accessibility");
+                    cmd.push_str(
+                        " --args --no-sandbox --in-process-gpu --force-renderer-accessibility",
+                    );
                 }
                 info!("Launching app bundle: {path}");
                 self.exec_detached_with_log(&["bash", "-lc", &cmd], "/tmp/app.log")
                     .await?;
+            } else if electron {
+                // Electron non-.app path: could be a directory (npm project) or
+                // a standalone binary. Use a shell runtime check since `path` is
+                // a VM path that we can't stat from the host.
+                let escaped = shell_escape::escape(path.into());
+                let flags = "--no-sandbox --in-process-gpu --force-renderer-accessibility";
+                let cmd = format!(
+                    "if [ -d {escaped} ]; then \
+                     cd {escaped} && npx electron . {flags}; \
+                     else {escaped} {flags}; fi"
+                );
+                info!("Launching Electron app: {path}");
+                self.exec_detached_with_log(&["bash", "-lc", &cmd], "/tmp/app.log")
+                    .await?;
             } else {
-                // Direct executable
-                let mut args: Vec<&str> = vec![path];
-                if electron {
-                    args.push("--force-renderer-accessibility");
-                }
+                // Direct executable (non-Electron)
                 info!("Launching executable: {path}");
-                self.exec_detached_with_log(&args, "/tmp/app.log").await?;
+                self.exec_detached_with_log(&[path], "/tmp/app.log").await?;
             }
         }
 
