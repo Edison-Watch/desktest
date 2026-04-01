@@ -117,7 +117,7 @@ pub(crate) fn extract_text_and_images(msg: &ChatMessage) -> (String, Vec<String>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::{user_image_message, user_message};
+    use crate::provider::user_message;
 
     #[test]
     fn test_save_screenshot_jpeg_extension() {
