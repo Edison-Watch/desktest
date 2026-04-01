@@ -148,10 +148,10 @@ TLDR: `desktest --help`
 desktest [OPTIONS] <COMMAND>
 
 Commands:
-  run           Run a single test from a task JSON file
+  run           Run a single test from a task JSON file (supports --replay for deterministic mode)
   suite         Run all *.json task files in a directory
   interactive   Start container and pause for debugging
-  attach        Attach to an existing running container
+  attach        Attach to an existing running container (supports --replay)
   validate      Check task JSON against schema without running
   codify        Convert trajectory to deterministic Python replay script
   review        Generate interactive HTML trajectory viewer
@@ -175,7 +175,6 @@ Options:
   --no-artifacts             Skip artifact collection entirely
   --artifacts-timeout <SECS> Timeout for artifact collection (default: 120, 0 = no limit)
   --artifacts-exclude <GLOB> Glob patterns to exclude from artifact collection (repeatable)
-  --replay                   Deterministic replay from codified script (no LLM, no API costs)
   --qa                       Enable QA mode: agent reports app bugs during testing
   --with-bash                Allow the agent to run bash commands inside the container (disabled by default)
   --no-network               Disable outbound network from the container (Docker network mode "none")
