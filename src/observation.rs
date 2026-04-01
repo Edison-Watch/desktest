@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -315,23 +313,15 @@ async fn extract_a11y_tree(
     }
 
     // Trim to max tokens (approximate: 1 token ~ 4 chars)
-    let max_chars = max_tokens * 4;
-    let result = if trimmed.len() > max_chars {
+    let result = trim_a11y_tree(trimmed, max_tokens);
+    if result.len() < trimmed.len() {
         debug!(
             "A11y tree trimmed from {} to {} chars (~{} tokens)",
             trimmed.len(),
-            max_chars,
+            result.len(),
             max_tokens
         );
-        let truncated = &trimmed[..max_chars];
-        // Try to cut at a line boundary to avoid partial lines
-        match truncated.rfind('\n') {
-            Some(pos) if pos > max_chars / 2 => truncated[..pos].to_string(),
-            _ => truncated.to_string(),
-        }
-    } else {
-        trimmed.to_string()
-    };
+    }
 
     debug!("A11y tree extracted: {} chars", result.len());
     Ok(result)
@@ -371,6 +361,7 @@ pub async fn probe_a11y_timing(
 }
 
 /// Save an a11y tree to a file in the artifacts directory.
+#[allow(dead_code)]
 pub async fn save_a11y_tree(
     artifacts_dir: &Path,
     step_index: usize,
