@@ -10,8 +10,9 @@ Once happy -> Convert agent trajectories to deterministic CI code
 
 Copy-paste the following prompt into Claude Code (or any coding agent) to install desktest and set up the agent skill:
 
-> Install the desktest CLI by running `curl -fsSL https://raw.githubusercontent.com/Edison-Watch/desktest/master/install.sh | sh`. Then copy `skills/desktest-skill.md` from the desktest repo (https://raw.githubusercontent.com/Edison-Watch/desktest/master/skills/desktest-skill.md) to `~/.claude/skills/desktest/SKILL.md` so you have context on how to use it.
-
+```
+Install the desktest CLI by running `curl -fsSL https://raw.githubusercontent.com/Edison-Watch/desktest/master/install.sh | sh`. Then copy `skills/desktest-skill.md` from the desktest repo (https://raw.githubusercontent.com/Edison-Watch/desktest/master/skills/desktest-skill.md) to `~/.claude/skills/desktest/SKILL.md` so you have context on how to use it.
+```
 <img width="831" height="549" alt="Screenshot 2026-03-25 at 21 04 46" src="https://github.com/user-attachments/assets/fc07dd36-2c49-4ac7-ada9-105a55e85629" />
 
 
@@ -324,22 +325,22 @@ Developer writes task.json
         │
         ├─── Linux ────────────────────┐     ├─── macOS ────────────────────┐
         │  Docker Container            │     │  Tart VM (or native host)    │
-        │  Xvfb + XFCE + x11vnc       │     │  Native macOS desktop        │
+        │  Xvfb + XFCE + x11vnc        │     │  Native macOS desktop        │
         │  PyAutoGUI (X11)             │     │  PyAutoGUI (Quartz)          │
         │  pyatspi (AT-SPI2)           │     │  a11y-helper (AXUIElement)   │
         │  scrot (screenshot)          │     │  screencapture (screenshot)  │
         └──────────┬───────────────────┘     └──────────┬───────────────────┘
-                   │ screenshot + a11y tree              │
-                   └──────────────┬──────────────────────┘
+                   │ screenshot + a11y tree             │
+                   └──────────────┬─────────────────────┘
                                   ▼
                      ┌──────────────────┐
                      │  LLM Agent Loop  │  observe → think → act → repeat
-                     │  (PyAutoGUI code) │
+                     │  (PyAutoGUI code)│
                      └────────┬─────────┘
                               │
                               ▼
                      ┌──────────────────┐
-                     │  Evaluator        │  programmatic checks / LLM judge / hybrid
+                     │  Evaluator       │  programmatic checks / LLM judge / hybrid
                      └────────┬─────────┘
                               │
                               ▼
@@ -373,6 +374,9 @@ desktest_artifacts/
 
 ## Exit Codes
 
+<details>
+<summary>Expand</summary>
+
 | Code | Meaning |
 |------|---------|
 | 0 | Test passed |
@@ -380,6 +384,9 @@ desktest_artifacts/
 | 2 | Configuration error |
 | 3 | Infrastructure error |
 | 4 | Agent error |
+
+</details>
+
 
 ## Environment Variables
 
