@@ -34,7 +34,7 @@ shared_dir/
 ```
 
 On macOS (Tart): shared dir mounted at `/Volumes/My Shared Files/desktest`
-On Windows (QEMU): shared dir mounted as a drive letter (e.g., `Z:\desktest`) via VirtIO-FS + WinFsp
+On Windows (QEMU): shared dir mounted as a drive root (e.g., `Z:\`) via VirtIO-FS + WinFsp. The virtiofsd serves the host shared directory as the drive root; the `tag=desktest` is a volume label, not a path component. The Windows agent uses `Z:\` as its `shared_dir` base (i.e., `Z:\agent_ready`, `Z:\requests\`, `Z:\responses\`, `Z:\transfers\`).
 
 ## QEMU VM Lifecycle
 
@@ -54,14 +54,14 @@ On Windows (QEMU): shared dir mounted as a drive letter (e.g., `Z:\desktest`) vi
      -drive file={overlay}.qcow2,if=virtio \
      -chardev socket,id=char0,path={virtiofsd.sock} \
      -device vhost-user-fs-pci,chardev=char0,tag=desktest \
-     -display none -vnc :{port} \
+     -display none -vnc none \
      ...
 7. Wait for agent_ready sentinel in shared dir (up to 120s)
-8. Return WindowsVmSession
-
-Note: VNC ports are allocated by binding to port 0 (OS-assigned ephemeral port) to
-avoid TOCTOU races in parallel suite mode. The kernel guarantees a unique port. The
-allocated port is stored in the session for debugging access via `vnc :{display}`.
+8. (Optional) Activate VNC via QMP for debugging:
+   Send {"execute": "change", "arguments": {"device": "vnc", "target": "localhost:{display}"}}
+   This avoids VNC port conflicts entirely — VNC is off by default and only enabled
+   on demand via the QEMU Machine Protocol (QMP) monitor socket.
+9. Return WindowsVmSession
 ```
 
 ### cleanup()
@@ -92,7 +92,7 @@ This prevents disk and process leaks from accumulating after repeated test failu
 | VM binary | `tart run` | `qemu-system-x86_64` |
 | Cloning | `tart clone {base} {name}` | `qemu-img create -b {base} -F qcow2 -f qcow2 {overlay}` |
 | Shared dir mechanism | `--dir=desktest:{path}` (Tart built-in) | VirtIO-FS via virtiofsd daemon |
-| Guest mount point | `/Volumes/My Shared Files/desktest` | Drive letter (e.g., `Z:\desktest`) via WinFsp |
+| Guest mount point | `/Volumes/My Shared Files/desktest` | Drive root (e.g., `Z:\`) via WinFsp — virtiofsd serves the host shared dir as the drive root |
 | Cleanup | `tart stop` + `tart delete` | ACPI shutdown + delete overlay QCOW2 |
 | Shell | `bash` | `powershell` / `cmd` |
 | Temp path | `/tmp/` | `C:\Temp\` |
