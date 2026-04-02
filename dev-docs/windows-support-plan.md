@@ -50,6 +50,10 @@ On Windows (QEMU): shared dir mounted as a drive root (e.g., `Z:\`) via VirtIO-F
 6. Start swtpm (software TPM 2.0 emulator) for Windows 11:
    swtpm socket --tpmstate dir={tpm_state_dir} \
      --ctrl type=unixio,path={swtpm_sock} --tpm2
+   QEMU connects to this socket via `-chardev socket,id=chrtpm,path={swtpm_sock}`
+   and `-tpmdev emulator,id=tpm0,chardev=chrtpm`. In `swtpm socket` mode, the
+   `--ctrl` socket is the single channel that QEMU's `emulator` tpmdev uses for
+   both control and data (this is the standard pattern used by libvirt/quickemu).
    Note: Windows 11 requires TPM 2.0. The `swtpm` package must be installed
    on the host (e.g., `apt install swtpm` on Debian/Ubuntu). The swtpm process
    is managed alongside virtiofsd and cleaned up in the same way.
