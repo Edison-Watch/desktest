@@ -54,13 +54,16 @@ On Windows (QEMU): shared dir mounted as a drive root (e.g., `Z:\`) via VirtIO-F
      -drive file={overlay}.qcow2,if=virtio \
      -chardev socket,id=char0,path={virtiofsd.sock} \
      -device vhost-user-fs-pci,chardev=char0,tag=desktest \
+     -qmp unix:{qmp_sock},server,wait=off \
      -display none -vnc none \
      ...
 7. Wait for agent_ready sentinel in shared dir (up to 120s)
 8. (Optional) Activate VNC via QMP for debugging:
-   Send {"execute": "change", "arguments": {"device": "vnc", "target": "localhost:{display}"}}
+   Send via the QMP socket at {qmp_sock}:
+   {"execute": "human-monitor-command", "arguments": {"command-line": "change vnc localhost:{display}"}}
    This avoids VNC port conflicts entirely — VNC is off by default and only enabled
-   on demand via the QEMU Machine Protocol (QMP) monitor socket.
+   on demand via the QEMU Machine Protocol (QMP) monitor socket. The QMP socket path
+   is stored in WindowsVmSession for later use.
 9. Return WindowsVmSession
 ```
 
