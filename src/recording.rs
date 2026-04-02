@@ -333,7 +333,7 @@ fn format_action_lines(action_code: &[String]) -> Vec<String> {
 
 /// If `lines` exceeds `max`, append `...` to the last line as a truncation
 /// indicator. This is a no-op when the line already ends with `...`.
-fn truncate_lines(lines: &mut Vec<String>, max: usize) {
+fn truncate_lines(lines: &mut [String], max: usize) {
     if lines.len() >= max {
         if let Some(last) = lines.last_mut() {
             if !last.ends_with("...") {

@@ -1053,11 +1053,7 @@ fn validate_app_config(app: &AppConfig) -> Result<(), AppError> {
                 ));
             }
         }
-        AppConfig::DockerImage {
-            image,
-            digest,
-            ..
-        } => {
+        AppConfig::DockerImage { image, digest, .. } => {
             if image.is_empty() {
                 return Err(AppError::Config(
                     "DockerImage app: 'image' must not be empty.".into(),
@@ -1244,7 +1240,10 @@ mod tests {
             }
         }"#;
         let err = TaskDefinition::parse_and_validate(json).unwrap_err();
-        assert!(err.to_string().contains("digest"), "error should mention digest: {err}");
+        assert!(
+            err.to_string().contains("digest"),
+            "error should mention digest: {err}"
+        );
     }
 
     #[test]
@@ -1260,7 +1259,10 @@ mod tests {
             }
         }"#;
         let err = TaskDefinition::parse_and_validate(json).unwrap_err();
-        assert!(err.to_string().contains("inline digest"), "error should mention inline digest: {err}");
+        assert!(
+            err.to_string().contains("inline digest"),
+            "error should mention inline digest: {err}"
+        );
     }
 
     #[test]
@@ -1275,7 +1277,10 @@ mod tests {
             }
         }"#;
         let err = TaskDefinition::parse_and_validate(json).unwrap_err();
-        assert!(err.to_string().contains("must not be empty"), "error should say image must not be empty: {err}");
+        assert!(
+            err.to_string().contains("must not be empty"),
+            "error should say image must not be empty: {err}"
+        );
     }
 
     #[test]

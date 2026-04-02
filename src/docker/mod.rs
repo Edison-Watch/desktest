@@ -102,13 +102,15 @@ impl DockerSession {
                 ))
             })?;
 
-            let full_digest = format!("sha256:{}", digest.strip_prefix("sha256:").unwrap_or(digest));
+            let full_digest = format!(
+                "sha256:{}",
+                digest.strip_prefix("sha256:").unwrap_or(digest)
+            );
 
             let repo_digests = inspect.repo_digests.unwrap_or_default();
             let matched = repo_digests.iter().any(|rd| {
                 // repo_digests entries look like "image@sha256:abc123..."
-                rd.ends_with(&full_digest)
-                    || rd.contains(&format!("@{full_digest}"))
+                rd.ends_with(&full_digest) || rd.contains(&format!("@{full_digest}"))
             });
 
             if !matched {
