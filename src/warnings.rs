@@ -28,7 +28,9 @@ fn format_cores(nano_cpus: i64) -> String {
 
 /// Warn before creating a Docker container.
 pub fn warn_docker_resources(config: &Config) {
-    let mem = config.container_memory_bytes.unwrap_or(DEFAULT_MEMORY_BYTES);
+    let mem = config
+        .container_memory_bytes
+        .unwrap_or(DEFAULT_MEMORY_BYTES);
     let cpus = config.container_nano_cpus.unwrap_or(DEFAULT_CPU_CORES);
     eprintln!(
         "Warning: This will allocate a Docker container with {} memory and {} CPU cores.",
@@ -47,7 +49,9 @@ pub fn warn_tart_resources() {
 
 /// Warn before running a test suite.
 pub fn warn_suite_resources(config: &Config, test_count: usize) {
-    let mem = config.container_memory_bytes.unwrap_or(DEFAULT_MEMORY_BYTES);
+    let mem = config
+        .container_memory_bytes
+        .unwrap_or(DEFAULT_MEMORY_BYTES);
     let cpus = config.container_nano_cpus.unwrap_or(DEFAULT_CPU_CORES);
     eprintln!(
         "Warning: Running {} test(s) sequentially — each allocates {} memory and {} CPU cores.",
