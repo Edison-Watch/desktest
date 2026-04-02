@@ -42,7 +42,7 @@ On Windows (QEMU): shared dir mounted as a drive root (e.g., `Z:\`) via VirtIO-F
 
 ```
 1. Generate unique VM name: "desktest-windows-{request_id}"
-2. Create shared directory: $TMPDIR/desktest-windows-{vm_name}-shared/
+2. Create shared directory: $TMPDIR/{vm_name}-shared/
 3. Initialize protocol layout (requests/, responses/, transfers/)
 4. Create QCOW2 overlay from golden image base:
    qemu-img create -b {base_image} -F qcow2 -f qcow2 {overlay}.qcow2
@@ -173,7 +173,7 @@ Desktest is MIT-licensed. For Windows VM support:
 
 **1a — Protocol extraction** (safe refactor, no new functionality):
 1. Extract `src/tart/protocol.rs` to `src/vm_protocol.rs`
-2. Rename Tart-specific error messages to be VM-agnostic (e.g., "Tart VM agent" → "VM agent", "Tart request" → "VM request") and update the corresponding test assertions in `src/tart/protocol.rs` that match on those strings (e.g., `send_request_returns_agent_error_when_error_field_set`, `send_request_returns_error_on_malformed_response`, `send_request_timeout`, `wait_for_agent_ready_timeout`)
+2. Rename Tart-specific error messages to be VM-agnostic (e.g., "Tart VM agent" → "VM agent", "Tart request" → "VM request") and update the corresponding test assertions in `src/tart/protocol.rs` that match on those strings (e.g., `send_request_returns_agent_error_when_error_field_set`, `send_request_returns_error_on_malformed_response`, `send_request_times_out_when_no_response`, `wait_for_agent_ready_times_out`)
 3. Update `src/tart/mod.rs` to import from `crate::vm_protocol`
 4. Verify existing Tart tests still pass
 
