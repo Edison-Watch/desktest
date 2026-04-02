@@ -475,11 +475,14 @@ impl Session for WindowsVmSession {
             .collect::<Vec<_>>()
             .join(" ");
         let escaped_log = log_path.replace('\'', "''");
+        // Use `& cmd args` (not `& { cmd args }`) so that a single-quoted path
+        // like `'C:\Temp\My App.exe'` is invoked as a command, not evaluated as
+        // a string literal expression.
         self.exec_detached(&[
             "powershell",
             "-NonInteractive",
             "-Command",
-            &format!("& {{ {inner_cmd} }} *> '{escaped_log}'"),
+            &format!("& {inner_cmd} *> '{escaped_log}'"),
         ])
         .await
     }
