@@ -30,6 +30,7 @@ mod tart;
 mod task;
 mod trajectory;
 mod update;
+mod warnings;
 
 pub(crate) use orchestration::run_task;
 
@@ -306,6 +307,7 @@ async fn main() {
                 artifacts_exclude: resolve_artifacts_exclude(&cli.artifacts_exclude),
                 llm_max_retries: run_config.llm_max_retries,
                 no_network: cli.no_network,
+                quiet: cli.quiet,
             };
 
             let result = orchestration::run_task(
@@ -363,6 +365,7 @@ async fn main() {
                 artifacts_exclude: resolve_artifacts_exclude(&cli.artifacts_exclude),
                 llm_max_retries: run_config.llm_max_retries,
                 no_network: cli.no_network,
+                quiet: cli.quiet,
             };
 
             let result = suite::run_suite(
@@ -444,6 +447,7 @@ async fn main() {
                 artifacts_exclude: resolve_artifacts_exclude(&cli.artifacts_exclude),
                 llm_max_retries: run_config.llm_max_retries,
                 no_network: cli.no_network,
+                quiet: cli.quiet,
             };
 
             let result = orchestration::run_attach(
@@ -508,6 +512,7 @@ async fn main() {
                 artifacts_exclude: resolve_artifacts_exclude(&cli.artifacts_exclude),
                 llm_max_retries: run_config.llm_max_retries,
                 no_network: cli.no_network,
+                quiet: cli.quiet,
             };
             let result = interactive::run_interactive(
                 task_def,
@@ -796,6 +801,7 @@ async fn main() {
                 artifacts_exclude: resolve_artifacts_exclude(&cli.artifacts_exclude),
                 llm_max_retries: run_config.llm_max_retries,
                 no_network: cli.no_network,
+                quiet: cli.quiet,
             };
 
             let result = orchestration::run_task(
@@ -863,13 +869,18 @@ async fn main() {
             base_image,
             output_image,
             with_electron,
-        } => match init_macos::run_init_macos(base_image, output_image, *with_electron).await {
-            Ok(()) => std::process::exit(0),
-            Err(e) => {
-                eprintln!("init-macos failed: {e}");
-                std::process::exit(e.exit_code());
+        } => {
+            if !cli.quiet {
+                warnings::warn_init_macos_resources();
             }
-        },
+            match init_macos::run_init_macos(base_image, output_image, *with_electron).await {
+                Ok(()) => std::process::exit(0),
+                Err(e) => {
+                    eprintln!("init-macos failed: {e}");
+                    std::process::exit(e.exit_code());
+                }
+            }
+        }
         Command::Monitor { watch } => {
             if cli.artifacts_dir.is_some() {
                 eprintln!(
