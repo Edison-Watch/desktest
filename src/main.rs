@@ -176,7 +176,11 @@ fn print_monitor_url(bind_addr: &str, port: u16) {
 
     let is_wildcard = bind_addr == "0.0.0.0" || bind_addr == "::";
     let is_loopback = bind_addr == "127.0.0.1" || bind_addr == "::1";
-    let ssh_ip = detect_ssh_server_ip();
+    let ssh_ip = if is_wildcard || is_loopback {
+        detect_ssh_server_ip()
+    } else {
+        None
+    };
 
     let display_url = if is_wildcard {
         match &ssh_ip {
@@ -188,20 +192,24 @@ fn print_monitor_url(bind_addr: &str, port: u16) {
     };
 
     println!(">>> Open http://{display_url} in your browser to watch the test live <<<");
-    println!(
-        "NOTE FOR AI AGENTS: Share the above URL (http://{display_url}) with the user \
-         so they can watch the test live in their browser."
-    );
+
+    if is_loopback && ssh_ip.is_some() {
+        // Don't tell agents to share a loopback URL that isn't reachable remotely.
+        eprintln!(
+            "  Note: SSH session detected but dashboard is bound to {bind_addr} (not reachable remotely).\n  \
+             To access remotely, re-run with: --monitor-bind-addr 0.0.0.0"
+        );
+    } else {
+        println!(
+            "NOTE FOR AI AGENTS: Share the above URL (http://{display_url}) with the user \
+             so they can watch the test live in their browser."
+        );
+    }
 
     if is_wildcard && ssh_ip.is_some() {
         println!(
             "  Tip: if you set up SSH port forwarding (-L {port}:localhost:{port}), \
              use http://localhost:{port} instead"
-        );
-    } else if is_loopback && ssh_ip.is_some() {
-        eprintln!(
-            "  Note: SSH session detected but dashboard is bound to {bind_addr} (not reachable remotely).\n  \
-             To access remotely, re-run with: --monitor-bind-addr 0.0.0.0"
         );
     }
 }
