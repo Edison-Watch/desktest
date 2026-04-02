@@ -29,6 +29,12 @@ Install the desktest CLI by running `curl -fsSL https://raw.githubusercontent.co
 - **QA agent** (`--qa`): Autonomous QA reports via slack webhooks/markdown
 - **[SSH monitoring](docs/remote-monitoring.md)**: access the dashboard and VNC from another machine via SSH or direct network access
 
+## OSWorld Leaderboard
+
+Desktest is based on the agent harness as the [OSWorld](https://os-world.github.io/) benchmark for evaluating multimodal agents on real-world computer tasks. The leaderboard below tracks which models perform best, [updated weekly](https://github.com/Edison-Watch/osworld-leaderboard-updater):
+
+[![OSWorld Leaderboard](https://raw.githubusercontent.com/Edison-Watch/osworld-leaderboard-updater/main/assets/osworld-leaderboard.svg)](https://github.com/Edison-Watch/osworld-leaderboard-updater)
+
 ## Use Cases
 
 ### Workflow 1: Prompt → Human monitors computer use → Deterministic CI
