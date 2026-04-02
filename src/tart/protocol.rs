@@ -8,9 +8,9 @@ use crate::error::AppError;
 
 static REQUEST_COUNTER: AtomicU64 = AtomicU64::new(1);
 
-#[allow(dead_code)] // used by ProtocolClient::new()
+#[allow(dead_code)] // Tart VM feature not yet fully wired up
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
-#[allow(dead_code)] // used by ProtocolClient::new()
+#[allow(dead_code)] // Tart VM feature not yet fully wired up
 const DEFAULT_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

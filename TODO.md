@@ -16,6 +16,10 @@ Items identified during a security audit (2026-03-23). Prioritized by impact.
 
 ### Medium Priority
 
+- ~~**Prompt injection awareness**~~: Deprioritized — not addressing unless users demand it. The container boundary is the primary isolation; structured delimiters in prompts add complexity for marginal benefit.
+
+- ~~**Evaluator temp file races**~~: Not a real bug — suite runs are strictly sequential (simple `for` loop with `.await`), so fixed filenames in `file_compare.rs` cannot collide. Will revisit if suite parallelization is added.
+
 - **ReDoS in evaluator regex**: Regex patterns from task JSON (`MatchMode::Regex`) are compiled without complexity limits. Consider adding a timeout or using `regex` crate's built-in linear-time guarantees (already the case — verify this is sufficient).
 
 - ~~**API key hygiene**~~: Done — stderr warning emitted when `api_key` is found in a config file, recommending environment variables instead.
