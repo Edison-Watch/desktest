@@ -75,14 +75,14 @@ On Windows (QEMU): shared dir mounted as a drive root (e.g., `Z:\`) via VirtIO-F
    be installed on the host (e.g., `apt install ovmf` on Debian/Ubuntu).
    The preflight check (`check_windows_vm()`) should verify both OVMF and swtpm
    are available.
-7. Wait for agent_ready sentinel in shared dir (up to 120s)
-8. (Optional) Activate VNC via QMP for debugging:
-   Send via the QMP socket at {qmp_sock}:
-   {"execute": "human-monitor-command", "arguments": {"command-line": "change vnc localhost:{display}"}}
-   This avoids VNC port conflicts entirely — VNC is off by default and only enabled
-   on demand via the QEMU Machine Protocol (QMP) monitor socket. The QMP socket path
-   is stored in WindowsVmSession for later use.
-9. Return WindowsVmSession
+9. Wait for agent_ready sentinel in shared dir (up to 120s)
+10. (Optional) Activate VNC via QMP for debugging:
+    Send via the QMP socket at {qmp_sock}:
+    {"execute": "human-monitor-command", "arguments": {"command-line": "change vnc localhost:{display}"}}
+    This avoids VNC port conflicts entirely — VNC is off by default and only enabled
+    on demand via the QEMU Machine Protocol (QMP) monitor socket. The QMP socket path
+    is stored in WindowsVmSession for later use.
+11. Return WindowsVmSession
 ```
 
 ### cleanup()
@@ -101,9 +101,10 @@ Analogous to Tart's `cleanup_stale_shared_dirs()`, `WindowsVmSession::create()` 
 
 1. Scan `$TMPDIR` for `desktest-windows-*-shared/` directories
 2. For each, check if the corresponding QEMU process is still running by reading a `.pid` file written at create time and testing with `kill(pid, 0)`
-3. If the process is gone: kill any orphaned `virtiofsd` daemon (identified by its `.sock` file in the shared dir via `fuser` or `/proc/{pid}/cmdline` matching)
-4. Delete the orphaned QCOW2 overlay file (path stored in a `.overlay` metadata file in the shared dir)
-5. Remove the stale shared directory itself
+3. If the process is gone: kill any orphaned `virtiofsd` and `swtpm` daemons (identified by their `.sock` files in the shared dir via `fuser` or `/proc/{pid}/cmdline` matching)
+4. Delete the orphaned QCOW2 overlay file and per-VM OVMF_VARS copy (paths stored in metadata files in the shared dir)
+5. Remove the TPM state directory associated with the session
+6. Remove the stale shared directory itself
 
 This prevents disk and process leaks from accumulating after repeated test failures or crashes.
 
