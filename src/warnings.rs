@@ -6,7 +6,7 @@
 use crate::config::Config;
 
 const DEFAULT_MEMORY_BYTES: i64 = 4 * 1024 * 1024 * 1024; // 4 GB
-const DEFAULT_CPU_CORES: i64 = 4_000_000_000; // 4 nano-CPU cores
+const DEFAULT_CPU_CORES: i64 = 4_000_000_000; // 4 CPU cores (in nano-CPUs)
 
 fn format_gb(bytes: i64) -> String {
     let gb = bytes as f64 / (1024.0 * 1024.0 * 1024.0);

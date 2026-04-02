@@ -259,6 +259,12 @@ pub async fn run_suite(
         crate::warnings::warn_suite_resources(&run_config, entries.len());
     }
 
+    // Suppress per-test warnings inside suite — the suite-level warning above covers it.
+    let inner_run = crate::orchestration::RunConfig {
+        quiet: true,
+        ..run.clone()
+    };
+
     let suite_start = Instant::now();
     let mut test_results: Vec<TestResult> = Vec::new();
 
@@ -294,7 +300,7 @@ pub async fn run_suite(
         let result = crate::run_task(
             entry.task_def.clone(),
             run_config.clone(),
-            run.clone(),
+            inner_run.clone(),
             test_output_dir.clone(),
             monitor.clone(),
             None,
