@@ -256,7 +256,8 @@ pub async fn run_suite(
     println!("Running {} test(s)...\n", entries.len());
 
     if !run.quiet && !entries.is_empty() {
-        crate::warnings::warn_suite_resources(&run_config, entries.len());
+        let apps: Vec<&crate::task::AppConfig> = entries.iter().map(|e| &e.task_def.app).collect();
+        crate::warnings::warn_suite_resources(&run_config, &apps);
     }
 
     // Suppress per-test warnings inside suite — the suite-level warning above covers it.
