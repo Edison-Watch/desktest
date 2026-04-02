@@ -47,20 +47,34 @@ On Windows (QEMU): shared dir mounted as a drive root (e.g., `Z:\`) via VirtIO-F
 4. Create QCOW2 overlay from golden image base:
    qemu-img create -b {base_image} -F qcow2 -f qcow2 {overlay}.qcow2
 5. Start virtiofsd for shared directory
-6. Spawn QEMU:
+6. Start swtpm (software TPM 2.0 emulator) for Windows 11:
+   swtpm socket --tpmstate dir={tpm_state_dir} \
+     --ctrl type=unixio,path={swtpm_sock} --tpm2
+   Note: Windows 11 requires TPM 2.0. The `swtpm` package must be installed
+   on the host (e.g., `apt install swtpm` on Debian/Ubuntu). The swtpm process
+   is managed alongside virtiofsd and cleaned up in the same way.
+7. Copy OVMF_VARS.fd template to per-VM writable copy:
+   cp /usr/share/OVMF/OVMF_VARS.fd {vm_vars}.fd
+8. Spawn QEMU:
    qemu-system-x86_64 -enable-kvm -m 4G -smp 4 \
      -object memory-backend-memfd,id=mem,size=4G,share=on \
      -numa node,memdev=mem \
-     -bios /usr/share/OVMF/OVMF_CODE.fd \
+     -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE.fd \
+     -drive if=pflash,format=raw,file={vm_vars}.fd \
+     -chardev socket,id=chrtpm,path={swtpm_sock} \
+     -tpmdev emulator,id=tpm0,chardev=chrtpm \
+     -device tpm-tis,tpmdev=tpm0 \
      -drive file={overlay}.qcow2,if=virtio \
      -chardev socket,id=char0,path={virtiofsd.sock} \
      -device vhost-user-fs-pci,chardev=char0,tag=desktest \
      -qmp unix:{qmp_sock},server,wait=off \
      -display none -vnc none \
      ...
-   Note: OVMF (UEFI firmware) is required for Windows 11 guests. The `ovmf`
-   package must be installed on the host (e.g., `apt install ovmf` on Debian/Ubuntu).
-   The preflight check (`check_windows_vm()`) should verify OVMF is available.
+   Note: OVMF is loaded as a pflash pair (read-only CODE + writable VARS) to
+   support UEFI variable persistence and Secure Boot. The `ovmf` package must
+   be installed on the host (e.g., `apt install ovmf` on Debian/Ubuntu).
+   The preflight check (`check_windows_vm()`) should verify both OVMF and swtpm
+   are available.
 7. Wait for agent_ready sentinel in shared dir (up to 120s)
 8. (Optional) Activate VNC via QMP for debugging:
    Send via the QMP socket at {qmp_sock}:
@@ -76,9 +90,9 @@ On Windows (QEMU): shared dir mounted as a drive root (e.g., `Z:\`) via VirtIO-F
 ```
 1. Send ACPI shutdown to QEMU (graceful)
 2. Wait up to 10s, then force-kill QEMU process
-3. Stop virtiofsd
-4. Delete overlay QCOW2
-5. Remove shared directory
+3. Stop virtiofsd and swtpm daemons
+4. Delete overlay QCOW2 and per-VM OVMF_VARS copy
+5. Remove shared directory and TPM state directory
 ```
 
 ### Stale session cleanup
