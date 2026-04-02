@@ -76,10 +76,12 @@ async fn run_step(
         SetupStep::Open { target, app } => {
             match platform {
                 Platform::Windows => {
+                    let escaped_target = target.replace('\'', "''");
                     let cmd = if let Some(app_cmd) = app {
-                        format!("Start-Process '{app_cmd}' -ArgumentList '{target}'")
+                        let escaped_app = app_cmd.replace('\'', "''");
+                        format!("Start-Process '{escaped_app}' -ArgumentList '{escaped_target}'")
                     } else {
-                        format!("Start-Process '{target}'")
+                        format!("Start-Process '{escaped_target}'")
                     };
                     session
                         .exec_detached(&["powershell", "-Command", &cmd])

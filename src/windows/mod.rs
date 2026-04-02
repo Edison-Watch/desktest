@@ -466,18 +466,20 @@ impl Session for WindowsVmSession {
             .iter()
             .map(|s| {
                 if s.contains(' ') {
-                    format!("'{s}'")
+                    // Escape embedded single quotes by doubling them for PowerShell
+                    format!("'{}'", s.replace('\'', "''"))
                 } else {
                     (*s).to_string()
                 }
             })
             .collect::<Vec<_>>()
             .join(" ");
+        let escaped_log = log_path.replace('\'', "''");
         self.exec_detached(&[
             "powershell",
             "-NonInteractive",
             "-Command",
-            &format!("& {{ {inner_cmd} }} *> '{log_path}'"),
+            &format!("& {{ {inner_cmd} }} *> '{escaped_log}'"),
         ])
         .await
     }
