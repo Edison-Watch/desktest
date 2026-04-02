@@ -60,9 +60,13 @@ pub struct ObservationConfig {
     pub a11y_timeout: Duration,
     /// Maximum number of a11y tree nodes to extract (0 = unlimited). Default: 10_000.
     pub max_a11y_nodes: usize,
-    /// Command to capture a screenshot to `/tmp/screenshot.png`.
+    /// Command to capture a screenshot to a guest-side path.
     /// Default (Linux): `["scrot", "-o", "-p", "/tmp/screenshot.png"]`
     pub screenshot_cmd: Vec<String>,
+    /// Guest-side path where the screenshot is written.
+    /// Must match the output path in `screenshot_cmd`.
+    /// Default: `/tmp/screenshot.png`
+    pub screenshot_guest_path: String,
     /// Base command for a11y tree extraction (`--max-nodes N` appended automatically).
     /// Default (Linux): `["/usr/local/bin/get-a11y-tree"]`
     pub a11y_cmd: Vec<String>,
@@ -76,6 +80,16 @@ pub const LINUX_A11Y_CMD: &[&str] = &["/usr/local/bin/get-a11y-tree"];
 
 /// Screenshot command for macOS (screencapture).
 pub const MACOS_SCREENSHOT_CMD: &[&str] = &["screencapture", "-x", "/tmp/screenshot.png"];
+
+/// Screenshot command for Windows (PyAutoGUI/Pillow via agent).
+pub const WINDOWS_SCREENSHOT_CMD: &[&str] = &[
+    "python",
+    "C:\\desktest\\win-screenshot.py",
+    "C:\\Temp\\screenshot.png",
+];
+
+/// A11y tree command for Windows (UIA via `uiautomation` package).
+pub const WINDOWS_A11Y_CMD: &[&str] = &["python", "C:\\desktest\\get-a11y-tree.py"];
 
 /// A11y tree command for macOS (Swift AXUIElement helper, via SSH localhost).
 ///
@@ -110,6 +124,7 @@ impl Default for ObservationConfig {
                 .iter()
                 .map(|s| (*s).to_string())
                 .collect(),
+            screenshot_guest_path: "/tmp/screenshot.png".into(),
             a11y_cmd: LINUX_A11Y_CMD.iter().map(|s| (*s).to_string()).collect(),
         }
     }
@@ -126,6 +141,15 @@ impl ObservationConfig {
                     .map(|s| (*s).to_string())
                     .collect(),
                 a11y_cmd: MACOS_A11Y_CMD.iter().map(|s| (*s).to_string()).collect(),
+                ..Self::default()
+            },
+            SessionKind::WindowsVm(_) => Self {
+                screenshot_cmd: WINDOWS_SCREENSHOT_CMD
+                    .iter()
+                    .map(|s| (*s).to_string())
+                    .collect(),
+                screenshot_guest_path: "C:\\Temp\\screenshot.png".into(),
+                a11y_cmd: WINDOWS_A11Y_CMD.iter().map(|s| (*s).to_string()).collect(),
                 ..Self::default()
             },
         }
@@ -162,6 +186,7 @@ pub async fn capture_observation(
                 artifacts_dir,
                 step_index,
                 &config.screenshot_cmd,
+                &config.screenshot_guest_path,
             )
             .await?;
             Ok(Observation {
@@ -197,7 +222,8 @@ pub async fn capture_observation(
                     session,
                     artifacts_dir,
                     step_index,
-                    &config.screenshot_cmd
+                    &config.screenshot_cmd,
+                    &config.screenshot_guest_path,
                 ),
                 extract_a11y_tree(
                     session,
@@ -235,11 +261,20 @@ pub async fn capture_screenshot_with_retry(
     artifacts_dir: &Path,
     step_index: usize,
     screenshot_cmd: &[String],
+    screenshot_guest_path: &str,
 ) -> Result<PathBuf, AppError> {
     let mut last_err = None;
 
     for attempt in 1..=SCREENSHOT_MAX_RETRIES {
-        match capture_screenshot_once(session, artifacts_dir, step_index, screenshot_cmd).await {
+        match capture_screenshot_once(
+            session,
+            artifacts_dir,
+            step_index,
+            screenshot_cmd,
+            screenshot_guest_path,
+        )
+        .await
+        {
             Ok(result) => return Ok(result),
             Err(e) => {
                 warn!(
@@ -263,6 +298,7 @@ async fn capture_screenshot_once(
     artifacts_dir: &Path,
     step_index: usize,
     screenshot_cmd: &[String],
+    screenshot_guest_path: &str,
 ) -> Result<PathBuf, AppError> {
     // Capture screenshot inside container
     let cmd_refs: Vec<&str> = screenshot_cmd.iter().map(|s| s.as_str()).collect();
@@ -271,7 +307,7 @@ async fn capture_screenshot_once(
     // Copy from container to host with step_NNN naming convention
     let local_path = artifacts_dir.join(format!("step_{:03}.png", step_index));
     session
-        .copy_from("/tmp/screenshot.png", &local_path)
+        .copy_from(screenshot_guest_path, &local_path)
         .await?;
 
     debug!("Screenshot captured: {}", local_path.display());

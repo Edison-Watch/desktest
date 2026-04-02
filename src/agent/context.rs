@@ -14,6 +14,7 @@ use crate::provider::{ChatMessage, system_message, user_image_message, user_mess
 pub enum Platform {
     Linux,
     Macos,
+    Windows,
 }
 
 /// Default number of recent trajectory turns to keep.
@@ -403,6 +404,19 @@ impl PlatformText {
                 example_type_text: "pyperclip.copy('Hello World')\npyautogui.hotkey('command', 'v')",
                 typewrite_guidance: "- `pyautogui.typewrite()` is only appropriate for simple backslash-free ASCII text; prefer the clipboard method when in doubt\n- Use `pyperclip.copy()` + `pyautogui.hotkey('command', 'v')` for non-ASCII text, long strings, or any text containing backslashes (`\\`). Example for typing a password with a backslash: `pyperclip.copy('my\\\\pass'); pyautogui.hotkey('command', 'v')`",
             },
+            Platform::Windows => Self {
+                platform_desc: "a Windows desktop environment",
+                display_desc: "The display is a Windows desktop",
+                clipboard_paste_key: "ctrl",
+                hotkey_examples: "'ctrl', 'a'",
+                hotkey_note: " (ctrl+a, alt+f4, ctrl+shift+s, win+e, etc.). **On Windows, use `win` for the Windows key (e.g., `pyautogui.hotkey('win', 'e')` to open File Explorer).**",
+                xdotool_tip: "",
+                type_text_import: "\n- `type_text(text)` — reliable Unicode text input via Win32 SendInput (handles special characters, Unicode, passwords)",
+                type_text_section: "\n- `type_text('text')` — types text using Win32 SendInput. Handles the full Unicode range including special characters (`@`, `(`, `)`, `\\`, `#`, `!`, etc.). **This is the most reliable way to type text containing special characters on Windows.** Works in all input fields.",
+                clipboard_caveat: "Alternative for bulk text. Use `type_text()` when possible; fall back to clipboard paste for very long strings.",
+                example_type_text: "type_text('Hello World')",
+                typewrite_guidance: "- `pyautogui.typewrite()` is only appropriate for simple ASCII text without special characters; prefer `type_text()` when in doubt\n- Use `type_text('text')` for passwords, non-ASCII text, or any text containing special characters (`@`, `\\`, `(`, `)`, `#`, `!`, etc.). Example: `type_text('P@ssw0rd!#1')`\n- Use `pyperclip.copy()` + `pyautogui.hotkey('ctrl', 'v')` as a fallback for bulk text if `type_text()` is too slow for very long strings",
+            },
         }
     }
 }
@@ -465,6 +479,14 @@ fn build_qa_section(qa: bool, platform: Platform) -> String {
 - `ls -la <relevant_paths>` — verify file state (missing files, wrong permissions, corrupted output)
 - `log show --predicate 'process == "<app_name>"' --last 5m 2>/dev/null | tail -50` — check system logs
 - `osascript -e 'tell application "System Events" to get name of first process whose frontmost is true'` — verify current frontmost app"#
+        }
+        Platform::Windows => {
+            r#"- `type C:\Temp\app.log` — check application log for errors, stack traces, warnings
+- `tasklist /FI "IMAGENAME eq <app_name>.exe"` — verify process state
+- `Get-Process <app_name> | Format-List *` — detailed process info (CPU, memory, handles)
+- `dir <relevant_paths>` — verify file state (missing files, wrong permissions)
+- `Get-EventLog -LogName Application -Newest 20 2>$null` — check Windows event log
+- `Get-WmiObject Win32_Process | Where-Object { $_.Name -match '<app_name>' } | Select CommandLine` — check process command line"#
         }
     };
 

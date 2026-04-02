@@ -6,6 +6,7 @@ use crate::agent::context::Platform;
 use crate::docker::DockerSession;
 use crate::error::AppError;
 use crate::tart::TartSession;
+use crate::windows::WindowsVmSession;
 
 pub use native::NativeSession;
 
@@ -53,6 +54,8 @@ pub enum SessionKind {
     Tart(TartSession),
     /// Native host session (macOS, no VM, no isolation).
     Native(NativeSession),
+    /// Windows VM session (QEMU/KVM).
+    WindowsVm(WindowsVmSession),
 }
 
 impl SessionKind {
@@ -61,6 +64,7 @@ impl SessionKind {
         match self {
             SessionKind::Docker(_) => Platform::Linux,
             SessionKind::Tart(_) | SessionKind::Native(_) => Platform::Macos,
+            SessionKind::WindowsVm(_) => Platform::Windows,
         }
     }
 
@@ -93,6 +97,17 @@ impl SessionKind {
     pub fn as_native(&self) -> Option<&NativeSession> {
         match self {
             SessionKind::Native(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    /// Access the underlying `WindowsVmSession`, if this is a Windows VM session.
+    ///
+    /// Used for Windows-specific operations that are not part of the `Session`
+    /// trait (e.g., `deploy_app()`, `launch_app()`).
+    pub fn as_windows_vm(&self) -> Option<&WindowsVmSession> {
+        match self {
+            SessionKind::WindowsVm(s) => Some(s),
             _ => None,
         }
     }
@@ -173,4 +188,4 @@ macro_rules! forward_session {
     };
 }
 
-forward_session!(Docker, Tart, Native);
+forward_session!(Docker, Tart, Native, WindowsVm);

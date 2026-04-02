@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use tracing::info;
 
+use crate::agent::context::Platform;
 use crate::error::AppError;
 use crate::redact::Redactor;
 use crate::session::{Session, SessionKind};
@@ -44,11 +45,15 @@ async fn run_step(
     step: &SetupStep,
     redactor: Option<&Redactor>,
 ) -> Result<(), AppError> {
+    let platform = session.platform();
+
     match step {
         SetupStep::Execute { command } => {
-            let (output, exit_code) = session
-                .exec_with_exit_code(&["bash", "-c", command])
-                .await?;
+            let shell_cmd: Vec<&str> = match platform {
+                Platform::Windows => vec!["powershell", "-Command", command],
+                _ => vec!["bash", "-c", command],
+            };
+            let (output, exit_code) = session.exec_with_exit_code(&shell_cmd).await?;
             // Log output if non-empty for debugging
             let trimmed = output.trim();
             if !trimmed.is_empty() {
@@ -69,16 +74,30 @@ async fn run_step(
         }
 
         SetupStep::Open { target, app } => {
-            let cmd = if let Some(app_cmd) = app {
-                format!("{app_cmd} {}", shell_escape::escape(target.into()))
-            } else {
-                format!("xdg-open {}", shell_escape::escape(target.into()))
-            };
-
-            session
-                .exec_detached_with_log(&["bash", "-c", &cmd], "/tmp/open.log")
-                .await?;
-
+            match platform {
+                Platform::Windows => {
+                    let escaped_target = target.replace('\'', "''");
+                    let cmd = if let Some(app_cmd) = app {
+                        let escaped_app = app_cmd.replace('\'', "''");
+                        format!("Start-Process '{escaped_app}' -ArgumentList '{escaped_target}'")
+                    } else {
+                        format!("Start-Process '{escaped_target}'")
+                    };
+                    session
+                        .exec_detached(&["powershell", "-Command", &cmd])
+                        .await?;
+                }
+                _ => {
+                    let cmd = if let Some(app_cmd) = app {
+                        format!("{app_cmd} {}", shell_escape::escape(target.into()))
+                    } else {
+                        format!("xdg-open {}", shell_escape::escape(target.into()))
+                    };
+                    session
+                        .exec_detached_with_log(&["bash", "-c", &cmd], "/tmp/open.log")
+                        .await?;
+                }
+            }
             Ok(())
         }
 

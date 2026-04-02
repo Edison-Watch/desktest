@@ -187,6 +187,96 @@ fn check_automation() -> Result<(), AppError> {
     }
 }
 
+/// Check that QEMU, virtiofsd, swtpm, and OVMF are available for Windows VM testing.
+pub fn check_windows_vm() -> Result<(), AppError> {
+    // Check qemu-system-x86_64
+    check_binary_exists(
+        "qemu-system-x86_64",
+        "QEMU is not installed or not in PATH.\n\
+         Install with: sudo apt install qemu-system-x86",
+    )?;
+
+    // Check qemu-img
+    check_binary_exists(
+        "qemu-img",
+        "qemu-img is not installed or not in PATH.\n\
+         Install with: sudo apt install qemu-utils",
+    )?;
+
+    // Check virtiofsd
+    check_binary_exists(
+        "virtiofsd",
+        "virtiofsd is not installed or not in PATH.\n\
+         Install with: sudo apt install virtiofsd",
+    )?;
+
+    // Check swtpm
+    check_binary_exists(
+        "swtpm",
+        "swtpm is not installed or not in PATH.\n\
+         Install with: sudo apt install swtpm",
+    )?;
+
+    // Check OVMF firmware files
+    let ovmf_code = std::path::Path::new("/usr/share/OVMF/OVMF_CODE.fd");
+    if !ovmf_code.exists() {
+        return Err(AppError::Config(
+            "OVMF firmware not found at /usr/share/OVMF/OVMF_CODE.fd\n\
+             Install with: sudo apt install ovmf"
+                .into(),
+        ));
+    }
+
+    let ovmf_vars = std::path::Path::new("/usr/share/OVMF/OVMF_VARS.fd");
+    if !ovmf_vars.exists() {
+        return Err(AppError::Config(
+            "OVMF VARS template not found at /usr/share/OVMF/OVMF_VARS.fd\n\
+             Install with: sudo apt install ovmf"
+                .into(),
+        ));
+    }
+
+    // Check KVM access (existence + permission)
+    let kvm = std::path::Path::new("/dev/kvm");
+    if !kvm.exists() {
+        return Err(AppError::Config(
+            "KVM is not available (/dev/kvm not found).\n\
+             Ensure KVM is enabled in your BIOS/UEFI and the kvm module is loaded:\n\
+             - Intel: sudo modprobe kvm_intel\n\
+             - AMD: sudo modprobe kvm_amd"
+                .into(),
+        ));
+    }
+
+    // Verify we can actually open /dev/kvm (user must be in 'kvm' group)
+    match std::fs::File::open(kvm) {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+            return Err(AppError::Config(
+                "Permission denied opening /dev/kvm.\n\
+                 Add your user to the 'kvm' group: sudo usermod -aG kvm $USER\n\
+                 Then log out and back in for the change to take effect."
+                    .into(),
+            ));
+        }
+        Err(_) => {}
+    }
+
+    Ok(())
+}
+
+fn check_binary_exists(name: &str, error_msg: &str) -> Result<(), AppError> {
+    match std::process::Command::new(name)
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+    {
+        Ok(_) => Ok(()),
+        Err(_) => Err(AppError::Config(error_msg.into())),
+    }
+}
+
 /// Check that an API key is available for the configured provider.
 ///
 /// Delegates to `provider::resolve_api_key` so the resolution logic lives
@@ -210,11 +300,14 @@ pub async fn run_preflight(
 ) -> Result<(), AppError> {
     let is_macos_tart = matches!(app, Some(AppConfig::MacosTart { .. }));
     let is_macos_native = matches!(app, Some(AppConfig::MacosNative { .. }));
+    let is_windows_vm = matches!(app, Some(AppConfig::WindowsVm { .. }));
 
     if is_macos_tart {
         check_tart()?;
     } else if is_macos_native {
         check_native_macos()?;
+    } else if is_windows_vm {
+        check_windows_vm()?;
     } else {
         let _client = check_docker().await?;
     }
