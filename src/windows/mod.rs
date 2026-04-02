@@ -15,7 +15,9 @@ use tracing::{debug, info};
 
 use crate::error::AppError;
 use crate::session::Session;
-use crate::vm_protocol::{ProtocolClient, Request, RequestType, next_request_id, relative_transfer_path};
+use crate::vm_protocol::{
+    ProtocolClient, Request, RequestType, next_request_id, relative_transfer_path,
+};
 
 /// Guest-side shared directory mount point (VirtIO-FS via WinFsp).
 const WINDOWS_GUEST_SHARED_DIR: &str = "Z:\\";
@@ -198,11 +200,7 @@ impl WindowsVmSession {
 
         // Write swtpm PID for stale cleanup
         if let Some(pid) = swtpm_child.id() {
-            let _ = tokio::fs::write(
-                shared_dir.join(".swtpm.pid"),
-                pid.to_string(),
-            )
-            .await;
+            let _ = tokio::fs::write(shared_dir.join(".swtpm.pid"), pid.to_string()).await;
         }
 
         // Wait for swtpm socket to appear (up to 10s)
@@ -241,11 +239,7 @@ impl WindowsVmSession {
 
         // Write virtiofsd PID for stale cleanup
         if let Some(pid) = virtiofsd_child.id() {
-            let _ = tokio::fs::write(
-                shared_dir.join(".virtiofsd.pid"),
-                pid.to_string(),
-            )
-            .await;
+            let _ = tokio::fs::write(shared_dir.join(".virtiofsd.pid"), pid.to_string()).await;
         }
 
         // Wait for virtiofsd socket to appear (up to 10s)
@@ -267,27 +261,42 @@ impl WindowsVmSession {
         let qemu_child = tokio::process::Command::new("qemu-system-x86_64")
             .args([
                 "-enable-kvm",
-                "-m", "4G",
-                "-smp", "4",
-                "-object", "memory-backend-memfd,id=mem,size=4G,share=on",
-                "-numa", "node,memdev=mem",
+                "-m",
+                "4G",
+                "-smp",
+                "4",
+                "-object",
+                "memory-backend-memfd,id=mem,size=4G,share=on",
+                "-numa",
+                "node,memdev=mem",
                 // UEFI firmware (pflash pair)
-                "-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE.fd",
-                "-drive", &format!("if=pflash,format=raw,file={}", ovmf_vars_path.display()),
+                "-drive",
+                "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE.fd",
+                "-drive",
+                &format!("if=pflash,format=raw,file={}", ovmf_vars_path.display()),
                 // TPM 2.0
-                "-chardev", &format!("socket,id=chrtpm,path={}", swtpm_sock.display()),
-                "-tpmdev", "emulator,id=tpm0,chardev=chrtpm",
-                "-device", "tpm-tis,tpmdev=tpm0",
+                "-chardev",
+                &format!("socket,id=chrtpm,path={}", swtpm_sock.display()),
+                "-tpmdev",
+                "emulator,id=tpm0,chardev=chrtpm",
+                "-device",
+                "tpm-tis,tpmdev=tpm0",
                 // Disk
-                "-drive", &format!("file={},if=virtio", overlay_path.display()),
+                "-drive",
+                &format!("file={},if=virtio", overlay_path.display()),
                 // VirtIO-FS shared directory
-                "-chardev", &format!("socket,id=char0,path={}", virtiofsd_sock.display()),
-                "-device", "vhost-user-fs-pci,chardev=char0,tag=desktest",
+                "-chardev",
+                &format!("socket,id=char0,path={}", virtiofsd_sock.display()),
+                "-device",
+                "vhost-user-fs-pci,chardev=char0,tag=desktest",
                 // QMP monitor socket
-                "-qmp", &format!("unix:{},server,wait=off", qmp_sock.display()),
+                "-qmp",
+                &format!("unix:{},server,wait=off", qmp_sock.display()),
                 // Display
-                "-display", "none",
-                "-vnc", "none",
+                "-display",
+                "none",
+                "-vnc",
+                "none",
             ])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -302,11 +311,7 @@ impl WindowsVmSession {
 
         // Write QEMU PID for stale cleanup
         if let Some(pid) = qemu_child.id() {
-            let _ = tokio::fs::write(
-                shared_dir.join(".pid"),
-                pid.to_string(),
-            )
-            .await;
+            let _ = tokio::fs::write(shared_dir.join(".pid"), pid.to_string()).await;
         }
 
         let session = Self {
@@ -590,9 +595,9 @@ async fn send_qmp_command(qmp_sock: &Path, command: &str) -> Result<(), AppError
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::UnixStream;
 
-    let mut stream = UnixStream::connect(qmp_sock).await.map_err(|e| {
-        AppError::Infra(format!("Cannot connect to QMP socket: {e}"))
-    })?;
+    let mut stream = UnixStream::connect(qmp_sock)
+        .await
+        .map_err(|e| AppError::Infra(format!("Cannot connect to QMP socket: {e}")))?;
 
     // Read QMP greeting
     let mut buf = vec![0u8; 4096];

@@ -257,7 +257,11 @@ mod tests {
     #[tokio::test]
     async fn send_request_reads_response_file() {
         let temp = tempfile::tempdir().unwrap();
-        let client = test_client(temp.path(), Duration::from_secs(30), Duration::from_millis(25));
+        let client = test_client(
+            temp.path(),
+            Duration::from_secs(30),
+            Duration::from_millis(25),
+        );
         client.ensure_layout().await.unwrap();
 
         let paths = client.paths().clone();
@@ -302,7 +306,11 @@ mod tests {
     #[tokio::test]
     async fn send_request_returns_error_on_malformed_response() {
         let temp = tempfile::tempdir().unwrap();
-        let client = test_client(temp.path(), Duration::from_secs(30), Duration::from_millis(25));
+        let client = test_client(
+            temp.path(),
+            Duration::from_secs(30),
+            Duration::from_millis(25),
+        );
         client.ensure_layout().await.unwrap();
 
         let paths = client.paths().clone();
@@ -344,7 +352,11 @@ mod tests {
     #[tokio::test]
     async fn send_request_returns_agent_error_when_error_field_set() {
         let temp = tempfile::tempdir().unwrap();
-        let client = test_client(temp.path(), Duration::from_secs(30), Duration::from_millis(25));
+        let client = test_client(
+            temp.path(),
+            Duration::from_secs(30),
+            Duration::from_millis(25),
+        );
         client.ensure_layout().await.unwrap();
 
         let paths = client.paths().clone();
@@ -392,7 +404,11 @@ mod tests {
     #[tokio::test]
     async fn send_request_times_out_when_no_response() {
         let temp = tempfile::tempdir().unwrap();
-        let client = test_client(temp.path(), Duration::from_millis(100), Duration::from_millis(20));
+        let client = test_client(
+            temp.path(),
+            Duration::from_millis(100),
+            Duration::from_millis(20),
+        );
         client.ensure_layout().await.unwrap();
 
         let err = client
@@ -426,7 +442,11 @@ mod tests {
     #[tokio::test]
     async fn wait_for_agent_ready_times_out() {
         let temp = tempfile::tempdir().unwrap();
-        let client = test_client(temp.path(), Duration::from_secs(1), Duration::from_millis(20));
+        let client = test_client(
+            temp.path(),
+            Duration::from_secs(1),
+            Duration::from_millis(20),
+        );
         client.ensure_layout().await.unwrap();
 
         let err = client
@@ -444,7 +464,11 @@ mod tests {
     #[tokio::test]
     async fn wait_for_agent_ready_succeeds_when_sentinel_exists() {
         let temp = tempfile::tempdir().unwrap();
-        let client = test_client(temp.path(), Duration::from_secs(1), Duration::from_millis(20));
+        let client = test_client(
+            temp.path(),
+            Duration::from_secs(1),
+            Duration::from_millis(20),
+        );
         client.ensure_layout().await.unwrap();
 
         // Write sentinel before waiting
@@ -472,7 +496,11 @@ mod tests {
     #[tokio::test]
     async fn send_request_cleans_up_request_and_response_files() {
         let temp = tempfile::tempdir().unwrap();
-        let client = test_client(temp.path(), Duration::from_secs(30), Duration::from_millis(25));
+        let client = test_client(
+            temp.path(),
+            Duration::from_secs(30),
+            Duration::from_millis(25),
+        );
         client.ensure_layout().await.unwrap();
 
         let paths = client.paths().clone();

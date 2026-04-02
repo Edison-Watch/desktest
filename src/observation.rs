@@ -149,10 +149,7 @@ impl ObservationConfig {
                     .map(|s| (*s).to_string())
                     .collect(),
                 screenshot_guest_path: "C:\\Temp\\screenshot.png".into(),
-                a11y_cmd: WINDOWS_A11Y_CMD
-                    .iter()
-                    .map(|s| (*s).to_string())
-                    .collect(),
+                a11y_cmd: WINDOWS_A11Y_CMD.iter().map(|s| (*s).to_string()).collect(),
                 ..Self::default()
             },
         }
@@ -269,7 +266,15 @@ pub async fn capture_screenshot_with_retry(
     let mut last_err = None;
 
     for attempt in 1..=SCREENSHOT_MAX_RETRIES {
-        match capture_screenshot_once(session, artifacts_dir, step_index, screenshot_cmd, screenshot_guest_path).await {
+        match capture_screenshot_once(
+            session,
+            artifacts_dir,
+            step_index,
+            screenshot_cmd,
+            screenshot_guest_path,
+        )
+        .await
+        {
             Ok(result) => return Ok(result),
             Err(e) => {
                 warn!(

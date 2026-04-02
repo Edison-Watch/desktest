@@ -46,9 +46,7 @@ pub async fn deploy_app(session: &WindowsVmSession, app: &AppConfig) -> Result<S
             // Run installer if specified
             if let Some(installer) = installer_cmd {
                 info!("Running installer: {installer}");
-                session
-                    .exec(&["powershell", "-Command", installer])
-                    .await?;
+                session.exec(&["powershell", "-Command", installer]).await?;
             }
 
             Ok(deployed_path)
@@ -72,10 +70,7 @@ pub async fn launch_app(
             if let Some(cmd) = launch_cmd {
                 info!("Launching via launch_cmd: {cmd}");
                 session
-                    .exec_detached_with_log(
-                        &["powershell", "-Command", cmd],
-                        "C:\\Temp\\app.log",
-                    )
+                    .exec_detached_with_log(&["powershell", "-Command", cmd], "C:\\Temp\\app.log")
                     .await?;
             } else if !deployed_path.is_empty() {
                 info!("Launching: {deployed_path}");
