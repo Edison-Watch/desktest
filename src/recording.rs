@@ -75,11 +75,7 @@ impl Recording {
 
         // Create empty caption file for drawtext overlay
         let _ = session
-            .exec(&[
-                "bash",
-                "-c",
-                &format!("printf '' > {LINUX_CAPTION_PATH}"),
-            ])
+            .exec(&["bash", "-c", &format!("printf '' > {LINUX_CAPTION_PATH}")])
             .await;
 
         // drawtext filter: bottom-left, white text with black outline + dark box, auto-reloads file
@@ -152,7 +148,10 @@ impl Recording {
             .exec(&[
                 "powershell",
                 "-Command",
-                &format!("Set-Content -Path '{}' -Value '' -NoNewline", WINDOWS_CAPTION_PATH),
+                &format!(
+                    "Set-Content -Path '{}' -Value '' -NoNewline",
+                    WINDOWS_CAPTION_PATH
+                ),
             ])
             .await;
 
@@ -214,7 +213,10 @@ impl Recording {
                 .exec(&[
                     "powershell",
                     "-Command",
-                    &format!("Get-Content '{}' -ErrorAction SilentlyContinue", WINDOWS_FFMPEG_LOG),
+                    &format!(
+                        "Get-Content '{}' -ErrorAction SilentlyContinue",
+                        WINDOWS_FFMPEG_LOG
+                    ),
                 ])
                 .await
                 .unwrap_or_default();
@@ -363,10 +365,7 @@ impl Recording {
                 caption_path, caption_path, caption_path
             );
             match session
-                .exec_with_stdin(
-                    &["powershell", "-Command", &ps_cmd],
-                    caption.as_bytes(),
-                )
+                .exec_with_stdin(&["powershell", "-Command", &ps_cmd], caption.as_bytes())
                 .await
             {
                 Ok(_) => debug!("Caption updated: {caption}"),
@@ -376,7 +375,13 @@ impl Recording {
             // Write via stdin to avoid shell escaping issues
             match session
                 .exec_with_stdin(
-                    &["bash", "-c", &format!("cat > {caption_path}.tmp && mv {caption_path}.tmp {caption_path}")],
+                    &[
+                        "bash",
+                        "-c",
+                        &format!(
+                            "cat > {caption_path}.tmp && mv {caption_path}.tmp {caption_path}"
+                        ),
+                    ],
                     caption.as_bytes(),
                 )
                 .await

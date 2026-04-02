@@ -135,7 +135,9 @@ async fn create_session(
         Ok(SessionKind::WindowsVm(win_session))
     } else if is_windows_native {
         info!("Using native Windows session (no VM, no isolation)");
-        Ok(SessionKind::WindowsNative(crate::session::WindowsNativeSession::create()))
+        Ok(SessionKind::WindowsNative(
+            crate::session::WindowsNativeSession::create(),
+        ))
     } else {
         let (custom_image, needs_fuse) = match &task_def.app {
             task::AppConfig::DockerImage {

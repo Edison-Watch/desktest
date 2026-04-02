@@ -77,11 +77,7 @@ impl Session for WindowsNativeSession {
         ))
     }
 
-    async fn exec_with_stdin(
-        &self,
-        _cmd: &[&str],
-        _stdin_data: &[u8],
-    ) -> Result<String, AppError> {
+    async fn exec_with_stdin(&self, _cmd: &[&str], _stdin_data: &[u8]) -> Result<String, AppError> {
         Err(AppError::Infra(
             "WindowsNativeSession is not yet implemented — requires Windows host".into(),
         ))
@@ -93,11 +89,7 @@ impl Session for WindowsNativeSession {
         ))
     }
 
-    async fn exec_detached_with_log(
-        &self,
-        _cmd: &[&str],
-        _log_path: &str,
-    ) -> Result<(), AppError> {
+    async fn exec_detached_with_log(&self, _cmd: &[&str], _log_path: &str) -> Result<(), AppError> {
         Err(AppError::Infra(
             "WindowsNativeSession is not yet implemented — requires Windows host".into(),
         ))
@@ -109,11 +101,7 @@ impl Session for WindowsNativeSession {
         ))
     }
 
-    async fn copy_from(
-        &self,
-        _container_path: &str,
-        _local_path: &Path,
-    ) -> Result<(), AppError> {
+    async fn copy_from(&self, _container_path: &str, _local_path: &Path) -> Result<(), AppError> {
         Err(AppError::Infra(
             "WindowsNativeSession is not yet implemented — requires Windows host".into(),
         ))

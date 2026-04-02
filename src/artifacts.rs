@@ -24,7 +24,10 @@ pub async fn collect_artifacts(
 
     // Collect home directory (with exclude filtering)
     // Skip for native sessions — we don't want to copy the host user's entire home
-    if !matches!(session, SessionKind::Native(_) | SessionKind::WindowsNative(_)) {
+    if !matches!(
+        session,
+        SessionKind::Native(_) | SessionKind::WindowsNative(_)
+    ) {
         let home_dest = artifacts_dir.join("home");
         match collect_home_filtered(session, &home_dest, excludes).await {
             Ok(()) => debug!("Collected home directory to {}", home_dest.display()),
@@ -62,7 +65,10 @@ pub async fn collect_artifacts(
     }
 
     // Capture system logs
-    if matches!(session, SessionKind::WindowsVm(_) | SessionKind::WindowsNative(_)) {
+    if matches!(
+        session,
+        SessionKind::WindowsVm(_) | SessionKind::WindowsNative(_)
+    ) {
         // Windows: collect *.log files from C:\Temp
         match session
             .exec(&[
