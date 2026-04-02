@@ -41,11 +41,8 @@ impl Recording {
             .await;
 
         // drawtext filter: bottom-left, white text with black outline + dark box, auto-reloads file
-        // fontsize=18 fits ~120 chars across 1920px; box gives contrast on any background
-        let drawtext_filter = format!(
-            "drawtext=textfile={}:reload=1:fontcolor=white:fontsize=18:borderw=1:bordercolor=black:box=1:boxcolor=black@0.5:boxborderw=6:x=10:y=h-th-10",
-            CONTAINER_CAPTION_PATH
-        );
+        // fontsize fits ~120 chars across 1920px; box gives contrast on any background
+        let drawtext_filter = build_drawtext_filter();
 
         // Start ffmpeg as a detached background process
         session
@@ -215,6 +212,26 @@ const CAPTION_MAX_THOUGHT_LINES: usize = 3;
 /// Maximum number of action-code lines shown in caption.
 const CAPTION_MAX_ACTION_LINES: usize = 5;
 
+// --- ffmpeg drawtext filter constants ---
+
+/// Font size for caption overlay text (px).
+const DRAWTEXT_FONT_SIZE: u32 = 18;
+
+/// Border width around text characters (px).
+const DRAWTEXT_BORDER_WIDTH: u32 = 1;
+
+/// Padding inside the background box around text (px).
+const DRAWTEXT_BOX_BORDER_WIDTH: u32 = 6;
+
+/// Background box opacity (0.0–1.0).
+const DRAWTEXT_BOX_OPACITY: f32 = 0.5;
+
+/// Horizontal margin from left edge (px).
+const DRAWTEXT_MARGIN_X: u32 = 10;
+
+/// Vertical margin from bottom edge (px).
+const DRAWTEXT_MARGIN_Y: u32 = 10;
+
 /// Format a multi-line caption from the agent's thought and action code.
 ///
 /// Layout (up to ~5 lines):
@@ -225,50 +242,78 @@ const CAPTION_MAX_ACTION_LINES: usize = 5;
 /// > pyautogui.click(580, 384)
 /// ```
 fn format_caption(step: usize, thought: Option<&str>, action_code: &[String]) -> String {
-    let mut lines: Vec<String> = Vec::new();
-
-    // Thought lines: wrap to CAPTION_LINE_WIDTH, keep up to CAPTION_MAX_THOUGHT_LINES
-    if let Some(thought) = thought {
-        let clean = thought.trim().replace('\n', " ");
-        if !clean.is_empty() {
-            let thought_lines = wrap_text(&format!("[Step {step}] {clean}"), CAPTION_LINE_WIDTH);
-            for (i, line) in thought_lines.into_iter().enumerate() {
-                if i >= CAPTION_MAX_THOUGHT_LINES {
-                    // Replace last line with truncation indicator
-                    if let Some(last) = lines.last_mut() {
-                        if !last.ends_with("...") {
-                            last.push_str("...");
-                        }
-                    }
-                    break;
-                }
-                lines.push(line);
-            }
-        }
-    }
+    let mut lines = format_thought_lines(step, thought);
 
     if lines.is_empty() {
         lines.push(format!("[Step {step}]"));
     }
 
-    // Action lines: show each code block as "> <code>" with inline comments for intent
-    let mut action_line_count = 0;
+    lines.extend(format_action_lines(action_code));
+
+    lines.join("\n")
+}
+
+/// Build the ffmpeg drawtext filter string using named constants.
+fn build_drawtext_filter() -> String {
+    format!(
+        "drawtext=textfile={path}:reload=1\
+         :fontcolor=white:fontsize={fontsize}\
+         :borderw={borderw}:bordercolor=black\
+         :box=1:boxcolor=black@{box_opacity}\
+         :boxborderw={boxborderw}\
+         :x={mx}:y=h-th-{my}",
+        path = CONTAINER_CAPTION_PATH,
+        fontsize = DRAWTEXT_FONT_SIZE,
+        borderw = DRAWTEXT_BORDER_WIDTH,
+        box_opacity = DRAWTEXT_BOX_OPACITY,
+        boxborderw = DRAWTEXT_BOX_BORDER_WIDTH,
+        mx = DRAWTEXT_MARGIN_X,
+        my = DRAWTEXT_MARGIN_Y,
+    )
+}
+
+/// Format the thought portion of a caption.
+///
+/// Cleans newlines, prepends the step prefix, wraps to [`CAPTION_LINE_WIDTH`],
+/// and truncates to [`CAPTION_MAX_THOUGHT_LINES`].
+fn format_thought_lines(step: usize, thought: Option<&str>) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+
+    if let Some(thought) = thought {
+        let clean = thought.trim().replace('\n', " ");
+        if !clean.is_empty() {
+            let wrapped = wrap_text(&format!("[Step {step}] {clean}"), CAPTION_LINE_WIDTH);
+            for (i, line) in wrapped.into_iter().enumerate() {
+                if i >= CAPTION_MAX_THOUGHT_LINES {
+                    break;
+                }
+                lines.push(line);
+            }
+            truncate_lines(&mut lines, CAPTION_MAX_THOUGHT_LINES);
+        }
+    }
+
+    lines
+}
+
+/// Format action code blocks into prefixed caption lines.
+///
+/// Each non-empty, non-noise code line gets a `> ` prefix (or `  ` for
+/// comments). Lines longer than [`CAPTION_LINE_WIDTH`] are truncated with
+/// an ellipsis. At most [`CAPTION_MAX_ACTION_LINES`] are kept.
+fn format_action_lines(action_code: &[String]) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    let mut count = 0;
+
     'outer: for block in action_code {
         for code_line in block.lines() {
             let trimmed = code_line.trim();
-            if trimmed.is_empty() {
+            if trimmed.is_empty() || is_noise_line(trimmed) {
                 continue;
             }
-            // Skip sleep/wait lines — they're noise in captions
-            if trimmed.starts_with("time.sleep") || trimmed.starts_with("import time") {
-                continue;
-            }
-            if action_line_count >= CAPTION_MAX_ACTION_LINES {
-                if let Some(last) = lines.last_mut() {
-                    if !last.ends_with("...") {
-                        last.push_str("...");
-                    }
-                }
+            if count >= CAPTION_MAX_ACTION_LINES {
+                let len = lines.len();
+                truncate_lines(&mut lines, len);
                 break 'outer;
             }
             let prefix = if trimmed.starts_with('#') { "  " } else { "> " };
@@ -279,11 +324,29 @@ fn format_caption(step: usize, thought: Option<&str>, action_code: &[String]) ->
             } else {
                 lines.push(prefixed);
             }
-            action_line_count += 1;
+            count += 1;
         }
     }
 
-    lines.join("\n")
+    lines
+}
+
+/// If `lines` exceeds `max`, append `...` to the last line as a truncation
+/// indicator. This is a no-op when the line already ends with `...`.
+fn truncate_lines(lines: &mut Vec<String>, max: usize) {
+    if lines.len() >= max {
+        if let Some(last) = lines.last_mut() {
+            if !last.ends_with("...") {
+                last.push_str("...");
+            }
+        }
+    }
+}
+
+/// Returns `true` for code lines that are visual noise in captions
+/// (e.g. `time.sleep(…)` or `import time`).
+fn is_noise_line(line: &str) -> bool {
+    line.starts_with("time.sleep") || line.starts_with("import time")
 }
 
 /// Wrap text into lines of at most `width` characters, breaking on word boundaries.
@@ -426,5 +489,67 @@ mod tests {
     fn test_wrap_text_wraps_at_boundary() {
         let lines = wrap_text("aaa bbb ccc ddd", 8);
         assert_eq!(lines, vec!["aaa bbb", "ccc ddd"]);
+    }
+
+    #[test]
+    fn test_is_noise_line() {
+        assert!(is_noise_line("time.sleep(0.5)"));
+        assert!(is_noise_line("time.sleep(1)"));
+        assert!(is_noise_line("import time"));
+        assert!(!is_noise_line("pyautogui.click(100, 200)"));
+        assert!(!is_noise_line("# a comment"));
+        assert!(!is_noise_line(""));
+    }
+
+    #[test]
+    fn test_truncate_lines_appends_ellipsis() {
+        let mut lines = vec!["line one".to_string(), "line two".to_string()];
+        truncate_lines(&mut lines, 2);
+        assert_eq!(lines.last().unwrap(), "line two...");
+    }
+
+    #[test]
+    fn test_truncate_lines_noop_when_under_max() {
+        let mut lines = vec!["only".to_string()];
+        truncate_lines(&mut lines, 3);
+        assert_eq!(lines.last().unwrap(), "only");
+    }
+
+    #[test]
+    fn test_truncate_lines_no_double_ellipsis() {
+        let mut lines = vec!["already...".to_string()];
+        truncate_lines(&mut lines, 1);
+        assert_eq!(lines.last().unwrap(), "already...");
+    }
+
+    #[test]
+    fn test_format_thought_lines_none() {
+        let lines = format_thought_lines(1, None);
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn test_format_thought_lines_short() {
+        let lines = format_thought_lines(2, Some("Hello world"));
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].starts_with("[Step 2]"));
+        assert!(lines[0].contains("Hello world"));
+    }
+
+    #[test]
+    fn test_format_action_lines_filters_noise() {
+        let code = vec!["import time\ntime.sleep(1)\npyautogui.click(10, 20)".to_string()];
+        let lines = format_action_lines(&code);
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("pyautogui.click"));
+    }
+
+    #[test]
+    fn test_build_drawtext_filter_uses_constants() {
+        let filter = build_drawtext_filter();
+        assert!(filter.contains(&format!("fontsize={}", DRAWTEXT_FONT_SIZE)));
+        assert!(filter.contains(&format!("borderw={}", DRAWTEXT_BORDER_WIDTH)));
+        assert!(filter.contains(&format!("boxborderw={}", DRAWTEXT_BOX_BORDER_WIDTH)));
+        assert!(filter.contains(CONTAINER_CAPTION_PATH));
     }
 }

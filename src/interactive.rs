@@ -86,12 +86,15 @@ async fn run_interactive_pause(
     config.apply_task_app(&task_def.app);
     let timeout = Duration::from_secs(config.startup_timeout_seconds);
 
-    // Determine custom Docker image and FUSE requirement from task definition
-    let (custom_image, needs_fuse) = match &task_def.app {
+    // Determine custom Docker image, digest, and FUSE requirement from task definition
+    let (custom_image, expected_digest, needs_fuse) = match &task_def.app {
         task::AppConfig::DockerImage {
-            image, needs_fuse, ..
-        } => (Some(image.as_str()), *needs_fuse),
-        _ => (None, false),
+            image,
+            digest,
+            needs_fuse,
+            ..
+        } => (Some(image.as_str()), digest.as_deref(), *needs_fuse),
+        _ => (None, None, false),
     };
     let extra_env = if resolved_secrets.is_empty() {
         None
@@ -112,7 +115,7 @@ async fn run_interactive_pause(
         }
         r = async {
             let effective_image = resolve_image_name(&config, custom_image).await?;
-            docker::DockerSession::create(&config, effective_image, extra_env, run.no_network, needs_fuse).await
+            docker::DockerSession::create(&config, effective_image, extra_env, run.no_network, needs_fuse, expected_digest).await
         } => r?,
     };
     let session = SessionKind::Docker(session);
@@ -254,11 +257,14 @@ async fn run_interactive_step(
     std::fs::create_dir_all(&artifacts_dir)
         .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
 
-    let (custom_image, needs_fuse) = match &task_def.app {
+    let (custom_image, expected_digest, needs_fuse) = match &task_def.app {
         task::AppConfig::DockerImage {
-            image, needs_fuse, ..
-        } => (Some(image.as_str()), *needs_fuse),
-        _ => (None, false),
+            image,
+            digest,
+            needs_fuse,
+            ..
+        } => (Some(image.as_str()), digest.as_deref(), *needs_fuse),
+        _ => (None, None, false),
     };
     let extra_env = if resolved_secrets.is_empty() {
         None
@@ -279,7 +285,7 @@ async fn run_interactive_step(
         }
         r = async {
             let effective_image = resolve_image_name(&config, custom_image).await?;
-            docker::DockerSession::create(&config, effective_image, extra_env, run.no_network, needs_fuse).await
+            docker::DockerSession::create(&config, effective_image, extra_env, run.no_network, needs_fuse, expected_digest).await
         } => r?,
     };
     let session = SessionKind::Docker(session);

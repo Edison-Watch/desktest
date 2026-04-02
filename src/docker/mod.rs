@@ -45,6 +45,7 @@ impl DockerSession {
         extra_env: Option<&std::collections::HashMap<String, String>>,
         no_network: bool,
         needs_fuse: bool,
+        expected_digest: Option<&str>,
     ) -> Result<Self, AppError> {
         let client = Docker::connect_with_local_defaults()
             .map_err(|e| AppError::Infra(format!("Cannot connect to Docker: {e}")))?;
@@ -93,6 +94,32 @@ impl DockerSession {
             IMAGE_NAME.to_string()
         };
 
+        // Verify image digest if one was specified.
+        if let Some(digest) = expected_digest {
+            let inspect = client.inspect_image(&image_name).await.map_err(|e| {
+                AppError::Infra(format!(
+                    "Cannot inspect image '{image_name}' for digest verification: {e}"
+                ))
+            })?;
+
+            let full_digest = format!("sha256:{}", digest.strip_prefix("sha256:").unwrap_or(digest));
+
+            let repo_digests = inspect.repo_digests.unwrap_or_default();
+            let matched = repo_digests.iter().any(|rd| {
+                // repo_digests entries look like "image@sha256:abc123..."
+                rd.ends_with(&full_digest)
+                    || rd.contains(&format!("@{full_digest}"))
+            });
+
+            if !matched {
+                return Err(AppError::Config(format!(
+                    "Image digest mismatch for '{image_name}': expected {full_digest}, \
+                     but image has repo_digests: {repo_digests:?}"
+                )));
+            }
+            info!("Image digest verified: {full_digest}");
+        }
+
         // VNC port inside the container is always 5900.
         // If the user specified a host port, we bind it; otherwise VNC runs but isn't exposed.
         let container_vnc_port = "5900";
@@ -125,6 +152,10 @@ impl DockerSession {
             } else {
                 None
             },
+            // Security hardening: drop all capabilities by default and prevent
+            // privilege escalation. Specific caps are added back below as needed.
+            cap_drop: Some(vec!["ALL".to_string()]),
+            security_opt: Some(vec!["no-new-privileges:true".to_string()]),
             ..Default::default()
         };
 
@@ -383,7 +414,7 @@ mod tests {
     #[ignore] // Requires Docker daemon
     async fn test_container_create_start_stop() {
         let config = test_config();
-        let session = DockerSession::create(&config, None, None, false, false)
+        let session = DockerSession::create(&config, None, None, false, false, None)
             .await
             .unwrap();
 
@@ -407,7 +438,7 @@ mod tests {
     #[ignore] // Requires Docker daemon
     async fn test_exec_command() {
         let config = test_config();
-        let session = DockerSession::create(&config, None, None, false, false)
+        let session = DockerSession::create(&config, None, None, false, false, None)
             .await
             .unwrap();
 
@@ -421,7 +452,7 @@ mod tests {
     #[ignore] // Requires Docker daemon
     async fn test_copy_file_into_container() {
         let config = test_config();
-        let session = DockerSession::create(&config, None, None, false, false)
+        let session = DockerSession::create(&config, None, None, false, false, None)
             .await
             .unwrap();
 
@@ -495,7 +526,7 @@ mod tests {
     async fn test_attach_to_running_container() {
         // Create a container, then attach to it
         let config = test_config();
-        let session = DockerSession::create(&config, None, None, false, false)
+        let session = DockerSession::create(&config, None, None, false, false, None)
             .await
             .unwrap();
         let container_id = session.container_id.clone();

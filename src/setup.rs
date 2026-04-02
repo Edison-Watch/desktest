@@ -240,7 +240,7 @@ mod tests {
             container_pids_limit: None,
             integrations: Default::default(),
         };
-        let docker_session = DockerSession::create(&config, None, None, false, false)
+        let docker_session = DockerSession::create(&config, None, None, false, false, None)
             .await
             .unwrap();
         let session = SessionKind::Docker(docker_session);
@@ -281,7 +281,7 @@ mod tests {
             container_pids_limit: None,
             integrations: Default::default(),
         };
-        let docker_session = DockerSession::create(&config, None, None, false, false)
+        let docker_session = DockerSession::create(&config, None, None, false, false, None)
             .await
             .unwrap();
         let session = SessionKind::Docker(docker_session);
@@ -330,7 +330,7 @@ mod tests {
             container_pids_limit: None,
             integrations: Default::default(),
         };
-        let docker_session = DockerSession::create(&config, None, None, false, false)
+        let docker_session = DockerSession::create(&config, None, None, false, false, None)
             .await
             .unwrap();
         let session = SessionKind::Docker(docker_session);
@@ -372,7 +372,7 @@ mod tests {
             container_pids_limit: None,
             integrations: Default::default(),
         };
-        let docker_session = DockerSession::create(&config, None, None, false, false)
+        let docker_session = DockerSession::create(&config, None, None, false, false, None)
             .await
             .unwrap();
         let session = SessionKind::Docker(docker_session);
@@ -414,7 +414,7 @@ mod tests {
             container_pids_limit: None,
             integrations: Default::default(),
         };
-        let docker_session = DockerSession::create(&config, None, None, false, false)
+        let docker_session = DockerSession::create(&config, None, None, false, false, None)
             .await
             .unwrap();
         let session = SessionKind::Docker(docker_session);
