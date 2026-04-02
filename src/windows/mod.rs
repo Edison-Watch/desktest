@@ -212,7 +212,7 @@ impl WindowsVmSession {
             .args([
                 &format!("--socket-path={}", virtiofsd_sock.display()),
                 &format!("--shared-dir={}", shared_dir.display()),
-                "--sandbox=none",
+                "--sandbox=chroot",
             ])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -234,8 +234,19 @@ impl WindowsVmSession {
             .await;
         }
 
-        // Give virtiofsd a moment to create its socket
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        // Wait for virtiofsd socket to appear (up to 10s)
+        let vfs_deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            if virtiofsd_sock.exists() {
+                break;
+            }
+            if tokio::time::Instant::now() >= vfs_deadline {
+                return Err(AppError::Infra(
+                    "Timed out waiting for virtiofsd socket to appear".into(),
+                ));
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
 
         // 5. Spawn QEMU
         info!("Starting QEMU...");
@@ -417,12 +428,14 @@ impl Session for WindowsVmSession {
     }
 
     async fn exec_detached_with_log(&self, cmd: &[&str], log_path: &str) -> Result<(), AppError> {
-        // On Windows, use cmd /c start /b for detached processes with log redirection.
-        let escaped_cmd = cmd
+        // Use PowerShell to launch the process detached with output redirection.
+        // `cmd /c start /b ... > logfile` does NOT work: it redirects start's own
+        // stdout (empty), not the child's. PowerShell's *> merges all output streams.
+        let inner_cmd = cmd
             .iter()
             .map(|s| {
                 if s.contains(' ') {
-                    format!("\"{s}\"")
+                    format!("'{s}'")
                 } else {
                     (*s).to_string()
                 }
@@ -430,9 +443,10 @@ impl Session for WindowsVmSession {
             .collect::<Vec<_>>()
             .join(" ");
         self.exec_detached(&[
-            "cmd",
-            "/c",
-            &format!("start /b {escaped_cmd} > \"{log_path}\" 2>&1"),
+            "powershell",
+            "-NonInteractive",
+            "-Command",
+            &format!("& {{ {inner_cmd} }} *> '{log_path}'"),
         ])
         .await
     }

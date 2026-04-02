@@ -51,6 +51,8 @@ def handle_request(shared_dir: Path, request_path: Path) -> dict:
                 input=stdin_data,
                 capture_output=True,
                 text=stdin_data is None,
+                encoding="utf-8" if stdin_data is None else None,
+                errors="replace" if stdin_data is None else None,
                 check=False,
             )
             if stdin_data is not None:
