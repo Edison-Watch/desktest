@@ -1,6 +1,7 @@
 use std::path::Path;
 
 pub mod native;
+pub mod windows_native;
 
 use crate::agent::context::Platform;
 use crate::docker::DockerSession;
@@ -9,6 +10,7 @@ use crate::tart::TartSession;
 use crate::windows::WindowsVmSession;
 
 pub use native::NativeSession;
+pub use windows_native::WindowsNativeSession;
 
 /// Core session trait abstracting the environment (Docker container, Tart VM, native host).
 ///
@@ -56,6 +58,8 @@ pub enum SessionKind {
     Native(NativeSession),
     /// Windows VM session (QEMU/KVM).
     WindowsVm(WindowsVmSession),
+    /// Windows native host session (no VM, no isolation).
+    WindowsNative(WindowsNativeSession),
 }
 
 impl SessionKind {
@@ -64,7 +68,7 @@ impl SessionKind {
         match self {
             SessionKind::Docker(_) => Platform::Linux,
             SessionKind::Tart(_) | SessionKind::Native(_) => Platform::Macos,
-            SessionKind::WindowsVm(_) => Platform::Windows,
+            SessionKind::WindowsVm(_) | SessionKind::WindowsNative(_) => Platform::Windows,
         }
     }
 
@@ -108,6 +112,14 @@ impl SessionKind {
     pub fn as_windows_vm(&self) -> Option<&WindowsVmSession> {
         match self {
             SessionKind::WindowsVm(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    /// Access the underlying `WindowsNativeSession`, if this is a Windows native session.
+    pub fn as_windows_native(&self) -> Option<&WindowsNativeSession> {
+        match self {
+            SessionKind::WindowsNative(s) => Some(s),
             _ => None,
         }
     }
@@ -188,4 +200,4 @@ macro_rules! forward_session {
     };
 }
 
-forward_session!(Docker, Tart, Native, WindowsVm);
+forward_session!(Docker, Tart, Native, WindowsVm, WindowsNative);

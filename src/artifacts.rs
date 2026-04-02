@@ -24,7 +24,7 @@ pub async fn collect_artifacts(
 
     // Collect home directory (with exclude filtering)
     // Skip for native sessions — we don't want to copy the host user's entire home
-    if !matches!(session, SessionKind::Native(_)) {
+    if !matches!(session, SessionKind::Native(_) | SessionKind::WindowsNative(_)) {
         let home_dest = artifacts_dir.join("home");
         match collect_home_filtered(session, &home_dest, excludes).await {
             Ok(()) => debug!("Collected home directory to {}", home_dest.display()),
@@ -34,7 +34,7 @@ pub async fn collect_artifacts(
 
     // Collect app log (stdout/stderr from the launched app)
     let app_log_path = match session {
-        SessionKind::WindowsVm(_) => "C:\\Temp\\app.log",
+        SessionKind::WindowsVm(_) | SessionKind::WindowsNative(_) => "C:\\Temp\\app.log",
         _ => "/tmp/app.log",
     };
     let log_dest = artifacts_dir.join("app.log");
@@ -47,7 +47,7 @@ pub async fn collect_artifacts(
     let ps_cmd: &[&str] = match session {
         SessionKind::Tart(_) | SessionKind::Native(_) => &["ps", "aux"],
         SessionKind::Docker(_) => &["ps", "auxf"],
-        SessionKind::WindowsVm(_) => &["tasklist"],
+        SessionKind::WindowsVm(_) | SessionKind::WindowsNative(_) => &["tasklist"],
     };
     match session.exec(ps_cmd).await {
         Ok(output) => {
@@ -61,43 +61,97 @@ pub async fn collect_artifacts(
         Err(e) => debug!("Failed to capture process list: {e}"),
     }
 
-    // Capture system logs from /tmp (Xvfb, x11vnc, etc.)
-    match session
-        .exec(&["bash", "-c", "ls /tmp/*.log 2>/dev/null || true"])
-        .await
-    {
-        Ok(output) => {
-            for log_file in output.lines().filter(|l| !l.trim().is_empty()) {
-                let log_file = log_file.trim();
-                let filename = std::path::Path::new(log_file)
-                    .file_name()
-                    .map(|f| f.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "unknown.log".to_string());
-                // Skip app.log since we already collected it
-                if filename == "app.log" {
-                    continue;
-                }
-                let dest = artifacts_dir.join(&filename);
-                match session.copy_from(log_file, &dest).await {
-                    Ok(()) => debug!("Collected {filename}"),
-                    Err(e) => debug!("Failed to collect {filename}: {e}"),
+    // Capture system logs
+    if matches!(session, SessionKind::WindowsVm(_) | SessionKind::WindowsNative(_)) {
+        // Windows: collect *.log files from C:\Temp
+        match session
+            .exec(&[
+                "powershell",
+                "-Command",
+                "(Get-ChildItem 'C:\\Temp\\*.log' -ErrorAction SilentlyContinue).FullName",
+            ])
+            .await
+        {
+            Ok(output) => {
+                for log_file in output.lines().filter(|l| !l.trim().is_empty()) {
+                    let log_file = log_file.trim();
+                    let filename = log_file
+                        .rsplit('\\')
+                        .next()
+                        .unwrap_or("unknown.log")
+                        .to_string();
+                    if filename == "app.log" {
+                        continue;
+                    }
+                    let dest = artifacts_dir.join(&filename);
+                    match session.copy_from(log_file, &dest).await {
+                        Ok(()) => debug!("Collected {filename}"),
+                        Err(e) => debug!("Failed to collect {filename}: {e}"),
+                    }
                 }
             }
+            Err(e) => debug!("Failed to list Windows log files: {e}"),
         }
-        Err(e) => debug!("Failed to list log files: {e}"),
-    }
 
-    // Capture dmesg output (useful for FUSE/AppImage issues)
-    match session.exec(&["dmesg"]).await {
-        Ok(output) if !output.trim().is_empty() => {
-            let dmesg_path = artifacts_dir.join("dmesg.txt");
-            if let Err(e) = std::fs::write(&dmesg_path, &output) {
-                warn!("Failed to write dmesg: {e}");
-            } else {
-                debug!("Collected dmesg output");
+        // Windows Event Log (application errors, crashes)
+        match session
+            .exec(&[
+                "powershell",
+                "-Command",
+                "Get-EventLog -LogName Application -EntryType Error,Warning -Newest 50 2>$null | Format-List",
+            ])
+            .await
+        {
+            Ok(output) if !output.trim().is_empty() => {
+                let evt_path = artifacts_dir.join("windows-eventlog.txt");
+                if let Err(e) = std::fs::write(&evt_path, &output) {
+                    warn!("Failed to write Windows event log: {e}");
+                } else {
+                    debug!("Collected Windows Application event log");
+                }
+            }
+            _ => debug!("No Windows event log entries to collect"),
+        }
+    } else {
+        // Linux/macOS: collect *.log files from /tmp
+        match session
+            .exec(&["bash", "-c", "ls /tmp/*.log 2>/dev/null || true"])
+            .await
+        {
+            Ok(output) => {
+                for log_file in output.lines().filter(|l| !l.trim().is_empty()) {
+                    let log_file = log_file.trim();
+                    let filename = std::path::Path::new(log_file)
+                        .file_name()
+                        .map(|f| f.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "unknown.log".to_string());
+                    if filename == "app.log" {
+                        continue;
+                    }
+                    let dest = artifacts_dir.join(&filename);
+                    match session.copy_from(log_file, &dest).await {
+                        Ok(()) => debug!("Collected {filename}"),
+                        Err(e) => debug!("Failed to collect {filename}: {e}"),
+                    }
+                }
+            }
+            Err(e) => debug!("Failed to list log files: {e}"),
+        }
+
+        // Capture dmesg output (useful for FUSE/AppImage issues on Linux)
+        if !matches!(session, SessionKind::Tart(_) | SessionKind::Native(_)) {
+            match session.exec(&["dmesg"]).await {
+                Ok(output) if !output.trim().is_empty() => {
+                    let dmesg_path = artifacts_dir.join("dmesg.txt");
+                    if let Err(e) = std::fs::write(&dmesg_path, &output) {
+                        warn!("Failed to write dmesg: {e}");
+                    } else {
+                        debug!("Collected dmesg output");
+                    }
+                }
+                _ => debug!("No dmesg output to collect"),
             }
         }
-        _ => debug!("No dmesg output to collect"),
     }
 
     // Capture container logs via Docker API (Docker-specific)

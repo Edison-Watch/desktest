@@ -69,11 +69,329 @@ pub(crate) async fn run_interactive(
             .await;
     }
 
-    // Default interactive: start container, run setup, print VNC info, pause
+    // Default interactive: start session, run setup, print connection info, pause
     run_interactive_pause(task_def, config, run, artifacts_dir_override).await
 }
 
-/// Interactive mode: start container, run setup steps, print VNC info, pause.
+/// Create a session from the task definition, mirroring orchestration.rs session creation.
+async fn create_session(
+    task_def: &task::TaskDefinition,
+    config: &Config,
+    resolved_secrets: &std::collections::HashMap<String, String>,
+    run: &RunConfig,
+) -> Result<SessionKind, AppError> {
+    let is_macos_tart = matches!(task_def.app, task::AppConfig::MacosTart { .. });
+    let is_macos_native = matches!(task_def.app, task::AppConfig::MacosNative { .. });
+    let is_windows_vm = matches!(task_def.app, task::AppConfig::WindowsVm { .. });
+    let is_windows_native = matches!(task_def.app, task::AppConfig::WindowsNative { .. });
+
+    let extra_env = if resolved_secrets.is_empty() {
+        None
+    } else {
+        Some(resolved_secrets)
+    };
+
+    // Resource usage warnings (suppressed by --quiet)
+    if !run.quiet {
+        if is_macos_tart {
+            crate::warnings::warn_tart_resources();
+        } else if !is_macos_native && !is_windows_vm && !is_windows_native {
+            crate::warnings::warn_docker_resources(config);
+        }
+    }
+
+    if is_macos_tart {
+        let base_image = match &task_def.app {
+            task::AppConfig::MacosTart { base_image, .. } => base_image.as_str(),
+            _ => unreachable!(),
+        };
+        info!("Creating Tart VM from '{base_image}'...");
+        let tart_session = tokio::select! {
+            biased;
+            _ = tokio::signal::ctrl_c() => {
+                eprintln!("\nInterrupted (Ctrl+C) during VM setup");
+                return Err(AppError::Infra("Interrupted by user".into()));
+            }
+            r = crate::tart::TartSession::create(base_image) => r?,
+        };
+        Ok(SessionKind::Tart(tart_session))
+    } else if is_macos_native {
+        info!("Using native macOS session (no VM, no isolation)");
+        Ok(SessionKind::Native(crate::session::NativeSession::create()))
+    } else if is_windows_vm {
+        let base_image = match &task_def.app {
+            task::AppConfig::WindowsVm { base_image, .. } => base_image.as_str(),
+            _ => unreachable!(),
+        };
+        info!("Creating Windows VM from '{base_image}'...");
+        let win_session = tokio::select! {
+            biased;
+            _ = tokio::signal::ctrl_c() => {
+                eprintln!("\nInterrupted (Ctrl+C) during Windows VM setup");
+                return Err(AppError::Infra("Interrupted by user".into()));
+            }
+            r = crate::windows::WindowsVmSession::create(base_image) => r?,
+        };
+        Ok(SessionKind::WindowsVm(win_session))
+    } else if is_windows_native {
+        info!("Using native Windows session (no VM, no isolation)");
+        Ok(SessionKind::WindowsNative(crate::session::WindowsNativeSession::create()))
+    } else {
+        let (custom_image, needs_fuse) = match &task_def.app {
+            task::AppConfig::DockerImage {
+                image, needs_fuse, ..
+            } => (Some(image.as_str()), *needs_fuse),
+            _ => (None, false),
+        };
+
+        info!("Creating Docker container...");
+        let docker_session = tokio::select! {
+            biased;
+            _ = tokio::signal::ctrl_c() => {
+                eprintln!("\nInterrupted (Ctrl+C) during container setup");
+                return Err(AppError::Infra("Interrupted by user".into()));
+            }
+            r = async {
+                let effective_image = resolve_image_name(config, custom_image).await?;
+                docker::DockerSession::create(config, effective_image, extra_env, run.no_network, needs_fuse).await
+            } => r?,
+        };
+        Ok(SessionKind::Docker(docker_session))
+    }
+}
+
+/// Wait for desktop readiness, dispatching to the correct platform implementation.
+async fn wait_for_desktop(
+    task_def: &task::TaskDefinition,
+    session: &SessionKind,
+    timeout: Duration,
+    debug: bool,
+) -> Result<(), AppError> {
+    info!("Waiting for desktop to be ready...");
+    match &task_def.app {
+        task::AppConfig::MacosTart { .. } => {
+            crate::tart::readiness::wait_for_desktop_macos(session, timeout, debug).await
+        }
+        task::AppConfig::MacosNative { .. } => {
+            info!("Native macOS session: desktop is ready");
+            Ok(())
+        }
+        task::AppConfig::WindowsVm { .. } => {
+            let win = session
+                .as_windows_vm()
+                .expect("Windows VM session required for Windows desktop readiness");
+            crate::windows::readiness::wait_for_desktop(win).await
+        }
+        task::AppConfig::WindowsNative { .. } => {
+            info!("Native Windows session: desktop is ready");
+            Ok(())
+        }
+        _ => readiness::wait_for_desktop(session, timeout, debug).await,
+    }
+}
+
+/// Deploy app into the session, dispatching to the correct platform implementation.
+async fn deploy_app(
+    task_def: &task::TaskDefinition,
+    config: &Config,
+    session: &SessionKind,
+) -> Result<String, AppError> {
+    match &task_def.app {
+        task::AppConfig::MacosTart { .. } => {
+            info!("Deploying app to macOS VM...");
+            let tart = session
+                .as_tart()
+                .expect("Tart session required for macOS app deployment");
+            tart.deploy_app(&task_def.app).await
+        }
+        task::AppConfig::MacosNative { .. } => {
+            info!("Preparing native macOS app...");
+            let native = session
+                .as_native()
+                .expect("Native session required for MacosNative app deployment");
+            native.deploy_app(&task_def.app).await
+        }
+        task::AppConfig::WindowsVm { .. } => {
+            info!("Deploying app to Windows VM...");
+            let win = session
+                .as_windows_vm()
+                .expect("Windows VM session required for Windows app deployment");
+            crate::windows::deploy::deploy_app(win, &task_def.app).await
+        }
+        task::AppConfig::WindowsNative { .. } => {
+            info!("Preparing native Windows app...");
+            let win_native = session
+                .as_windows_native()
+                .expect("Windows native session required for WindowsNative app deployment");
+            win_native.deploy_app(&task_def.app).await
+        }
+        task::AppConfig::DockerImage { .. } => {
+            info!("Custom Docker image: skipping app deployment");
+            Ok(String::new())
+        }
+        _ => {
+            info!("Deploying app...");
+            let docker = session
+                .as_docker()
+                .expect("Docker session required for app deployment");
+            docker.deploy_app(config).await
+        }
+    }
+}
+
+/// Launch the app inside the session, dispatching to the correct platform implementation.
+async fn launch_app(
+    task_def: &task::TaskDefinition,
+    config: &Config,
+    session: &SessionKind,
+    app_path: &str,
+    timeout: Duration,
+    debug: bool,
+) -> Result<(), AppError> {
+    match &task_def.app {
+        task::AppConfig::MacosTart { .. } => {
+            info!("Waiting for stable process baseline...");
+            let baseline_procs =
+                crate::tart::readiness::get_stable_gui_process_list(session).await?;
+            let tart = session
+                .as_tart()
+                .expect("Tart session required for macOS app launch");
+            tart.launch_app(&task_def.app, app_path).await?;
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            info!("Waiting for app window...");
+            crate::tart::readiness::wait_for_app_window_macos(
+                session,
+                &baseline_procs,
+                timeout,
+                debug,
+            )
+            .await?;
+        }
+        task::AppConfig::MacosNative { .. } => {
+            info!("Waiting for stable process baseline...");
+            let baseline_procs =
+                crate::tart::readiness::get_stable_gui_process_list(session).await?;
+            let native = session
+                .as_native()
+                .expect("Native session required for MacosNative app launch");
+            native.launch_app(&task_def.app, app_path).await?;
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            info!("Waiting for app window...");
+            crate::tart::readiness::wait_for_app_window_macos(
+                session,
+                &baseline_procs,
+                timeout,
+                debug,
+            )
+            .await?;
+        }
+        task::AppConfig::WindowsVm { .. } => {
+            info!("Launching Windows app...");
+            let win = session
+                .as_windows_vm()
+                .expect("Windows VM session required for Windows app launch");
+            crate::windows::deploy::launch_app(win, &task_def.app, app_path).await?;
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            info!("Windows app launched");
+        }
+        task::AppConfig::WindowsNative { .. } => {
+            info!("Launching native Windows app...");
+            let win_native = session
+                .as_windows_native()
+                .expect("Windows native session required for WindowsNative app launch");
+            win_native.launch_app(&task_def.app, app_path).await?;
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            info!("Windows app launched");
+        }
+        task::AppConfig::DockerImage {
+            entrypoint_cmd: Some(cmd),
+            ..
+        } => {
+            let baseline_windows = readiness::get_stable_window_list(session).await?;
+            info!("Launching app via entrypoint_cmd: {cmd}");
+            session
+                .exec_detached_with_log(&["bash", "-c", cmd], "/tmp/app.log")
+                .await?;
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            info!("Waiting for app window...");
+            readiness::wait_for_app_window(session, &baseline_windows, timeout, debug).await?;
+        }
+        task::AppConfig::DockerImage { .. } => {
+            // No entrypoint_cmd — nothing to launch
+        }
+        _ => {
+            let baseline_windows = readiness::get_stable_window_list(session).await?;
+            let is_appimage = matches!(config.app_type, crate::config::AppType::Appimage);
+            info!("Launching app: {app_path}");
+            let docker = session
+                .as_docker()
+                .expect("Docker session required for app launch");
+            docker
+                .launch_app(app_path, is_appimage, config.electron)
+                .await?;
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            info!("Waiting for app window...");
+            readiness::wait_for_app_window(session, &baseline_windows, timeout, debug).await?;
+        }
+    }
+    Ok(())
+}
+
+/// Validate custom Docker image dependencies (only applies to DockerImage tasks).
+async fn validate_custom_image(
+    task_def: &task::TaskDefinition,
+    session: &SessionKind,
+) -> Result<(), AppError> {
+    if matches!(task_def.app, task::AppConfig::DockerImage { .. }) {
+        let docker = session
+            .as_docker()
+            .expect("Docker session required for custom image validation");
+        docker.validate_custom_image().await?;
+    }
+    Ok(())
+}
+
+/// Print session-specific connection info for interactive pause mode.
+fn print_connection_info(task_def: &task::TaskDefinition, config: &Config, session: &SessionKind) {
+    // VNC info for Docker sessions
+    if let Some(port) = config.vnc_port {
+        println!(
+            "VNC available at {}",
+            crate::config::format_host_port(&config.vnc_bind_addr, port)
+        );
+    }
+
+    println!(
+        "\nInteractive mode: session is running with task '{}'.",
+        task_def.id
+    );
+    println!("  Instruction: {}", task_def.instruction);
+
+    match session {
+        SessionKind::Docker(docker) => {
+            println!("  Container ID: {}", docker.container_id);
+            println!("  docker exec -it {} bash", docker.container_id);
+        }
+        SessionKind::Tart(tart) => {
+            println!("  VM name: {}", tart.vm_name());
+            println!("  View VM: tart view {}", tart.vm_name());
+        }
+        SessionKind::Native(_) => {
+            println!("  Running on the host desktop (no isolation)");
+        }
+        SessionKind::WindowsVm(win) => {
+            println!("  VM name: {}", win.vm_name());
+            println!("  Windows VM running via QEMU");
+        }
+        SessionKind::WindowsNative(_) => {
+            println!("  Running on the Windows host desktop (no isolation)");
+        }
+    }
+
+    println!("\nPress Ctrl+C to stop and clean up.");
+}
+
+/// Interactive mode: start session, run setup steps, print connection info, pause.
 async fn run_interactive_pause(
     mut task_def: task::TaskDefinition,
     mut config: Config,
@@ -86,36 +404,7 @@ async fn run_interactive_pause(
     config.apply_task_app(&task_def.app);
     let timeout = Duration::from_secs(config.startup_timeout_seconds);
 
-    // Determine custom Docker image and FUSE requirement from task definition
-    let (custom_image, needs_fuse) = match &task_def.app {
-        task::AppConfig::DockerImage {
-            image, needs_fuse, ..
-        } => (Some(image.as_str()), *needs_fuse),
-        _ => (None, false),
-    };
-    let extra_env = if resolved_secrets.is_empty() {
-        None
-    } else {
-        Some(&resolved_secrets)
-    };
-
-    if !run.quiet {
-        crate::warnings::warn_docker_resources(&config);
-    }
-
-    info!("Creating Docker container...");
-    let session = tokio::select! {
-        biased;
-        _ = tokio::signal::ctrl_c() => {
-            eprintln!("\nInterrupted (Ctrl+C) during container setup");
-            return Err(AppError::Infra("Interrupted by user".into()));
-        }
-        r = async {
-            let effective_image = resolve_image_name(&config, custom_image).await?;
-            docker::DockerSession::create(&config, effective_image, extra_env, run.no_network, needs_fuse).await
-        } => r?,
-    };
-    let session = SessionKind::Docker(session);
+    let session = create_session(&task_def, &config, &resolved_secrets, &run).await?;
 
     let result = tokio::select! {
         biased;
@@ -135,7 +424,7 @@ async fn run_interactive_pause(
     };
     maybe_collect_artifacts(&session, &artifacts_dir, &run).await;
 
-    info!("Cleaning up container...");
+    info!("Cleaning up session...");
     let _ = session.cleanup().await;
 
     result
@@ -151,29 +440,13 @@ async fn run_interactive_pause_inner(
     redactor: Option<&crate::redact::Redactor>,
 ) -> Result<AgentOutcome, AppError> {
     // 1. Wait for desktop
-    info!("Waiting for desktop to be ready...");
-    readiness::wait_for_desktop(session, timeout, debug).await?;
+    wait_for_desktop(task_def, session, timeout, debug).await?;
 
     // 1b. Validate custom image dependencies (after desktop is ready)
-    let is_docker_image = matches!(task_def.app, task::AppConfig::DockerImage { .. });
-    if is_docker_image {
-        let docker = session
-            .as_docker()
-            .expect("Docker session required for custom image validation");
-        docker.validate_custom_image().await?;
-    }
+    validate_custom_image(task_def, session).await?;
 
     // 2. Deploy app (before setup steps, so setup can reference deployed files)
-    let app_path = if is_docker_image {
-        info!("Custom Docker image: skipping app deployment");
-        String::new()
-    } else {
-        info!("Deploying app...");
-        let docker = session
-            .as_docker()
-            .expect("Docker session required for app deployment");
-        docker.deploy_app(config).await?
-    };
+    let app_path = deploy_app(task_def, config, session).await?;
 
     // 3. Run setup steps (after deploy, before app launch)
     if !task_def.config.is_empty() {
@@ -182,49 +455,10 @@ async fn run_interactive_pause_inner(
     }
 
     // 4. Launch app
-    if is_docker_image {
-        if let task::AppConfig::DockerImage {
-            entrypoint_cmd: Some(cmd),
-            ..
-        } = &task_def.app
-        {
-            info!("Launching app via entrypoint_cmd: {cmd}");
-            session
-                .exec_detached_with_log(&["bash", "-c", cmd], "/tmp/app.log")
-                .await?;
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-        }
-    } else {
-        let is_appimage = matches!(config.app_type, crate::config::AppType::Appimage);
-        info!("Launching app: {app_path}");
-        let docker = session
-            .as_docker()
-            .expect("Docker session required for app launch");
-        docker
-            .launch_app(&app_path, is_appimage, config.electron)
-            .await?;
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-    }
+    launch_app(task_def, config, session, &app_path, timeout, debug).await?;
 
-    // 5. Print VNC info and container info
-    if let Some(port) = config.vnc_port {
-        println!(
-            "VNC available at {}",
-            crate::config::format_host_port(&config.vnc_bind_addr, port)
-        );
-    }
-
-    let docker = session
-        .as_docker()
-        .expect("Docker session required for container info");
-    println!(
-        "\nInteractive mode: container is running with task '{}'.",
-        task_def.id
-    );
-    println!("  Instruction: {}", task_def.instruction);
-    println!("  Container ID: {}", docker.container_id);
-    println!("  docker exec -it {} bash", docker.container_id);
-    println!("\nPress Ctrl+C to stop and clean up.");
+    // 5. Print connection info
+    print_connection_info(task_def, config, session);
 
     // Wait forever until Ctrl+C
     std::future::pending::<()>().await;
@@ -254,35 +488,7 @@ async fn run_interactive_step(
     std::fs::create_dir_all(&artifacts_dir)
         .map_err(|e| AppError::Infra(format!("Cannot create artifacts dir: {e}")))?;
 
-    let (custom_image, needs_fuse) = match &task_def.app {
-        task::AppConfig::DockerImage {
-            image, needs_fuse, ..
-        } => (Some(image.as_str()), *needs_fuse),
-        _ => (None, false),
-    };
-    let extra_env = if resolved_secrets.is_empty() {
-        None
-    } else {
-        Some(&resolved_secrets)
-    };
-
-    if !run.quiet {
-        crate::warnings::warn_docker_resources(&config);
-    }
-
-    info!("Creating Docker container...");
-    let session = tokio::select! {
-        biased;
-        _ = tokio::signal::ctrl_c() => {
-            eprintln!("\nInterrupted (Ctrl+C) during container setup");
-            return Err(AppError::Infra("Interrupted by user".into()));
-        }
-        r = async {
-            let effective_image = resolve_image_name(&config, custom_image).await?;
-            docker::DockerSession::create(&config, effective_image, extra_env, run.no_network, needs_fuse).await
-        } => r?,
-    };
-    let session = SessionKind::Docker(session);
+    let session = create_session(&task_def, &config, &resolved_secrets, &run).await?;
 
     let test_id = task_def.id.clone();
     let timeout = Duration::from_secs(config.startup_timeout_seconds);
@@ -298,7 +504,7 @@ async fn run_interactive_step(
 
     // Collect artifacts and clean up
     maybe_collect_artifacts(&session, &artifacts_dir, &run).await;
-    info!("Cleaning up container...");
+    info!("Cleaning up session...");
     let _ = session.cleanup().await;
 
     let duration_ms = start.elapsed().as_millis() as u64;
@@ -338,29 +544,13 @@ async fn run_interactive_step_inner(
     use task::EvaluatorMode;
 
     // 1. Wait for desktop
-    info!("Waiting for desktop to be ready...");
-    readiness::wait_for_desktop(session, timeout, run.debug).await?;
+    wait_for_desktop(task_def, session, timeout, run.debug).await?;
 
     // 1b. Validate custom image dependencies (after desktop is ready)
-    let is_docker_image = matches!(task_def.app, task::AppConfig::DockerImage { .. });
-    if is_docker_image {
-        let docker = session
-            .as_docker()
-            .expect("Docker session required for custom image validation");
-        docker.validate_custom_image().await?;
-    }
+    validate_custom_image(task_def, session).await?;
 
     // 2. Deploy app (before setup steps, so setup can reference deployed files)
-    let app_path = if is_docker_image {
-        info!("Custom Docker image: skipping app deployment");
-        String::new()
-    } else {
-        info!("Deploying app...");
-        let docker = session
-            .as_docker()
-            .expect("Docker session required for app deployment");
-        docker.deploy_app(config).await?
-    };
+    let app_path = deploy_app(task_def, config, session).await?;
 
     // 3. Run setup steps (after deploy, before app launch)
     if !task_def.config.is_empty() {
@@ -369,35 +559,7 @@ async fn run_interactive_step_inner(
     }
 
     // 4. Launch app
-    if is_docker_image {
-        if let task::AppConfig::DockerImage {
-            entrypoint_cmd: Some(cmd),
-            ..
-        } = &task_def.app
-        {
-            let baseline_windows = readiness::get_stable_window_list(session).await?;
-            info!("Launching app via entrypoint_cmd: {cmd}");
-            session
-                .exec_detached_with_log(&["bash", "-c", cmd], "/tmp/app.log")
-                .await?;
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            info!("Waiting for app window...");
-            readiness::wait_for_app_window(session, &baseline_windows, timeout, run.debug).await?;
-        }
-    } else {
-        let baseline_windows = readiness::get_stable_window_list(session).await?;
-        let is_appimage = matches!(config.app_type, crate::config::AppType::Appimage);
-        info!("Launching app: {app_path}");
-        let docker = session
-            .as_docker()
-            .expect("Docker session required for app launch");
-        docker
-            .launch_app(&app_path, is_appimage, config.electron)
-            .await?;
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        info!("Waiting for app window...");
-        readiness::wait_for_app_window(session, &baseline_windows, timeout, run.debug).await?;
-    }
+    launch_app(task_def, config, session, &app_path, timeout, run.debug).await?;
 
     // Print VNC info
     if let Some(port) = config.vnc_port {
@@ -407,7 +569,7 @@ async fn run_interactive_step_inner(
         );
     }
 
-    // 4. Start video recording (after app is ready so we skip the boot/setup filler)
+    // 5. Start video recording (after app is ready so we skip the boot/setup filler)
     let recording = if run.no_recording {
         None
     } else {
@@ -422,7 +584,7 @@ async fn run_interactive_step_inner(
         }
     };
 
-    // 5. Deploy sandbox script and run agent loop in step mode
+    // 6. Deploy sandbox script and run agent loop in step mode
     if session.as_native().is_none() {
         agent::pyautogui::deploy_sandbox_script(session).await?;
     }
@@ -472,7 +634,7 @@ async fn run_interactive_step_inner(
 
     let agent_outcome = agent_loop_result?;
 
-    // 6. Run evaluation if needed
+    // 7. Run evaluation if needed
     let eval_mode = task_def
         .evaluator
         .as_ref()

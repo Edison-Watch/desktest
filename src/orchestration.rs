@@ -263,6 +263,7 @@ pub(crate) async fn run_task(
     let is_macos_tart = matches!(task_def.app, task::AppConfig::MacosTart { .. });
     let is_macos_native = matches!(task_def.app, task::AppConfig::MacosNative { .. });
     let is_windows_vm = matches!(task_def.app, task::AppConfig::WindowsVm { .. });
+    let is_windows_native = matches!(task_def.app, task::AppConfig::WindowsNative { .. });
 
     let extra_env = if resolved_secrets.is_empty() {
         None
@@ -274,7 +275,7 @@ pub(crate) async fn run_task(
     if !run.quiet {
         if is_macos_tart {
             crate::warnings::warn_tart_resources();
-        } else if !is_macos_native && !is_windows_vm {
+        } else if !is_macos_native && !is_windows_vm && !is_windows_native {
             crate::warnings::warn_docker_resources(&config);
         }
     }
@@ -313,6 +314,9 @@ pub(crate) async fn run_task(
             r = crate::windows::WindowsVmSession::create(base_image) => r?,
         };
         SessionKind::WindowsVm(win_session)
+    } else if is_windows_native {
+        info!("Using native Windows session (no VM, no isolation)");
+        SessionKind::WindowsNative(crate::session::WindowsNativeSession::create())
     } else {
         // Determine custom Docker image and FUSE requirement from task definition
         let (custom_image, needs_fuse) = match &task_def.app {
@@ -470,6 +474,7 @@ async fn run_task_inner(
     let is_macos_tart = matches!(task_def.app, task::AppConfig::MacosTart { .. });
     let is_macos_native = matches!(task_def.app, task::AppConfig::MacosNative { .. });
     let is_windows_vm = matches!(task_def.app, task::AppConfig::WindowsVm { .. });
+    let is_windows_native = matches!(task_def.app, task::AppConfig::WindowsNative { .. });
 
     // 1. Wait for desktop to be ready
     info!("Waiting for desktop to be ready...");
@@ -478,6 +483,9 @@ async fn run_task_inner(
     } else if is_macos_native {
         // Native: desktop is always ready (we're already on the host)
         info!("Native macOS session: desktop is ready");
+    } else if is_windows_native {
+        // Native Windows: desktop is always ready (we're already on the host)
+        info!("Native Windows session: desktop is ready");
     } else if is_windows_vm {
         let win = session
             .as_windows_vm()
@@ -509,6 +517,12 @@ async fn run_task_inner(
             .as_native()
             .expect("Native session required for MacosNative app deployment");
         native.deploy_app(&task_def.app).await?
+    } else if is_windows_native {
+        info!("Preparing native Windows app...");
+        let win_native = session
+            .as_windows_native()
+            .expect("Windows native session required for WindowsNative app deployment");
+        win_native.deploy_app(&task_def.app).await?
     } else if is_windows_vm {
         info!("Deploying app to Windows VM...");
         let win = session
@@ -573,6 +587,15 @@ async fn run_task_inner(
             run.debug,
         )
         .await?;
+    } else if is_windows_native {
+        info!("Launching native Windows app...");
+        let win_native = session
+            .as_windows_native()
+            .expect("Windows native session required for WindowsNative app launch");
+        win_native.launch_app(&task_def.app, &app_path).await?;
+
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        info!("Windows app launched");
     } else if is_windows_vm {
         info!("Launching Windows app...");
         let win = session
@@ -1230,6 +1253,7 @@ pub(crate) async fn run_attach(
             task::AppConfig::MacosTart { .. } => "macos_tart",
             task::AppConfig::MacosNative { .. } => "macos_native",
             task::AppConfig::WindowsVm { .. } => "windows_vm",
+            task::AppConfig::WindowsNative { .. } => "windows_native",
             task::AppConfig::VncAttach { .. } => unreachable!(),
         };
         tracing::warn!(

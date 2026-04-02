@@ -62,7 +62,8 @@ impl DockerSession {
             }
             crate::config::AppType::MacosTart
             | crate::config::AppType::MacosNative
-            | crate::config::AppType::WindowsVm => {
+            | crate::config::AppType::WindowsVm
+            | crate::config::AppType::WindowsNative => {
                 // macOS/Windows app types are handled by their own session types
                 unreachable!("non-Docker app types should not reach DockerSession::deploy_app")
             }
