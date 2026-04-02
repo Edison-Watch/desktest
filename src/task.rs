@@ -172,6 +172,22 @@ pub enum AppConfig {
         #[serde(default)]
         app_path: Option<String>,
     },
+    /// Run a Windows app inside a QEMU/KVM VM.
+    ///
+    /// At least one of `app_path` or `launch_cmd` must be provided.
+    WindowsVm {
+        /// Path to the QCOW2 golden image base.
+        base_image: String,
+        /// Path to an application file on the host for deployment into the VM.
+        #[serde(default)]
+        app_path: Option<String>,
+        /// Arbitrary launch command (PowerShell). Takes precedence over app_path.
+        #[serde(default)]
+        launch_cmd: Option<String>,
+        /// Installer command to run after deployment (e.g., msiexec).
+        #[serde(default)]
+        installer_cmd: Option<String>,
+    },
 }
 
 /// A setup step to execute before the agent loop.
@@ -584,6 +600,23 @@ fn apply_secrets_to_app(
             }
             if let Some(ap) = app_path {
                 *ap = substitute_secrets(ap, resolved, defined)?;
+            }
+        }
+        AppConfig::WindowsVm {
+            base_image,
+            app_path,
+            launch_cmd,
+            installer_cmd,
+        } => {
+            *base_image = substitute_secrets(base_image, resolved, defined)?;
+            if let Some(ap) = app_path {
+                *ap = substitute_secrets(ap, resolved, defined)?;
+            }
+            if let Some(cmd) = launch_cmd {
+                *cmd = substitute_secrets(cmd, resolved, defined)?;
+            }
+            if let Some(cmd) = installer_cmd {
+                *cmd = substitute_secrets(cmd, resolved, defined)?;
             }
         }
     }

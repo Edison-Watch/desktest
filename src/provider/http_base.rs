@@ -34,9 +34,15 @@ pub struct HttpProvider {
 }
 
 impl HttpProvider {
-    pub fn new(api_key: &str, model: &str, base_url: &str, label: &str) -> Self {
+    pub fn with_client(
+        api_key: &str,
+        model: &str,
+        base_url: &str,
+        label: &str,
+        http: reqwest::Client,
+    ) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http,
             api_key: api_key.into(),
             model: model.into(),
             base_url: base_url.into(),
@@ -219,7 +225,13 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = HttpProvider::new("sk-test", "gpt-4.1", &server.uri(), "Test");
+        let client = HttpProvider::with_client(
+            "sk-test",
+            "gpt-4.1",
+            &server.uri(),
+            "Test",
+            reqwest::Client::new(),
+        );
         let messages = vec![user_message("Hi")];
         let result = client.chat_completion(&messages, &[]).await.unwrap();
 
@@ -250,7 +262,13 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = HttpProvider::new("sk-test", "gpt-4.1", &server.uri(), "Test");
+        let client = HttpProvider::with_client(
+            "sk-test",
+            "gpt-4.1",
+            &server.uri(),
+            "Test",
+            reqwest::Client::new(),
+        );
         let messages = vec![user_message("test")];
         let result = client.chat_completion(&messages, &[]).await.unwrap();
 
@@ -279,7 +297,13 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = HttpProvider::new("sk-test", "gpt-4.1", &server.uri(), "Test");
+        let client = HttpProvider::with_client(
+            "sk-test",
+            "gpt-4.1",
+            &server.uri(),
+            "Test",
+            reqwest::Client::new(),
+        );
         let result = client
             .chat_completion(&[user_message("test")], &[])
             .await
@@ -300,7 +324,13 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = HttpProvider::new("sk-test", "gpt-4.1", &server.uri(), "Test");
+        let client = HttpProvider::with_client(
+            "sk-test",
+            "gpt-4.1",
+            &server.uri(),
+            "Test",
+            reqwest::Client::new(),
+        );
         let result = client.chat_completion(&[user_message("test")], &[]).await;
 
         assert!(result.is_err());
@@ -318,7 +348,13 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = HttpProvider::new("sk-test", "gpt-4.1", &server.uri(), "Test");
+        let client = HttpProvider::with_client(
+            "sk-test",
+            "gpt-4.1",
+            &server.uri(),
+            "Test",
+            reqwest::Client::new(),
+        );
         let result = client.chat_completion(&[user_message("test")], &[]).await;
 
         assert!(result.is_err());
@@ -343,7 +379,13 @@ mod tests {
             }
         })];
 
-        let client = HttpProvider::new("sk-test", "gpt-4.1", &server.uri(), "Test");
+        let client = HttpProvider::with_client(
+            "sk-test",
+            "gpt-4.1",
+            &server.uri(),
+            "Test",
+            reqwest::Client::new(),
+        );
         let result = client
             .chat_completion(&[user_message("test")], &tools)
             .await;
@@ -361,11 +403,12 @@ mod tests {
             .mount(&server)
             .await;
 
-        let provider: Box<dyn LlmProvider> = Box::new(HttpProvider::new(
+        let provider: Box<dyn LlmProvider> = Box::new(HttpProvider::with_client(
             "sk-test",
             "gpt-4.1",
             &server.uri(),
             "Test",
+            reqwest::Client::new(),
         ));
         let messages = vec![user_message("Hi")];
         let result = provider.chat_completion(&messages, &[]).await.unwrap();
@@ -379,7 +422,13 @@ mod tests {
 
     #[test]
     fn test_completions_url() {
-        let provider = HttpProvider::new("key", "model", "https://my-server.com", "Test");
+        let provider = HttpProvider::with_client(
+            "key",
+            "model",
+            "https://my-server.com",
+            "Test",
+            reqwest::Client::new(),
+        );
         assert_eq!(
             provider.completions_url(),
             "https://my-server.com/v1/chat/completions"
@@ -388,7 +437,13 @@ mod tests {
 
     #[test]
     fn test_completions_url_localhost() {
-        let provider = HttpProvider::new("key", "llama-3", "http://localhost:8080", "Test");
+        let provider = HttpProvider::with_client(
+            "key",
+            "llama-3",
+            "http://localhost:8080",
+            "Test",
+            reqwest::Client::new(),
+        );
         assert_eq!(
             provider.completions_url(),
             "http://localhost:8080/v1/chat/completions"
@@ -397,7 +452,13 @@ mod tests {
 
     #[test]
     fn test_completions_url_with_path_prefix() {
-        let provider = HttpProvider::new("key", "model", "https://gateway.example.com/api", "Test");
+        let provider = HttpProvider::with_client(
+            "key",
+            "model",
+            "https://gateway.example.com/api",
+            "Test",
+            reqwest::Client::new(),
+        );
         assert_eq!(
             provider.completions_url(),
             "https://gateway.example.com/api/v1/chat/completions"
@@ -406,8 +467,14 @@ mod tests {
 
     #[test]
     fn test_with_base_url() {
-        let provider = HttpProvider::new("key", "model", "https://api.openai.com", "OpenAI")
-            .with_base_url("https://custom.api.com");
+        let provider = HttpProvider::with_client(
+            "key",
+            "model",
+            "https://api.openai.com",
+            "OpenAI",
+            reqwest::Client::new(),
+        )
+        .with_base_url("https://custom.api.com");
         assert_eq!(
             provider.completions_url(),
             "https://custom.api.com/v1/chat/completions"

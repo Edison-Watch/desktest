@@ -30,7 +30,9 @@ mod tart;
 mod task;
 mod trajectory;
 mod update;
+mod vm_protocol;
 mod warnings;
+mod windows;
 
 pub(crate) use orchestration::run_task;
 

@@ -22,8 +22,14 @@ export DBUS_SESSION_BUS_ADDRESS
 xfce4-session &
 sleep 2
 
-# Start VNC server (no password, shared mode)
-x11vnc -display :99 -forever -shared -nopw -rfbport "$VNC_PORT" &
+# Start VNC server
+if [ -n "${VNC_PASSWORD:-}" ]; then
+    x11vnc -storepasswd "$VNC_PASSWORD" /tmp/.vnc_passwd
+    chmod 600 /tmp/.vnc_passwd
+    x11vnc -display :99 -forever -shared -rfbauth /tmp/.vnc_passwd -rfbport "$VNC_PORT" &
+else
+    x11vnc -display :99 -forever -shared -nopw -rfbport "$VNC_PORT" &
+fi
 
 # Write a sentinel file when desktop is up
 touch /tmp/.desktop-ready

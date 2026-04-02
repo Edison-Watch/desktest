@@ -262,6 +262,7 @@ pub(crate) async fn run_task(
 
     let is_macos_tart = matches!(task_def.app, task::AppConfig::MacosTart { .. });
     let is_macos_native = matches!(task_def.app, task::AppConfig::MacosNative { .. });
+    let is_windows_vm = matches!(task_def.app, task::AppConfig::WindowsVm { .. });
 
     let extra_env = if resolved_secrets.is_empty() {
         None
@@ -273,12 +274,12 @@ pub(crate) async fn run_task(
     if !run.quiet {
         if is_macos_tart {
             crate::warnings::warn_tart_resources();
-        } else if !is_macos_native {
+        } else if !is_macos_native && !is_windows_vm {
             crate::warnings::warn_docker_resources(&config);
         }
     }
 
-    // Create session: Docker container, Tart VM, or native host
+    // Create session: Docker container, Tart VM, Windows VM, or native host
     let session: SessionKind = if is_macos_tart {
         let base_image = match &task_def.app {
             task::AppConfig::MacosTart { base_image, .. } => base_image.as_str(),
@@ -297,6 +298,21 @@ pub(crate) async fn run_task(
     } else if is_macos_native {
         info!("Using native macOS session (no VM, no isolation)");
         SessionKind::Native(crate::session::NativeSession::create())
+    } else if is_windows_vm {
+        let base_image = match &task_def.app {
+            task::AppConfig::WindowsVm { base_image, .. } => base_image.as_str(),
+            _ => unreachable!(),
+        };
+        info!("Creating Windows VM from '{base_image}'...");
+        let win_session = tokio::select! {
+            biased;
+            _ = tokio::signal::ctrl_c() => {
+                eprintln!("\nInterrupted (Ctrl+C) during Windows VM setup");
+                return Err(AppError::Infra("Interrupted by user".into()));
+            }
+            r = crate::windows::WindowsVmSession::create(base_image) => r?,
+        };
+        SessionKind::WindowsVm(win_session)
     } else {
         // Determine custom Docker image, digest, and FUSE requirement from task definition
         let (custom_image, expected_digest, needs_fuse) = match &task_def.app {
@@ -456,6 +472,7 @@ async fn run_task_inner(
 
     let is_macos_tart = matches!(task_def.app, task::AppConfig::MacosTart { .. });
     let is_macos_native = matches!(task_def.app, task::AppConfig::MacosNative { .. });
+    let is_windows_vm = matches!(task_def.app, task::AppConfig::WindowsVm { .. });
 
     // 1. Wait for desktop to be ready
     info!("Waiting for desktop to be ready...");
@@ -464,6 +481,11 @@ async fn run_task_inner(
     } else if is_macos_native {
         // Native: desktop is always ready (we're already on the host)
         info!("Native macOS session: desktop is ready");
+    } else if is_windows_vm {
+        let win = session
+            .as_windows_vm()
+            .expect("Windows VM session required for Windows desktop readiness");
+        crate::windows::readiness::wait_for_desktop(win).await?;
     } else {
         readiness::wait_for_desktop(session, timeout, run.debug).await?;
     }
@@ -490,6 +512,12 @@ async fn run_task_inner(
             .as_native()
             .expect("Native session required for MacosNative app deployment");
         native.deploy_app(&task_def.app).await?
+    } else if is_windows_vm {
+        info!("Deploying app to Windows VM...");
+        let win = session
+            .as_windows_vm()
+            .expect("Windows VM session required for Windows app deployment");
+        crate::windows::deploy::deploy_app(win, &task_def.app).await?
     } else if is_docker_image {
         info!("Custom Docker image: skipping app deployment");
         String::new()
@@ -548,6 +576,15 @@ async fn run_task_inner(
             run.debug,
         )
         .await?;
+    } else if is_windows_vm {
+        info!("Launching Windows app...");
+        let win = session
+            .as_windows_vm()
+            .expect("Windows VM session required for Windows app launch");
+        crate::windows::deploy::launch_app(win, &task_def.app, &app_path).await?;
+
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        info!("Windows app launched");
     } else if is_docker_image {
         if let task::AppConfig::DockerImage { entrypoint_cmd, .. } = &task_def.app {
             if let Some(cmd) = entrypoint_cmd {
@@ -722,8 +759,9 @@ async fn run_eval_loop(
                 .iter()
                 .any(|m| matches!(m, task::MetricConfig::ScriptReplay { .. }));
 
-            let eval_screenshot_cmd =
-                observation::ObservationConfig::for_session(session).screenshot_cmd;
+            let eval_obs_config = observation::ObservationConfig::for_session(session);
+            let eval_screenshot_cmd = eval_obs_config.screenshot_cmd;
+            let eval_screenshot_guest_path = eval_obs_config.screenshot_guest_path;
             let mut screenshot_count = 0usize;
             let mut trajectory_logger: Option<crate::trajectory::TrajectoryLogger> = if !has_replay
             {
@@ -751,6 +789,7 @@ async fn run_eval_loop(
                     artifacts_dir,
                     1,
                     &eval_screenshot_cmd,
+                    &eval_screenshot_guest_path,
                 )
                 .await
                 {
@@ -785,6 +824,7 @@ async fn run_eval_loop(
                     artifacts_dir,
                     2,
                     &eval_screenshot_cmd,
+                    &eval_screenshot_guest_path,
                 )
                 .await
                 {
@@ -1132,6 +1172,7 @@ async fn run_agent_loop(
         &config.api_key,
         &config.model,
         &config.api_base_url,
+        config.tls_ca_bundle.as_deref(),
     )?;
 
     let is_qa = run.qa;
@@ -1192,6 +1233,7 @@ pub(crate) async fn run_attach(
             task::AppConfig::DockerImage { .. } => "docker_image",
             task::AppConfig::MacosTart { .. } => "macos_tart",
             task::AppConfig::MacosNative { .. } => "macos_native",
+            task::AppConfig::WindowsVm { .. } => "windows_vm",
             task::AppConfig::VncAttach { .. } => unreachable!(),
         };
         tracing::warn!(

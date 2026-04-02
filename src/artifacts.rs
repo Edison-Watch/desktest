@@ -33,8 +33,12 @@ pub async fn collect_artifacts(
     }
 
     // Collect app log (stdout/stderr from the launched app)
+    let app_log_path = match session {
+        SessionKind::WindowsVm(_) => "C:\\Temp\\app.log",
+        _ => "/tmp/app.log",
+    };
     let log_dest = artifacts_dir.join("app.log");
-    match session.copy_from("/tmp/app.log", &log_dest).await {
+    match session.copy_from(app_log_path, &log_dest).await {
         Ok(()) => debug!("Collected app log to {}", log_dest.display()),
         Err(e) => debug!("No app log to collect: {e}"),
     }
@@ -43,6 +47,7 @@ pub async fn collect_artifacts(
     let ps_cmd: &[&str] = match session {
         SessionKind::Tart(_) | SessionKind::Native(_) => &["ps", "aux"],
         SessionKind::Docker(_) => &["ps", "auxf"],
+        SessionKind::WindowsVm(_) => &["tasklist"],
     };
     match session.exec(ps_cmd).await {
         Ok(output) => {

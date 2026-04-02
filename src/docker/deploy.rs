@@ -60,9 +60,11 @@ impl DockerSession {
                 info!("No deployment needed for this app type");
                 Ok(String::new())
             }
-            crate::config::AppType::MacosTart | crate::config::AppType::MacosNative => {
-                // macOS app types are handled by TartSession, not DockerSession
-                unreachable!("macOS app types should not reach DockerSession::deploy_app")
+            crate::config::AppType::MacosTart
+            | crate::config::AppType::MacosNative
+            | crate::config::AppType::WindowsVm => {
+                // macOS/Windows app types are handled by their own session types
+                unreachable!("non-Docker app types should not reach DockerSession::deploy_app")
             }
         }
     }

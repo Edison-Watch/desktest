@@ -47,6 +47,7 @@ pub enum AppType {
     VncAttach,
     MacosTart,
     MacosNative,
+    WindowsVm,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -109,6 +110,15 @@ pub struct Config {
     /// Container PID limit. Default: 512.
     pub container_pids_limit: Option<i64>,
 
+    /// Optional VNC password. When set, x11vnc uses password authentication
+    /// instead of `-nopw`.
+    pub vnc_password: Option<String>,
+
+    /// Path to a custom CA certificate bundle (PEM format) for LLM API connections.
+    /// When set, only the specified root CAs are trusted (system defaults are disabled).
+    #[serde(default)]
+    pub tls_ca_bundle: Option<String>,
+
     /// Notification integrations (Slack, etc.).
     #[serde(default)]
     pub integrations: IntegrationsConfig,
@@ -148,6 +158,7 @@ impl Config {
             display_height: default_height(),
             vnc_bind_addr: default_vnc_addr(),
             vnc_port: None,
+            vnc_password: None,
             app_type: AppType::Folder,
             app_path: None,
             app_dir: None,
@@ -157,6 +168,7 @@ impl Config {
             container_memory_bytes: None,
             container_nano_cpus: None,
             container_pids_limit: None,
+            tls_ca_bundle: None,
             integrations: IntegrationsConfig::default(),
         }
     }
@@ -197,6 +209,10 @@ impl Config {
             }
             crate::task::AppConfig::MacosNative { .. } => {
                 self.app_type = AppType::MacosNative;
+                self.electron = false;
+            }
+            crate::task::AppConfig::WindowsVm { .. } => {
+                self.app_type = AppType::WindowsVm;
                 self.electron = false;
             }
         }
@@ -271,6 +287,9 @@ impl Config {
             }
             AppType::MacosNative => {
                 // Validation happens in task.rs (bundle_id or app_path check)
+            }
+            AppType::WindowsVm => {
+                // Validation happens in task.rs (base_image check)
             }
         }
 
