@@ -127,6 +127,7 @@ impl TartSession {
             guest_shared_dir,
             protocol: ProtocolClient::with_timeouts(
                 shared_dir,
+                "Tart VM",
                 DEFAULT_REQUEST_TIMEOUT,
                 DEFAULT_POLL_INTERVAL,
             ),
@@ -525,6 +526,7 @@ mod tests {
         let child = spawn_agent(temp.path()).await;
         let client = protocol::ProtocolClient::with_timeouts(
             temp.path(),
+            "Tart VM",
             Duration::from_secs(5),
             Duration::from_millis(50),
         );
@@ -557,6 +559,7 @@ mod tests {
         let child = spawn_agent(temp.path()).await;
         let client = protocol::ProtocolClient::with_timeouts(
             temp.path(),
+            "Tart VM",
             Duration::from_secs(5),
             Duration::from_millis(50),
         );
@@ -583,6 +586,7 @@ mod tests {
         let child = spawn_agent(temp.path()).await;
         let client = protocol::ProtocolClient::with_timeouts(
             temp.path(),
+            "Tart VM",
             Duration::from_secs(5),
             Duration::from_millis(50),
         );
@@ -617,6 +621,7 @@ mod tests {
         let child = spawn_agent(temp.path()).await;
         let client = protocol::ProtocolClient::with_timeouts(
             temp.path(),
+            "Tart VM",
             Duration::from_secs(5),
             Duration::from_millis(50),
         );
@@ -659,6 +664,7 @@ mod tests {
         let child = spawn_agent(temp.path()).await;
         let client = protocol::ProtocolClient::with_timeouts(
             temp.path(),
+            "Tart VM",
             Duration::from_secs(5),
             Duration::from_millis(50),
         );
@@ -697,6 +703,7 @@ mod tests {
         let child = spawn_agent(temp.path()).await;
         let client = protocol::ProtocolClient::with_timeouts(
             temp.path(),
+            "Tart VM",
             Duration::from_secs(5),
             Duration::from_millis(50),
         );
@@ -734,6 +741,7 @@ mod tests {
         let child = spawn_agent(temp.path()).await;
         let client = protocol::ProtocolClient::with_timeouts(
             temp.path(),
+            "Tart VM",
             Duration::from_secs(5),
             Duration::from_millis(50),
         );

@@ -28,6 +28,8 @@ mod setup;
 mod suite;
 mod tart;
 mod task;
+mod vm_protocol;
+mod windows;
 mod trajectory;
 mod update;
 

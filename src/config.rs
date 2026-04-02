@@ -47,6 +47,7 @@ pub enum AppType {
     VncAttach,
     MacosTart,
     MacosNative,
+    WindowsVm,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -199,6 +200,10 @@ impl Config {
                 self.app_type = AppType::MacosNative;
                 self.electron = false;
             }
+            crate::task::AppConfig::WindowsVm { .. } => {
+                self.app_type = AppType::WindowsVm;
+                self.electron = false;
+            }
         }
     }
 
@@ -262,6 +267,9 @@ impl Config {
             }
             AppType::MacosNative => {
                 // Validation happens in task.rs (bundle_id or app_path check)
+            }
+            AppType::WindowsVm => {
+                // Validation happens in task.rs (base_image check)
             }
         }
 

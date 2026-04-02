@@ -14,6 +14,7 @@ use crate::provider::{ChatMessage, system_message, user_image_message, user_mess
 pub enum Platform {
     Linux,
     Macos,
+    Windows,
 }
 
 /// Default number of recent trajectory turns to keep.
@@ -289,6 +290,14 @@ Do NOT use bash to launch GUI applications or perform actions that should be don
 - `log show --predicate 'process == "<app_name>"' --last 5m 2>/dev/null | tail -50` — check system logs
 - `osascript -e 'tell application "System Events" to get name of first process whose frontmost is true'` — verify current frontmost app"#
         }
+        Platform::Windows => {
+            r#"- `type C:\Temp\app.log` — check application log for errors, stack traces, warnings
+- `tasklist /FI "IMAGENAME eq <app_name>.exe"` — verify process state
+- `Get-Process <app_name> | Format-List *` — detailed process info (CPU, memory, handles)
+- `dir <relevant_paths>` — verify file state (missing files, wrong permissions)
+- `Get-EventLog -LogName Application -Newest 20 2>$null` — check Windows event log
+- `Get-WmiObject Win32_Process | Where-Object { $_.Name -match '<app_name>' } | Select CommandLine` — check process command line"#
+        }
     };
 
     let qa_section = if qa {
@@ -348,15 +357,19 @@ You may report multiple bugs throughout the test run. Each will receive a unique
             "a macOS desktop environment",
             "The display is a macOS desktop",
         ),
+        Platform::Windows => (
+            "a Windows desktop environment",
+            "The display is a Windows desktop",
+        ),
     };
 
     let clipboard_paste_key = match platform {
-        Platform::Linux => "ctrl",
+        Platform::Linux | Platform::Windows => "ctrl",
         Platform::Macos => "command",
     };
 
     let hotkey_examples = match platform {
-        Platform::Linux => "'ctrl', 'a'",
+        Platform::Linux | Platform::Windows => "'ctrl', 'a'",
         Platform::Macos => "'command', 'a'",
     };
 
@@ -365,18 +378,24 @@ You may report multiple bugs throughout the test run. Each will receive a unique
         Platform::Macos => {
             " (command+a, command+q, command+shift+s, etc.). **On macOS, use `command` instead of `ctrl` for most shortcuts.**"
         }
+        Platform::Windows => {
+            " (ctrl+a, alt+f4, ctrl+shift+s, win+e, etc.). **On Windows, use `win` for the Windows key (e.g., `pyautogui.hotkey('win', 'e')` to open File Explorer).**"
+        }
     };
 
     let xdotool_tip = match platform {
         Platform::Linux => {
             "\n- When using xdotool, prefer `windowfocus` over `windowactivate` if the target container has no window manager (`windowactivate` requires `_NET_ACTIVE_WINDOW` support and will silently fail without a WM)."
         }
-        Platform::Macos => "",
+        Platform::Macos | Platform::Windows => "",
     };
 
     let type_text_import = match platform {
         Platform::Linux => {
             "\n- `type_text(text, delay_ms=12)` — reliable text input via xdotool (handles special characters, Unicode, passwords)"
+        }
+        Platform::Windows => {
+            "\n- `type_text(text)` — reliable Unicode text input via Win32 SendInput (handles special characters, Unicode, passwords)"
         }
         Platform::Macos => "",
     };
@@ -384,6 +403,9 @@ You may report multiple bugs throughout the test run. Each will receive a unique
     let type_text_section = match platform {
         Platform::Linux => {
             "\n- `type_text('text')` — types text character-by-character using xdotool. Handles the full UTF-8 range including special characters (`@`, `(`, `)`, `\\`, `#`, `!`, etc.). **This is the most reliable way to type text containing special characters.** Works in all input fields including Electron app password fields. Optional `delay_ms` parameter (default 12) controls inter-keystroke delay."
+        }
+        Platform::Windows => {
+            "\n- `type_text('text')` — types text using Win32 SendInput. Handles the full Unicode range including special characters (`@`, `(`, `)`, `\\`, `#`, `!`, etc.). **This is the most reliable way to type text containing special characters on Windows.** Works in all input fields."
         }
         Platform::Macos => "",
     };
@@ -395,10 +417,13 @@ You may report multiple bugs throughout the test run. Each will receive a unique
         Platform::Macos => {
             "Supports Unicode, backslashes, and all special characters. **Always use this method when the text contains special characters.**"
         }
+        Platform::Windows => {
+            "Alternative for bulk text. Use `type_text()` when possible; fall back to clipboard paste for very long strings."
+        }
     };
 
     let example_type_text = match platform {
-        Platform::Linux => "type_text('Hello World')",
+        Platform::Linux | Platform::Windows => "type_text('Hello World')",
         Platform::Macos => "pyperclip.copy('Hello World')\npyautogui.hotkey('command', 'v')",
     };
 
@@ -408,6 +433,9 @@ You may report multiple bugs throughout the test run. Each will receive a unique
         }
         Platform::Macos => {
             "- `pyautogui.typewrite()` is only appropriate for simple backslash-free ASCII text; prefer the clipboard method when in doubt\n- Use `pyperclip.copy()` + `pyautogui.hotkey('command', 'v')` for non-ASCII text, long strings, or any text containing backslashes (`\\`). Example for typing a password with a backslash: `pyperclip.copy('my\\\\pass'); pyautogui.hotkey('command', 'v')`"
+        }
+        Platform::Windows => {
+            "- `pyautogui.typewrite()` is only appropriate for simple ASCII text without special characters; prefer `type_text()` when in doubt\n- Use `type_text('text')` for passwords, non-ASCII text, or any text containing special characters (`@`, `\\`, `(`, `)`, `#`, `!`, etc.). Example: `type_text('P@ssw0rd!#1')`\n- Use `pyperclip.copy()` + `pyautogui.hotkey('ctrl', 'v')` as a fallback for bulk text if `type_text()` is too slow for very long strings"
         }
     };
 
