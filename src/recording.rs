@@ -57,7 +57,10 @@ impl Recording {
         display_width: u32,
         display_height: u32,
     ) -> Result<Self, AppError> {
-        let is_windows = matches!(session, SessionKind::WindowsVm(_));
+        let is_windows = matches!(
+            session,
+            SessionKind::WindowsVm(_) | SessionKind::WindowsNative(_)
+        );
 
         if is_windows {
             Self::start_windows(session).await
@@ -290,9 +293,13 @@ impl Recording {
     }
 
     async fn stop_windows(&self, session: &SessionKind) {
-        // On Windows, send Ctrl+C equivalent via taskkill (graceful)
-        // GenerateConsoleCtrlEvent doesn't work cross-process easily,
-        // so we use taskkill which sends WM_CLOSE, prompting ffmpeg to finalize.
+        // Known limitation: Stop-Process calls CloseMainWindow(), which only works
+        // if ffmpeg has a visible console window. When launched as a detached
+        // background process, CloseMainWindow() may return false and the process
+        // continues running. The fallback Stop-Process -Force uses TerminateProcess,
+        // which does NOT write the MP4 moov atom — producing an unplayable file.
+        // TODO: Investigate using `taskkill /pid <pid> /t` or piping `q\n` to
+        // ffmpeg's stdin for reliable graceful shutdown on Windows.
         match session
             .exec(&[
                 "powershell",
