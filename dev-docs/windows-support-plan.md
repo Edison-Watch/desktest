@@ -49,18 +49,19 @@ On Windows (QEMU): shared dir mounted as a drive letter (e.g., `Z:\desktest`) vi
 5. Start virtiofsd for shared directory
 6. Spawn QEMU:
    qemu-system-x86_64 -enable-kvm -m 4G -smp 4 \
+     -object memory-backend-memfd,id=mem,size=4G,share=on \
+     -numa node,memdev=mem \
      -drive file={overlay}.qcow2,if=virtio \
-     -device vhost-user-fs-pci,chardev=char0,tag=desktest \
      -chardev socket,id=char0,path={virtiofsd.sock} \
+     -device vhost-user-fs-pci,chardev=char0,tag=desktest \
      -display none -vnc :{port} \
      ...
 7. Wait for agent_ready sentinel in shared dir (up to 120s)
 8. Return WindowsVmSession
 
-Note: VNC display numbers are allocated dynamically to avoid conflicts in parallel
-suite mode. Each WindowsVmSession probes for an unused port starting from a base
-(e.g., 5900) and increments until a free port is found, similar to how Docker maps
-VNC ports. The allocated port is stored in the session for debugging access.
+Note: VNC ports are allocated by binding to port 0 (OS-assigned ephemeral port) to
+avoid TOCTOU races in parallel suite mode. The kernel guarantees a unique port. The
+allocated port is stored in the session for debugging access via `vnc :{display}`.
 ```
 
 ### cleanup()
@@ -120,7 +121,7 @@ A `windows/provision.ps1` script (run during `desktest init-windows`) configures
 |----------|-----------|-------------------|
 | Linux (Docker) | `scrot -o -p /tmp/screenshot.png` | `/usr/local/bin/get-a11y-tree` (pyatspi) |
 | macOS (Tart/Native) | `screencapture -x /tmp/screenshot.png` | `ssh localhost /usr/local/bin/a11y-helper` (Swift AXUIElement) |
-| **Windows (QEMU)** | `python C:\desktest\win-screenshot.py` | `python C:\desktest\get-a11y-tree.py` (UIA via comtypes) |
+| **Windows (QEMU)** | `python C:\desktest\win-screenshot.py` | `python C:\desktest\get-a11y-tree.py` (UIA via `uiautomation` package) |
 
 Note: Windows does not need the macOS SSH localhost workaround — the agent process running in the interactive user session has full UI Automation access by default.
 
