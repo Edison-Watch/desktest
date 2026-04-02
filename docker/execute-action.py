@@ -205,7 +205,18 @@ def main():
         # _write_ guard: RestrictedPython calls _write_(obj) before .append(),
         # .extend(), etc. We allow all writes since the container is the
         # isolation boundary — we only need to block attribute traversal escapes.
-        namespace["_inplacevar_"] = lambda op, x, y: op(x, y)
+        # _inplacevar_ receives the operator as a string (e.g. '+='), not a
+        # callable. Dispatch via the operator module.
+        import operator as _operator
+        _INPLACE_OPS = {
+            '+=': _operator.iadd, '-=': _operator.isub,
+            '*=': _operator.imul, '/=': _operator.itruediv,
+            '//=': _operator.ifloordiv, '%=': _operator.imod,
+            '**=': _operator.ipow, '&=': _operator.iand,
+            '|=': _operator.ior, '^=': _operator.ixor,
+            '<<=': _operator.ilshift, '>>=': _operator.irshift,
+        }
+        namespace["_inplacevar_"] = lambda op, x, y: _INPLACE_OPS[op](x, y)
 
         def _default_write_(obj):
             return obj
