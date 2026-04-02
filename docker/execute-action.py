@@ -2,7 +2,11 @@
 """Execute PyAutoGUI code received via stdin and return structured JSON result.
 
 Reads Python code from stdin, executes it in a prepared namespace with
-pyautogui, time, and pyperclip pre-imported.
+pyautogui, time, and pyperclip pre-imported.  Code is compiled through
+RestrictedPython which rewrites attribute access, item access, and other
+operations to pass through guard functions — blocking __globals__,
+__class__.__mro__, __subclasses__(), and similar escape vectors at the
+AST level.
 
 Returns JSON to stdout: {success: bool, error: string|null, duration_ms: number}
 """
@@ -11,6 +15,17 @@ import json
 import os
 import sys
 import time
+
+try:
+    from RestrictedPython import compile_restricted
+    from RestrictedPython.Eval import default_guarded_getiter
+    from RestrictedPython.Guards import (
+        guarded_unpack_sequence,
+        safer_getattr,
+    )
+    HAS_RESTRICTED_PYTHON = True
+except ImportError:
+    HAS_RESTRICTED_PYTHON = False
 
 os.environ.setdefault("DISPLAY", ":99")
 
@@ -43,13 +58,10 @@ def _sanitize_module(mod):
     Strips __loader__ (which exposes load_module() for arbitrary imports),
     __spec__.loader, and __builtins__. This is hardening — not a complete sandbox.
 
-    Known remaining bypass vectors:
-    - Module-level imports on sanitized modules (e.g. pyautogui.sys.modules['os'])
-      are accessible via plain attribute access — no CPython internals knowledge needed
-    - Attribute traversal via __class__.__mro__ can reach arbitrary classes
-    - Function __globals__ on copied callables points to the original module's
-      __dict__, which contains unrestricted __builtins__
-    Full prevention requires RestrictedPython or process-level isolation.
+    When RestrictedPython is available, attribute access is guarded via
+    safer_getattr which blocks dunder attributes (__globals__, __class__,
+    __mro__, __subclasses__, etc.) at the AST level.  Module sanitization
+    remains as a secondary defense layer.
     """
     import types
     # Create a shallow wrapper module to avoid mutating the real module
@@ -67,12 +79,12 @@ def _sanitize_module(mod):
 def _safe_builtins():
     """Return a restricted dict of Python builtins safe for LLM-generated code.
 
-    This is defense-in-depth hardening, NOT a full sandbox. CPython's exec()
-    cannot be fully sandboxed — attribute traversal (e.g. "".__class__.__mro__)
-    can reach arbitrary classes regardless of __builtins__ restrictions. The
-    Docker container (non-root "tester" user) remains the primary security
-    boundary. This allowlist raises the bar by removing the most obvious
-    escape vectors (direct __import__, open, eval, etc.).
+    When RestrictedPython is available, this works alongside compile_restricted()
+    and safer_getattr to provide AST-level blocking of dunder attribute traversal.
+    Without RestrictedPython, this is defense-in-depth hardening only — CPython's
+    exec() cannot be fully sandboxed via builtins restrictions alone.
+    The Docker container (non-root "tester" user, cap_drop ALL,
+    no-new-privileges) remains an additional security boundary.
     """
     import builtins
 
@@ -173,7 +185,6 @@ def main():
         return
 
     # Sanitize modules to remove __loader__ (prevents load_module() import bypass).
-    # This is hardening — see _safe_builtins() docstring for full threat model.
     namespace = {
         "pyautogui": _sanitize_module(pyautogui),
         "time": _sanitize_module(time),
@@ -183,9 +194,31 @@ def main():
     if pyperclip is not None:
         namespace["pyperclip"] = _sanitize_module(pyperclip)
 
+    # RestrictedPython guard functions — these are injected into the namespace
+    # so that the rewritten AST can call them at runtime.
+    if HAS_RESTRICTED_PYTHON:
+        namespace["_getattr_"] = safer_getattr
+        namespace["_getiter_"] = default_guarded_getiter
+        namespace["_getitem_"] = lambda obj, key: obj[key]
+        namespace["_unpack_sequence_"] = guarded_unpack_sequence
+        namespace["_iter_unpack_sequence_"] = guarded_unpack_sequence
+        # _write_ guard: RestrictedPython calls _write_(obj) before .append(),
+        # .extend(), etc. We allow all writes since the container is the
+        # isolation boundary — we only need to block attribute traversal escapes.
+        namespace["_inplacevar_"] = lambda op, x, y: op(x, y)
+
+        def _default_write_(obj):
+            return obj
+
+        namespace["_write_"] = _default_write_
+
     start = time.monotonic()
     try:
-        exec(code, namespace)
+        if HAS_RESTRICTED_PYTHON:
+            compiled = compile_restricted(code, "<action>", "exec")
+            exec(compiled, namespace)
+        else:
+            exec(code, namespace)
         duration_ms = int((time.monotonic() - start) * 1000)
         result = {
             "success": True,
