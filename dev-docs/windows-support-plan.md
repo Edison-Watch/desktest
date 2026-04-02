@@ -173,7 +173,7 @@ Desktest is MIT-licensed. For Windows VM support:
 
 **1a — Protocol extraction** (safe refactor, no new functionality):
 1. Extract `src/tart/protocol.rs` to `src/vm_protocol.rs`
-2. Rename Tart-specific error messages to be VM-agnostic (e.g., "Tart VM agent" → "VM agent", "Tart request" → "VM request")
+2. Rename Tart-specific error messages to be VM-agnostic (e.g., "Tart VM agent" → "VM agent", "Tart request" → "VM request") and update the corresponding test assertions in `src/tart/protocol.rs` that match on those strings (e.g., `send_request_returns_agent_error_when_error_field_set`, `send_request_returns_error_on_malformed_response`, `send_request_timeout`, `wait_for_agent_ready_timeout`)
 3. Update `src/tart/mod.rs` to import from `crate::vm_protocol`
 4. Verify existing Tart tests still pass
 
