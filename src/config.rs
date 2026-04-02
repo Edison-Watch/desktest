@@ -212,7 +212,16 @@ impl Config {
         let contents = std::fs::read_to_string(path)
             .map_err(|e| AppError::Config(format!("Cannot read config file: {e}")))?;
 
-        Self::parse_and_validate(&contents)
+        let config = Self::parse_and_validate(&contents)?;
+
+        if !config.api_key.is_empty() {
+            eprintln!(
+                "Warning: api_key found in config file. Consider using environment variables \
+                 instead (e.g. ANTHROPIC_API_KEY, OPENAI_API_KEY) to avoid accidental commits."
+            );
+        }
+
+        Ok(config)
     }
 
     /// Parse JSON string and validate cross-field constraints.
