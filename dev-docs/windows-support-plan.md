@@ -26,11 +26,11 @@ Desktest reuses the same file-based IPC protocol from the macOS Tart implementat
 shared_dir/
   agent_ready              # Sentinel file — VM agent writes this on startup
   requests/
-    cmd_{uuid}.json        # Host writes command request
+    cmd_{pid}_{timestamp}_{counter}.json        # Host writes command request
   responses/
-    cmd_{uuid}.result.json # VM agent writes command result
+    cmd_{pid}_{timestamp}_{counter}.result.json # VM agent writes command result
   transfers/
-    {uuid}/                # Staging area for file transfers
+    {pid}_{timestamp}_{counter}/                # Staging area for file transfers
 ```
 
 On macOS (Tart): shared dir mounted at `/Volumes/My Shared Files/desktest`
@@ -50,7 +50,7 @@ On Windows (QEMU): shared dir mounted as a drive letter (e.g., `Z:\desktest`) vi
 6. Spawn QEMU:
    qemu-system-x86_64 -enable-kvm -m 4G -smp 4 \
      -drive file={overlay}.qcow2,if=virtio \
-     -device virtio-fs-pci,chardev=char0,tag=desktest \
+     -device vhost-user-fs-pci,chardev=char0,tag=desktest \
      -chardev socket,id=char0,path={virtiofsd.sock} \
      -display none -vnc :{port} \
      ...
@@ -67,6 +67,17 @@ On Windows (QEMU): shared dir mounted as a drive letter (e.g., `Z:\desktest`) vi
 4. Delete overlay QCOW2
 5. Remove shared directory
 ```
+
+### Stale session cleanup
+
+Analogous to Tart's `cleanup_stale_shared_dirs()`, `WindowsVmSession::create()` runs `cleanup_stale_windows_vms()` on startup. This scans for orphaned resources from crashed sessions:
+
+1. Scan `$TMPDIR` for `desktest-windows-*-shared/` directories without a running QEMU process
+2. Kill any orphaned `virtiofsd` daemons (match by socket path in the shared dir)
+3. Delete orphaned QCOW2 overlay files
+4. Remove the stale shared directories
+
+This prevents disk and process leaks from accumulating after repeated test failures or crashes.
 
 ### Key Differences from TartSession
 
@@ -156,8 +167,9 @@ Desktest is MIT-licensed. For Windows VM support:
 
 **1a — Protocol extraction** (safe refactor, no new functionality):
 1. Extract `src/tart/protocol.rs` to `src/vm_protocol.rs`
-2. Update `src/tart/mod.rs` to import from `crate::vm_protocol`
-3. Verify existing Tart tests still pass
+2. Rename Tart-specific error messages to be VM-agnostic (e.g., "Tart VM agent" → "VM agent", "Tart request" → "VM request")
+3. Update `src/tart/mod.rs` to import from `crate::vm_protocol`
+4. Verify existing Tart tests still pass
 
 **1b — Core session infrastructure:**
 4. Add `Platform::Windows` to `src/agent/context.rs`
