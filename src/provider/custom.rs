@@ -4,10 +4,6 @@ use super::http_base::HttpProvider;
 pub struct CustomProvider;
 
 impl CustomProvider {
-    pub fn create(api_key: &str, model: &str, base_url: &str) -> HttpProvider {
-        HttpProvider::new(api_key, model, base_url, "Custom")
-    }
-
     pub fn create_with_client(
         api_key: &str,
         model: &str,
@@ -45,7 +41,12 @@ mod tests {
             .mount(&server)
             .await;
 
-        let provider = CustomProvider::create("sk-test", "local-model", &server.uri());
+        let provider = CustomProvider::create_with_client(
+            "sk-test",
+            "local-model",
+            &server.uri(),
+            reqwest::Client::new(),
+        );
         let messages = vec![user_message("Hi")];
         let result = provider.chat_completion(&messages, &[]).await.unwrap();
 

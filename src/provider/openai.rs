@@ -4,10 +4,6 @@ use super::http_base::HttpProvider;
 pub struct OpenAiProvider;
 
 impl OpenAiProvider {
-    pub fn create(api_key: &str, model: &str) -> HttpProvider {
-        HttpProvider::new(api_key, model, "https://api.openai.com", "OpenAI")
-    }
-
     pub fn create_with_client(api_key: &str, model: &str, http: reqwest::Client) -> HttpProvider {
         HttpProvider::with_client(api_key, model, "https://api.openai.com", "OpenAI", http)
     }
@@ -40,7 +36,9 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = OpenAiProvider::create("sk-test", "gpt-4.1").with_base_url(&server.uri());
+        let client =
+            OpenAiProvider::create_with_client("sk-test", "gpt-4.1", reqwest::Client::new())
+                .with_base_url(&server.uri());
         let messages = vec![user_message("Hi")];
         let result = client.chat_completion(&messages, &[]).await.unwrap();
 

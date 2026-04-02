@@ -104,6 +104,15 @@ impl DockerSession {
         ];
 
         if let Some(password) = &config.vnc_password {
+            if password.len() > 8 {
+                tracing::warn!(
+                    "VNC password exceeds 8 characters — the VNC RFB protocol silently \
+                     truncates to 8. Only the first 8 characters will be used."
+                );
+            }
+            // Note: the password is visible via `docker inspect` and /proc/1/environ.
+            // This is acceptable because the threat model is LAN adversaries, not
+            // local Docker-admin attackers.
             env.push(format!("VNC_PASSWORD={password}"));
         }
 
