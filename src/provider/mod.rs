@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 pub mod anthropic;
 pub mod claude_cli;
 pub mod codex_cli;

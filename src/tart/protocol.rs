@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -10,7 +8,9 @@ use crate::error::AppError;
 
 static REQUEST_COUNTER: AtomicU64 = AtomicU64::new(1);
 
+#[allow(dead_code)] // Tart VM feature not yet fully wired up
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+#[allow(dead_code)] // Tart VM feature not yet fully wired up
 const DEFAULT_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -54,6 +54,7 @@ pub struct Response {
 
 #[derive(Debug, Clone)]
 pub struct ProtocolPaths {
+    #[allow(dead_code)]
     pub shared_dir: PathBuf,
     pub requests_dir: PathBuf,
     pub responses_dir: PathBuf,
@@ -89,6 +90,7 @@ pub struct ProtocolClient {
 }
 
 impl ProtocolClient {
+    #[allow(dead_code)] // convenience constructor for future use
     pub fn new(shared_dir: impl Into<PathBuf>) -> Self {
         Self::with_timeouts(shared_dir, DEFAULT_REQUEST_TIMEOUT, DEFAULT_POLL_INTERVAL)
     }
@@ -113,6 +115,7 @@ impl ProtocolClient {
         self.paths.ensure_layout().await
     }
 
+    #[allow(dead_code)] // will be used once Tart session startup is wired up
     pub async fn wait_for_agent_ready(&self, timeout: Duration) -> Result<(), AppError> {
         let deadline = tokio::time::Instant::now() + timeout;
         loop {
