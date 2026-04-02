@@ -51,12 +51,16 @@ On Windows (QEMU): shared dir mounted as a drive root (e.g., `Z:\`) via VirtIO-F
    qemu-system-x86_64 -enable-kvm -m 4G -smp 4 \
      -object memory-backend-memfd,id=mem,size=4G,share=on \
      -numa node,memdev=mem \
+     -bios /usr/share/OVMF/OVMF_CODE.fd \
      -drive file={overlay}.qcow2,if=virtio \
      -chardev socket,id=char0,path={virtiofsd.sock} \
      -device vhost-user-fs-pci,chardev=char0,tag=desktest \
      -qmp unix:{qmp_sock},server,wait=off \
      -display none -vnc none \
      ...
+   Note: OVMF (UEFI firmware) is required for Windows 11 guests. The `ovmf`
+   package must be installed on the host (e.g., `apt install ovmf` on Debian/Ubuntu).
+   The preflight check (`check_windows_vm()`) should verify OVMF is available.
 7. Wait for agent_ready sentinel in shared dir (up to 120s)
 8. (Optional) Activate VNC via QMP for debugging:
    Send via the QMP socket at {qmp_sock}:
@@ -81,10 +85,11 @@ On Windows (QEMU): shared dir mounted as a drive root (e.g., `Z:\`) via VirtIO-F
 
 Analogous to Tart's `cleanup_stale_shared_dirs()`, `WindowsVmSession::create()` runs `cleanup_stale_windows_vms()` on startup. This scans for orphaned resources from crashed sessions:
 
-1. Scan `$TMPDIR` for `desktest-windows-*-shared/` directories without a running QEMU process
-2. Kill any orphaned `virtiofsd` daemons (match by socket path in the shared dir)
-3. Delete orphaned QCOW2 overlay files
-4. Remove the stale shared directories
+1. Scan `$TMPDIR` for `desktest-windows-*-shared/` directories
+2. For each, check if the corresponding QEMU process is still running by reading a `.pid` file written at create time and testing with `kill(pid, 0)`
+3. If the process is gone: kill any orphaned `virtiofsd` daemon (identified by its `.sock` file in the shared dir via `fuser` or `/proc/{pid}/cmdline` matching)
+4. Delete the orphaned QCOW2 overlay file (path stored in a `.overlay` metadata file in the shared dir)
+5. Remove the stale shared directory itself
 
 This prevents disk and process leaks from accumulating after repeated test failures or crashes.
 
@@ -100,6 +105,7 @@ This prevents disk and process leaks from accumulating after repeated test failu
 | Shell | `bash` | `powershell` / `cmd` |
 | Temp path | `/tmp/` | `C:\Temp\` |
 | Process list | `ps aux` | `tasklist` |
+| Detached with log | `nohup {cmd} > {log} 2>&1 &` | `Start-Process -NoNewWindow -RedirectStandardOutput {log} -RedirectStandardError {log} {cmd}` or `cmd /c start /b {cmd} > {log} 2>&1` |
 
 ## Golden Image Provisioning
 
