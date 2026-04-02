@@ -591,31 +591,38 @@ impl Session for WindowsVmSession {
 }
 
 /// Send a command to the QEMU Machine Protocol (QMP) socket.
+///
+/// All I/O operations are wrapped with timeouts to prevent cleanup() from
+/// hanging indefinitely if QEMU is in a bad state or the socket is stale.
 async fn send_qmp_command(qmp_sock: &Path, command: &str) -> Result<(), AppError> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::UnixStream;
 
-    let mut stream = UnixStream::connect(qmp_sock)
+    let connect_timeout = Duration::from_secs(3);
+    let io_timeout = Duration::from_secs(5);
+
+    let mut stream = tokio::time::timeout(connect_timeout, UnixStream::connect(qmp_sock))
         .await
+        .map_err(|_| AppError::Infra("QMP connect timed out".into()))?
         .map_err(|e| AppError::Infra(format!("Cannot connect to QMP socket: {e}")))?;
 
     // Read QMP greeting
     let mut buf = vec![0u8; 4096];
-    let _ = stream.read(&mut buf).await;
+    let _ = tokio::time::timeout(io_timeout, stream.read(&mut buf)).await;
 
     // Send qmp_capabilities to enter command mode
     stream
         .write_all(b"{\"execute\": \"qmp_capabilities\"}\n")
         .await
         .map_err(|e| AppError::Infra(format!("QMP capabilities handshake failed: {e}")))?;
-    let _ = stream.read(&mut buf).await;
+    let _ = tokio::time::timeout(io_timeout, stream.read(&mut buf)).await;
 
     // Send the actual command
     stream
         .write_all(format!("{command}\n").as_bytes())
         .await
         .map_err(|e| AppError::Infra(format!("QMP command failed: {e}")))?;
-    let _ = stream.read(&mut buf).await;
+    let _ = tokio::time::timeout(io_timeout, stream.read(&mut buf)).await;
 
     Ok(())
 }
