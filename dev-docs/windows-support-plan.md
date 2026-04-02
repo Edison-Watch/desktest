@@ -56,6 +56,11 @@ On Windows (QEMU): shared dir mounted as a drive letter (e.g., `Z:\desktest`) vi
      ...
 7. Wait for agent_ready sentinel in shared dir (up to 120s)
 8. Return WindowsVmSession
+
+Note: VNC display numbers are allocated dynamically to avoid conflicts in parallel
+suite mode. Each WindowsVmSession probes for an unused port starting from a base
+(e.g., 5900) and increments until a free port is found, similar to how Docker maps
+VNC ports. The allocated port is stored in the session for debugging access.
 ```
 
 ### cleanup()
@@ -172,24 +177,24 @@ Desktest is MIT-licensed. For Windows VM support:
 4. Verify existing Tart tests still pass
 
 **1b — Core session infrastructure:**
-4. Add `Platform::Windows` to `src/agent/context.rs`
-5. Add `AppConfig::WindowsVm` to `src/task.rs`
-6. Create `src/windows/mod.rs` with `WindowsVmSession`
-7. Update `src/session/mod.rs` with `WindowsVm` variant
+5. Add `Platform::Windows` to `src/agent/context.rs`
+6. Add `AppConfig::WindowsVm` to `src/task.rs`
+7. Create `src/windows/mod.rs` with `WindowsVmSession`
+8. Update `src/session/mod.rs` with `WindowsVm` variant
 
 **1c — Guest-side scripts:**
-8. Create `windows/vm-agent.py` (adapt from `macos/vm-agent.py`)
-9. Create `windows/execute-action.py` (adapt from `docker/execute-action.py`)
-10. Create `windows/get-a11y-tree.py` (UIA tree extraction)
-11. Create `windows/win-screenshot.py`
+9. Create `windows/vm-agent.py` (adapt from `macos/vm-agent.py`)
+10. Create `windows/execute-action.py` (adapt from `docker/execute-action.py`)
+11. Create `windows/get-a11y-tree.py` (UIA tree extraction)
+12. Create `windows/win-screenshot.py`
 
 **1d — Orchestration wiring:**
-12. Update `src/observation.rs` with Windows commands
-13. Create `src/windows/deploy.rs` and `src/windows/readiness.rs`
-14. Update `src/orchestration.rs` with Windows VM branches
-15. Update `src/setup.rs` for PowerShell execution
-16. Update `src/preflight.rs` and `src/artifacts.rs`
-17. Add Windows-specific system prompt content
+13. Update `src/observation.rs` with Windows commands
+14. Create `src/windows/deploy.rs` and `src/windows/readiness.rs`
+15. Update `src/orchestration.rs` with Windows VM branches
+16. Update `src/setup.rs` for PowerShell execution
+17. Update `src/preflight.rs` and `src/artifacts.rs`
+18. Add Windows-specific system prompt content
 
 ### Phase 2: Polish, Recording, and Native Windows
 
@@ -215,4 +220,4 @@ Desktest is MIT-licensed. For Windows VM support:
 | QEMU startup time (~30-60s) | Accept; QCOW2 overlays are instant; parallelize in suite mode |
 | Windows UI Automation tree verbosity | `--max-nodes` filtering; tune defaults for Windows |
 | virtiofsd setup complexity | Provide helper script; document host prerequisites |
-| PyAutoGUI `type_text` differences | Windows `execute-action.py` uses `pyautogui.write()` (works correctly on Windows) |
+| PyAutoGUI `type_text` differences | Windows `execute-action.py` needs a dedicated `type_text()` helper — `pyautogui.write()` has the same backslash/special-character limitations as `typewrite()`. Use `ctypes` + Win32 `SendInput` for reliable Unicode text entry, mirroring how the Linux version uses `xdotool type`. |
