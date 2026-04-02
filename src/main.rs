@@ -147,6 +147,10 @@ async fn maybe_start_monitor(
     monitor_bind_addr: &str,
 ) -> Option<monitor::MonitorHandle> {
     if !monitor_enabled {
+        println!(
+            "Tip: re-run with --monitor to watch the test live in your browser. \
+             If accessing remotely (e.g. via SSH), also add --monitor-bind-addr 0.0.0.0"
+        );
         return None;
     }
     let handle = monitor::MonitorHandle::new(32);
@@ -161,6 +165,9 @@ async fn maybe_start_monitor(
 }
 
 /// Print the monitor dashboard URL and a security warning if bound to a non-loopback address.
+///
+/// When an SSH session is detected (via `SSH_CONNECTION`), prints the server IP
+/// from that connection so remote users (and coding agents) get a reachable URL.
 fn print_monitor_url(bind_addr: &str, port: u16) {
     if bind_addr != "127.0.0.1" && bind_addr != "::1" {
         eprintln!(
@@ -170,12 +177,69 @@ fn print_monitor_url(bind_addr: &str, port: u16) {
             bind_addr
         );
     }
-    let display_addr = if bind_addr == "0.0.0.0" || bind_addr == "::" {
-        format!("localhost:{port}")
+
+    let is_wildcard = bind_addr == "0.0.0.0" || bind_addr == "::";
+    let is_loopback = bind_addr == "127.0.0.1" || bind_addr == "::1";
+    let ssh_ip = if is_wildcard || is_loopback {
+        detect_ssh_server_ip()
+    } else {
+        None
+    };
+
+    let display_url = if is_wildcard {
+        match &ssh_ip {
+            Some(ip) => config::format_host_port(ip, port),
+            None => format!("localhost:{port}"),
+        }
     } else {
         config::format_host_port(bind_addr, port)
     };
-    println!("Monitor dashboard: http://{display_addr} (bound to {bind_addr})");
+
+    println!(">>> Open http://{display_url} in your browser to watch the test live <<<");
+
+    if is_loopback && ssh_ip.is_some() {
+        // Don't tell agents to share a loopback URL that isn't reachable remotely.
+        eprintln!(
+            "  Note: SSH session detected but dashboard is bound to {bind_addr} (not reachable remotely).\n  \
+             To access remotely, re-run with: --monitor-bind-addr 0.0.0.0"
+        );
+    } else {
+        println!(
+            "NOTE FOR AI AGENTS: Share the above URL (http://{display_url}) with the user \
+             so they can watch the test live in their browser."
+        );
+    }
+
+    if is_wildcard && ssh_ip.is_some() {
+        println!(
+            "  Tip: if you set up SSH port forwarding (-L {port}:localhost:{port}), \
+             use http://localhost:{port} instead"
+        );
+    }
+}
+
+/// Extract the server-side IP from the `SSH_CONNECTION` environment variable.
+fn detect_ssh_server_ip() -> Option<String> {
+    std::env::var("SSH_CONNECTION")
+        .ok()
+        .and_then(|v| parse_ssh_server_ip(&v))
+}
+
+/// Parse the server IP (3rd field) from an `SSH_CONNECTION` value.
+///
+/// Format: `client_ip client_port server_ip server_port`
+/// Returns `None` if malformed or if the server IP is loopback.
+fn parse_ssh_server_ip(ssh_connection: &str) -> Option<String> {
+    let fields: Vec<&str> = ssh_connection.split_whitespace().collect();
+    if fields.len() >= 4 {
+        let ip = fields[2];
+        if ip == "127.0.0.1" || ip == "::1" {
+            return None;
+        }
+        Some(ip.to_string())
+    } else {
+        None
+    }
 }
 
 /// Default glob patterns excluded from home-directory artifact collection.
@@ -959,5 +1023,51 @@ async fn main() {
                 std::process::exit(e.exit_code());
             }
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_ssh_server_ip_normal() {
+        assert_eq!(
+            parse_ssh_server_ip("192.168.1.50 52341 192.168.1.100 22"),
+            Some("192.168.1.100".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_ssh_server_ip_tailscale() {
+        assert_eq!(
+            parse_ssh_server_ip("100.64.1.5 48200 100.100.1.10 22"),
+            Some("100.100.1.10".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_ssh_server_ip_loopback_filtered() {
+        assert_eq!(parse_ssh_server_ip("127.0.0.1 1234 127.0.0.1 22"), None);
+    }
+
+    #[test]
+    fn parse_ssh_server_ip_ipv6_loopback_filtered() {
+        assert_eq!(parse_ssh_server_ip("::1 1234 ::1 22"), None);
+    }
+
+    #[test]
+    fn parse_ssh_server_ip_ipv6() {
+        assert_eq!(
+            parse_ssh_server_ip("fd00::1 1234 fd00::2 22"),
+            Some("fd00::2".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_ssh_server_ip_malformed() {
+        assert_eq!(parse_ssh_server_ip("garbage"), None);
+        assert_eq!(parse_ssh_server_ip(""), None);
+        assert_eq!(parse_ssh_server_ip("1.2.3.4 5678"), None);
     }
 }
