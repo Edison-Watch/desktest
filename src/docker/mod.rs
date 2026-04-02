@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 mod deploy;
 mod exec;
 mod image;

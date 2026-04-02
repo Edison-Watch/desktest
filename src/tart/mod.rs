@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 pub mod deploy;
 pub mod protocol;
 pub mod readiness;
@@ -26,6 +24,7 @@ const DEFAULT_POLL_INTERVAL: Duration = Duration::from_millis(200);
 pub struct TartSession {
     vm_name: String,
     shared_dir: PathBuf,
+    #[allow(dead_code)] // used once Tart session accessors are wired up
     guest_shared_dir: String,
     protocol: ProtocolClient,
     run_child: Arc<Mutex<Option<Child>>>,
@@ -134,14 +133,17 @@ impl TartSession {
         }
     }
 
+    #[allow(dead_code)] // accessor for future use
     pub fn vm_name(&self) -> &str {
         &self.vm_name
     }
 
+    #[allow(dead_code)] // accessor for future use
     pub fn shared_dir(&self) -> &Path {
         &self.shared_dir
     }
 
+    #[allow(dead_code)] // accessor for future use
     pub fn guest_shared_dir(&self) -> &str {
         &self.guest_shared_dir
     }

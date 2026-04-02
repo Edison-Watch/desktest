@@ -1,6 +1,3 @@
-// Allow dead code for types/fields that are defined now but used in later phases.
-#![allow(dead_code)]
-
 use std::fmt;
 
 #[derive(Debug, thiserror::Error)]
