@@ -47,6 +47,7 @@ pub(crate) struct RunConfig {
     pub artifacts_exclude: Vec<String>,
     pub llm_max_retries: usize,
     pub no_network: bool,
+    pub quiet: bool,
 }
 
 /// Groups the core references that every orchestration inner function needs.
@@ -267,6 +268,15 @@ pub(crate) async fn run_task(
     } else {
         Some(&resolved_secrets)
     };
+
+    // Resource usage warnings (suppressed by --quiet)
+    if !run.quiet {
+        if is_macos_tart {
+            crate::warnings::warn_tart_resources();
+        } else if !is_macos_native {
+            crate::warnings::warn_docker_resources(&config);
+        }
+    }
 
     // Create session: Docker container, Tart VM, or native host
     let session: SessionKind = if is_macos_tart {

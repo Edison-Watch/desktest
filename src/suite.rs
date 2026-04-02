@@ -255,6 +255,10 @@ pub async fn run_suite(
     );
     println!("Running {} test(s)...\n", entries.len());
 
+    if !run.quiet && !entries.is_empty() {
+        crate::warnings::warn_suite_resources(&run_config, entries.len());
+    }
+
     let suite_start = Instant::now();
     let mut test_results: Vec<TestResult> = Vec::new();
 

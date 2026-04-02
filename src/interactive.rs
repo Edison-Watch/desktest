@@ -99,6 +99,10 @@ async fn run_interactive_pause(
         Some(&resolved_secrets)
     };
 
+    if !run.quiet {
+        crate::warnings::warn_docker_resources(&config);
+    }
+
     info!("Creating Docker container...");
     let session = tokio::select! {
         biased;
@@ -261,6 +265,10 @@ async fn run_interactive_step(
     } else {
         Some(&resolved_secrets)
     };
+
+    if !run.quiet {
+        crate::warnings::warn_docker_resources(&config);
+    }
 
     info!("Creating Docker container...");
     let session = tokio::select! {
