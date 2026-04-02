@@ -800,236 +800,257 @@ impl TaskDefinition {
             ));
         }
 
-        // Validate setup steps
-        for (i, step) in self.config.iter().enumerate() {
-            match step {
-                SetupStep::Execute { command } if command.is_empty() => {
-                    return Err(AppError::Config(format!(
-                        "Setup step {i}: 'execute' command must not be empty."
-                    )));
-                }
-                SetupStep::Copy { src, dest } => {
-                    if src.is_empty() {
-                        return Err(AppError::Config(format!(
-                            "Setup step {i}: 'copy' src must not be empty."
-                        )));
-                    }
-                    if dest.is_empty() {
-                        return Err(AppError::Config(format!(
-                            "Setup step {i}: 'copy' dest must not be empty."
-                        )));
-                    }
-                }
-                SetupStep::Open { target, .. } if target.is_empty() => {
-                    return Err(AppError::Config(format!(
-                        "Setup step {i}: 'open' target must not be empty."
-                    )));
-                }
-                SetupStep::Sleep { seconds } if *seconds <= 0.0 => {
-                    return Err(AppError::Config(format!(
-                        "Setup step {i}: 'sleep' seconds must be > 0."
-                    )));
-                }
-                _ => {}
-            }
-        }
+        validate_setup_steps(&self.config)?;
 
-        // Validate evaluator config
         if let Some(evaluator) = &self.evaluator {
-            match evaluator.mode {
-                EvaluatorMode::Programmatic | EvaluatorMode::Hybrid => {
-                    if evaluator.metrics.is_empty() {
-                        return Err(AppError::Config(format!(
-                            "Evaluator mode '{}' requires at least one metric.",
-                            if evaluator.mode == EvaluatorMode::Programmatic {
-                                "programmatic"
-                            } else {
-                                "hybrid"
-                            }
-                        )));
-                    }
-                }
-                EvaluatorMode::Llm => {}
-            }
-
-            if let Some(0) = evaluator.eval_timeout_secs {
-                return Err(AppError::Config(
-                    "Evaluator 'eval_timeout_secs' must be > 0 if specified.".into(),
-                ));
-            }
-
-            // Validate individual metrics
-            for (i, metric) in evaluator.metrics.iter().enumerate() {
-                match metric {
-                    MetricConfig::FileCompare {
-                        actual_path,
-                        expected_path,
-                        ..
-                    } => {
-                        if actual_path.is_empty() {
-                            return Err(AppError::Config(format!(
-                                "Metric {i} (file_compare): 'actual_path' must not be empty."
-                            )));
-                        }
-                        if expected_path.is_empty() {
-                            return Err(AppError::Config(format!(
-                                "Metric {i} (file_compare): 'expected_path' must not be empty."
-                            )));
-                        }
-                    }
-                    MetricConfig::FileCompareSemantic {
-                        actual_path,
-                        expected_path,
-                        ..
-                    } => {
-                        if actual_path.is_empty() {
-                            return Err(AppError::Config(format!(
-                                "Metric {i} (file_compare_semantic): 'actual_path' must not be empty."
-                            )));
-                        }
-                        if expected_path.is_empty() {
-                            return Err(AppError::Config(format!(
-                                "Metric {i} (file_compare_semantic): 'expected_path' must not be empty."
-                            )));
-                        }
-                    }
-                    MetricConfig::CommandOutput {
-                        command, expected, ..
-                    } => {
-                        if command.is_empty() {
-                            return Err(AppError::Config(format!(
-                                "Metric {i} (command_output): 'command' must not be empty."
-                            )));
-                        }
-                        if expected.is_empty() {
-                            return Err(AppError::Config(format!(
-                                "Metric {i} (command_output): 'expected' must not be empty."
-                            )));
-                        }
-                    }
-                    MetricConfig::FileExists { path, .. } => {
-                        if path.is_empty() {
-                            return Err(AppError::Config(format!(
-                                "Metric {i} (file_exists): 'path' must not be empty."
-                            )));
-                        }
-                    }
-                    MetricConfig::ExitCode { command, .. } => {
-                        if command.is_empty() {
-                            return Err(AppError::Config(format!(
-                                "Metric {i} (exit_code): 'command' must not be empty."
-                            )));
-                        }
-                    }
-                    MetricConfig::ScriptReplay { script_path, .. } => {
-                        if script_path.is_empty() {
-                            return Err(AppError::Config(format!(
-                                "Metric {i} (script_replay): 'script_path' must not be empty."
-                            )));
-                        }
-                    }
-                }
-            }
+            validate_evaluator(evaluator)?;
         }
 
-        // Validate early exit config
         if let Some(early_exit) = &self.early_exit {
-            if early_exit.check_every == 0 {
-                return Err(AppError::Config(
-                    "Early exit 'check_every' must be > 0.".into(),
-                ));
-            }
-
-            match &early_exit.condition {
-                EarlyExitCondition::FileCompare {
-                    actual_path,
-                    expected_path,
-                    ..
-                } => {
-                    if actual_path.is_empty() {
-                        return Err(AppError::Config(
-                            "Early exit file_compare: 'actual_path' must not be empty.".into(),
-                        ));
-                    }
-                    if expected_path.is_empty() {
-                        return Err(AppError::Config(
-                            "Early exit file_compare: 'expected_path' must not be empty.".into(),
-                        ));
-                    }
-                }
-                EarlyExitCondition::CommandOutput {
-                    command, expected, ..
-                } => {
-                    if command.is_empty() {
-                        return Err(AppError::Config(
-                            "Early exit command_output: 'command' must not be empty.".into(),
-                        ));
-                    }
-                    if expected.is_empty() {
-                        return Err(AppError::Config(
-                            "Early exit command_output: 'expected' must not be empty.".into(),
-                        ));
-                    }
-                }
-                EarlyExitCondition::FileExists { path, .. } => {
-                    if path.is_empty() {
-                        return Err(AppError::Config(
-                            "Early exit file_exists: 'path' must not be empty.".into(),
-                        ));
-                    }
-                }
-                EarlyExitCondition::ExitCode { command, .. } => {
-                    if command.is_empty() {
-                        return Err(AppError::Config(
-                            "Early exit exit_code: 'command' must not be empty.".into(),
-                        ));
-                    }
-                }
-                EarlyExitCondition::LlmJudge { prompt } => {
-                    if prompt.is_empty() {
-                        return Err(AppError::Config(
-                            "Early exit llm_judge: 'prompt' must not be empty.".into(),
-                        ));
-                    }
-                }
-            }
+            validate_early_exit(early_exit)?;
         }
 
-        // Validate macOS app config: at least one launch method must be specified
-        match &self.app {
-            AppConfig::MacosTart {
-                base_image,
-                bundle_id,
-                app_path,
-                launch_cmd,
-                ..
-            } => {
-                if base_image.is_empty() {
-                    return Err(AppError::Config(
-                        "MacosTart app: 'base_image' must not be empty.".into(),
-                    ));
-                }
-                if bundle_id.is_none() && app_path.is_none() && launch_cmd.is_none() {
-                    return Err(AppError::Config(
-                        "MacosTart app: at least one of 'bundle_id', 'app_path', or 'launch_cmd' must be specified.".into(),
-                    ));
-                }
-            }
-            AppConfig::MacosNative {
-                bundle_id,
-                app_path,
-            } => {
-                if bundle_id.is_none() && app_path.is_none() {
-                    return Err(AppError::Config(
-                        "MacosNative app: at least one of 'bundle_id' or 'app_path' must be specified.".into(),
-                    ));
-                }
-            }
-            _ => {}
-        }
+        validate_app_config(&self.app)?;
 
         Ok(())
     }
+}
+
+fn validate_setup_steps(steps: &[SetupStep]) -> Result<(), AppError> {
+    for (i, step) in steps.iter().enumerate() {
+        match step {
+            SetupStep::Execute { command } if command.is_empty() => {
+                return Err(AppError::Config(format!(
+                    "Setup step {i}: 'execute' command must not be empty."
+                )));
+            }
+            SetupStep::Copy { src, dest } => {
+                if src.is_empty() {
+                    return Err(AppError::Config(format!(
+                        "Setup step {i}: 'copy' src must not be empty."
+                    )));
+                }
+                if dest.is_empty() {
+                    return Err(AppError::Config(format!(
+                        "Setup step {i}: 'copy' dest must not be empty."
+                    )));
+                }
+            }
+            SetupStep::Open { target, .. } if target.is_empty() => {
+                return Err(AppError::Config(format!(
+                    "Setup step {i}: 'open' target must not be empty."
+                )));
+            }
+            SetupStep::Sleep { seconds } if *seconds <= 0.0 => {
+                return Err(AppError::Config(format!(
+                    "Setup step {i}: 'sleep' seconds must be > 0."
+                )));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn validate_evaluator(evaluator: &EvaluatorConfig) -> Result<(), AppError> {
+    match evaluator.mode {
+        EvaluatorMode::Programmatic | EvaluatorMode::Hybrid => {
+            if evaluator.metrics.is_empty() {
+                return Err(AppError::Config(format!(
+                    "Evaluator mode '{}' requires at least one metric.",
+                    if evaluator.mode == EvaluatorMode::Programmatic {
+                        "programmatic"
+                    } else {
+                        "hybrid"
+                    }
+                )));
+            }
+        }
+        EvaluatorMode::Llm => {}
+    }
+
+    if let Some(0) = evaluator.eval_timeout_secs {
+        return Err(AppError::Config(
+            "Evaluator 'eval_timeout_secs' must be > 0 if specified.".into(),
+        ));
+    }
+
+    for (i, metric) in evaluator.metrics.iter().enumerate() {
+        validate_metric(i, metric)?;
+    }
+
+    Ok(())
+}
+
+fn validate_metric(i: usize, metric: &MetricConfig) -> Result<(), AppError> {
+    match metric {
+        MetricConfig::FileCompare {
+            actual_path,
+            expected_path,
+            ..
+        } => {
+            if actual_path.is_empty() {
+                return Err(AppError::Config(format!(
+                    "Metric {i} (file_compare): 'actual_path' must not be empty."
+                )));
+            }
+            if expected_path.is_empty() {
+                return Err(AppError::Config(format!(
+                    "Metric {i} (file_compare): 'expected_path' must not be empty."
+                )));
+            }
+        }
+        MetricConfig::FileCompareSemantic {
+            actual_path,
+            expected_path,
+            ..
+        } => {
+            if actual_path.is_empty() {
+                return Err(AppError::Config(format!(
+                    "Metric {i} (file_compare_semantic): 'actual_path' must not be empty."
+                )));
+            }
+            if expected_path.is_empty() {
+                return Err(AppError::Config(format!(
+                    "Metric {i} (file_compare_semantic): 'expected_path' must not be empty."
+                )));
+            }
+        }
+        MetricConfig::CommandOutput {
+            command, expected, ..
+        } => {
+            if command.is_empty() {
+                return Err(AppError::Config(format!(
+                    "Metric {i} (command_output): 'command' must not be empty."
+                )));
+            }
+            if expected.is_empty() {
+                return Err(AppError::Config(format!(
+                    "Metric {i} (command_output): 'expected' must not be empty."
+                )));
+            }
+        }
+        MetricConfig::FileExists { path, .. } => {
+            if path.is_empty() {
+                return Err(AppError::Config(format!(
+                    "Metric {i} (file_exists): 'path' must not be empty."
+                )));
+            }
+        }
+        MetricConfig::ExitCode { command, .. } => {
+            if command.is_empty() {
+                return Err(AppError::Config(format!(
+                    "Metric {i} (exit_code): 'command' must not be empty."
+                )));
+            }
+        }
+        MetricConfig::ScriptReplay { script_path, .. } => {
+            if script_path.is_empty() {
+                return Err(AppError::Config(format!(
+                    "Metric {i} (script_replay): 'script_path' must not be empty."
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_early_exit(early_exit: &EarlyExitConfig) -> Result<(), AppError> {
+    if early_exit.check_every == 0 {
+        return Err(AppError::Config(
+            "Early exit 'check_every' must be > 0.".into(),
+        ));
+    }
+
+    match &early_exit.condition {
+        EarlyExitCondition::FileCompare {
+            actual_path,
+            expected_path,
+            ..
+        } => {
+            if actual_path.is_empty() {
+                return Err(AppError::Config(
+                    "Early exit file_compare: 'actual_path' must not be empty.".into(),
+                ));
+            }
+            if expected_path.is_empty() {
+                return Err(AppError::Config(
+                    "Early exit file_compare: 'expected_path' must not be empty.".into(),
+                ));
+            }
+        }
+        EarlyExitCondition::CommandOutput {
+            command, expected, ..
+        } => {
+            if command.is_empty() {
+                return Err(AppError::Config(
+                    "Early exit command_output: 'command' must not be empty.".into(),
+                ));
+            }
+            if expected.is_empty() {
+                return Err(AppError::Config(
+                    "Early exit command_output: 'expected' must not be empty.".into(),
+                ));
+            }
+        }
+        EarlyExitCondition::FileExists { path, .. } => {
+            if path.is_empty() {
+                return Err(AppError::Config(
+                    "Early exit file_exists: 'path' must not be empty.".into(),
+                ));
+            }
+        }
+        EarlyExitCondition::ExitCode { command, .. } => {
+            if command.is_empty() {
+                return Err(AppError::Config(
+                    "Early exit exit_code: 'command' must not be empty.".into(),
+                ));
+            }
+        }
+        EarlyExitCondition::LlmJudge { prompt } => {
+            if prompt.is_empty() {
+                return Err(AppError::Config(
+                    "Early exit llm_judge: 'prompt' must not be empty.".into(),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_app_config(app: &AppConfig) -> Result<(), AppError> {
+    match app {
+        AppConfig::MacosTart {
+            base_image,
+            bundle_id,
+            app_path,
+            launch_cmd,
+            ..
+        } => {
+            if base_image.is_empty() {
+                return Err(AppError::Config(
+                    "MacosTart app: 'base_image' must not be empty.".into(),
+                ));
+            }
+            if bundle_id.is_none() && app_path.is_none() && launch_cmd.is_none() {
+                return Err(AppError::Config(
+                    "MacosTart app: at least one of 'bundle_id', 'app_path', or 'launch_cmd' must be specified.".into(),
+                ));
+            }
+        }
+        AppConfig::MacosNative {
+            bundle_id,
+            app_path,
+        } => {
+            if bundle_id.is_none() && app_path.is_none() {
+                return Err(AppError::Config(
+                    "MacosNative app: at least one of 'bundle_id' or 'app_path' must be specified.".into(),
+                ));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 #[cfg(test)]

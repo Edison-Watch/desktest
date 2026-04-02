@@ -239,177 +239,17 @@ pub fn build_system_prompt(
     qa: bool,
     platform: Platform,
 ) -> String {
-    let bash_section = if bash_enabled {
-        r#"
-
-## Bash Debugging Tool
-
-You also have access to a bash shell for **debugging purposes only**. Use this when something is going wrong and you need to investigate — for example, to check if a process is running, inspect file contents, examine logs, check environment variables, or diagnose why the GUI is not behaving as expected.
-
-**IMPORTANT: Your primary interface is PyAutoGUI. Always prefer PyAutoGUI for interacting with the desktop. Only use bash when you need to debug or investigate an issue.**
-
-To run a bash command, use a fenced bash code block:
-
-```bash
-# Example: check if the application process is running
-ps aux | grep myapp
-
-# Example: inspect a log file
-cat /tmp/app.log
-
-# Example: check file system state
-ls -la /home/tester/Documents/
-```
-
-The command runs inside the container as the `tester` user. You will receive the stdout/stderr output of the command. After running a bash command, you will still receive a fresh screenshot and accessibility tree observation.
-
-### When to use bash vs PyAutoGUI
-- **PyAutoGUI** (primary): clicking, typing, keyboard shortcuts, all GUI interaction
-- **Bash** (debugging only): checking process state, reading files/logs, inspecting environment, verifying file changes, diagnosing issues when the GUI is unresponsive or behaving unexpectedly
-
-Do NOT use bash to launch GUI applications or perform actions that should be done through the GUI. The bash tool is strictly for observation and debugging."#
-    } else {
-        ""
-    };
-
-    let qa_diagnostic_commands = match platform {
-        Platform::Linux => {
-            r#"- `cat /tmp/app.log` — check application log for errors, stack traces, warnings
-- `ps aux | grep <app_name>` — verify process state (crashed? zombie? high CPU/memory?)
-- `dmesg | tail -20` — check for kernel-level issues (segfaults, OOM kills)
-- `ls -la <relevant_paths>` — verify file state (missing files, wrong permissions, corrupted output)
-- `cat /proc/$(pgrep <app_name>)/status` — check process memory and resource usage
-- `journalctl --no-pager -n 50 2>/dev/null || true` — check system logs for D-Bus errors, GTK warnings
-- `xdotool getactivewindow getwindowname 2>/dev/null || true` — verify current window state"#
-        }
-        Platform::Macos => {
-            r#"- `cat /tmp/app.log` — check application log for errors, stack traces, warnings
-- `ps aux | grep <app_name>` — verify process state (crashed? zombie? high CPU/memory?)
-- `ls -la <relevant_paths>` — verify file state (missing files, wrong permissions, corrupted output)
-- `log show --predicate 'process == "<app_name>"' --last 5m 2>/dev/null | tail -50` — check system logs
-- `osascript -e 'tell application "System Events" to get name of first process whose frontmost is true'` — verify current frontmost app"#
-        }
-    };
-
-    let qa_section = if qa {
-        format!(
-            r##"
-
-## QA Bug Reporting Mode (ACTIVE)
-
-You are also acting as a QA tester. While completing your task, watch for **application bugs** — unexpected behavior, UI glitches, crashes, incorrect data, broken workflows, missing features, or accessibility issues in the application under test.
-
-**IMPORTANT: Only report bugs in the application itself.** Do NOT report:
-- PyAutoGUI execution errors (these are your tooling, not app bugs)
-- Screenshot or accessibility tree capture issues
-- Network or Docker infrastructure problems
-- Issues caused by your own incorrect coordinates or actions
-
-### Diagnosing Bugs
-
-Before reporting a bug, use bash commands to gather diagnostic evidence. You have bash access — use it! Run these as appropriate:
-
-{qa_diagnostic_commands}
-
-Gather this evidence **before** emitting the BUG command so your report includes concrete data, not just visual observations.
-
-### Reporting a Bug
-
-When you find an app bug, emit the `BUG` command on its own line, followed by a detailed description:
-
-```
-BUG
-<One-line summary of the bug>
-<Detailed description: what you observed, what you expected, relevant log output or evidence>
-<Steps that led to this state>
-```
-
-After reporting a bug, **continue your task normally**. You can include code blocks in the same response as a BUG report. The bug will be logged and you should proceed with your objective.
-
-You may report multiple bugs throughout the test run. Each will receive a unique ID."##,
-            qa_diagnostic_commands = qa_diagnostic_commands,
-        )
-    } else {
-        String::new()
-    };
-
+    let pt = PlatformText::for_platform(platform);
+    let bash_section = build_bash_section(bash_enabled);
+    let qa_section = build_qa_section(qa, platform);
     let bug_command_line = if qa {
         "\n- **BUG** — (QA mode) Report an application bug you discovered. Describe the issue on the following lines, then continue your task. Can co-exist with DONE/FAIL in the same response."
     } else {
         ""
     };
 
-    let (platform_desc, display_desc) = match platform {
-        Platform::Linux => (
-            "a Linux desktop environment",
-            "The display is a virtual X11 framebuffer (Xvfb) running XFCE desktop",
-        ),
-        Platform::Macos => (
-            "a macOS desktop environment",
-            "The display is a macOS desktop",
-        ),
-    };
-
-    let clipboard_paste_key = match platform {
-        Platform::Linux => "ctrl",
-        Platform::Macos => "command",
-    };
-
-    let hotkey_examples = match platform {
-        Platform::Linux => "'ctrl', 'a'",
-        Platform::Macos => "'command', 'a'",
-    };
-
-    let hotkey_note = match platform {
-        Platform::Linux => " (ctrl+a, alt+f4, ctrl+shift+s, etc.)",
-        Platform::Macos => {
-            " (command+a, command+q, command+shift+s, etc.). **On macOS, use `command` instead of `ctrl` for most shortcuts.**"
-        }
-    };
-
-    let xdotool_tip = match platform {
-        Platform::Linux => {
-            "\n- When using xdotool, prefer `windowfocus` over `windowactivate` if the target container has no window manager (`windowactivate` requires `_NET_ACTIVE_WINDOW` support and will silently fail without a WM)."
-        }
-        Platform::Macos => "",
-    };
-
-    let type_text_import = match platform {
-        Platform::Linux => {
-            "\n- `type_text(text, delay_ms=12)` — reliable text input via xdotool (handles special characters, Unicode, passwords)"
-        }
-        Platform::Macos => "",
-    };
-
-    let type_text_section = match platform {
-        Platform::Linux => {
-            "\n- `type_text('text')` — types text character-by-character using xdotool. Handles the full UTF-8 range including special characters (`@`, `(`, `)`, `\\`, `#`, `!`, etc.). **This is the most reliable way to type text containing special characters.** Works in all input fields including Electron app password fields. Optional `delay_ms` parameter (default 12) controls inter-keystroke delay."
-        }
-        Platform::Macos => "",
-    };
-
-    let clipboard_caveat = match platform {
-        Platform::Linux => {
-            "Alternative for bulk text, but may not work in all input fields (e.g., some Electron password fields block paste)."
-        }
-        Platform::Macos => {
-            "Supports Unicode, backslashes, and all special characters. **Always use this method when the text contains special characters.**"
-        }
-    };
-
-    let example_type_text = match platform {
-        Platform::Linux => "type_text('Hello World')",
-        Platform::Macos => "pyperclip.copy('Hello World')\npyautogui.hotkey('command', 'v')",
-    };
-
-    let typewrite_guidance = match platform {
-        Platform::Linux => {
-            "- `pyautogui.typewrite()` is only appropriate for simple ASCII text without special characters; prefer `type_text()` when in doubt\n- Use `type_text('text')` for passwords, non-ASCII text, or any text containing special characters (`@`, `\\`, `(`, `)`, `#`, `!`, etc.). Example: `type_text('P@ssw0rd!#1')`\n- Use `pyperclip.copy()` + `pyautogui.hotkey('ctrl', 'v')` as a fallback for bulk text if `type_text()` is too slow for very long strings"
-        }
-        Platform::Macos => {
-            "- `pyautogui.typewrite()` is only appropriate for simple backslash-free ASCII text; prefer the clipboard method when in doubt\n- Use `pyperclip.copy()` + `pyautogui.hotkey('command', 'v')` for non-ASCII text, long strings, or any text containing backslashes (`\\`). Example for typing a password with a backslash: `pyperclip.copy('my\\\\pass'); pyautogui.hotkey('command', 'v')`"
-        }
-    };
+    let max_x = display_width.saturating_sub(1);
+    let max_y = display_height.saturating_sub(1);
 
     format!(
         r#"You are a professional software tester controlling {platform_desc}. Your task is to interact with the desktop GUI to complete a given objective.
@@ -498,24 +338,172 @@ Use BOTH the screenshot and accessibility tree to understand the current state. 
 - Determining which element has focus
 - Reading text content that might be hard to see in the screenshot
 {qa_section}"#,
-        platform_desc = platform_desc,
-        display_desc = display_desc,
-        clipboard_paste_key = clipboard_paste_key,
-        type_text_import = type_text_import,
-        hotkey_examples = hotkey_examples,
-        hotkey_note = hotkey_note,
-        xdotool_tip = xdotool_tip,
-        type_text_section = type_text_section,
-        clipboard_caveat = clipboard_caveat,
-        example_type_text = example_type_text,
-        typewrite_guidance = typewrite_guidance,
+        platform_desc = pt.platform_desc,
+        display_desc = pt.display_desc,
+        clipboard_paste_key = pt.clipboard_paste_key,
+        type_text_import = pt.type_text_import,
+        hotkey_examples = pt.hotkey_examples,
+        hotkey_note = pt.hotkey_note,
+        xdotool_tip = pt.xdotool_tip,
+        type_text_section = pt.type_text_section,
+        clipboard_caveat = pt.clipboard_caveat,
+        example_type_text = pt.example_type_text,
+        typewrite_guidance = pt.typewrite_guidance,
         display_width = display_width,
         display_height = display_height,
-        max_x = display_width.saturating_sub(1),
-        max_y = display_height.saturating_sub(1),
+        max_x = max_x,
+        max_y = max_y,
         bash_section = bash_section,
         bug_command_line = bug_command_line,
         qa_section = qa_section,
+    )
+}
+
+/// Platform-specific text fragments for the system prompt.
+struct PlatformText {
+    platform_desc: &'static str,
+    display_desc: &'static str,
+    clipboard_paste_key: &'static str,
+    hotkey_examples: &'static str,
+    hotkey_note: &'static str,
+    xdotool_tip: &'static str,
+    type_text_import: &'static str,
+    type_text_section: &'static str,
+    clipboard_caveat: &'static str,
+    example_type_text: &'static str,
+    typewrite_guidance: &'static str,
+}
+
+impl PlatformText {
+    fn for_platform(platform: Platform) -> Self {
+        match platform {
+            Platform::Linux => Self {
+                platform_desc: "a Linux desktop environment",
+                display_desc: "The display is a virtual X11 framebuffer (Xvfb) running XFCE desktop",
+                clipboard_paste_key: "ctrl",
+                hotkey_examples: "'ctrl', 'a'",
+                hotkey_note: " (ctrl+a, alt+f4, ctrl+shift+s, etc.)",
+                xdotool_tip: "\n- When using xdotool, prefer `windowfocus` over `windowactivate` if the target container has no window manager (`windowactivate` requires `_NET_ACTIVE_WINDOW` support and will silently fail without a WM).",
+                type_text_import: "\n- `type_text(text, delay_ms=12)` — reliable text input via xdotool (handles special characters, Unicode, passwords)",
+                type_text_section: "\n- `type_text('text')` — types text character-by-character using xdotool. Handles the full UTF-8 range including special characters (`@`, `(`, `)`, `\\`, `#`, `!`, etc.). **This is the most reliable way to type text containing special characters.** Works in all input fields including Electron app password fields. Optional `delay_ms` parameter (default 12) controls inter-keystroke delay.",
+                clipboard_caveat: "Alternative for bulk text, but may not work in all input fields (e.g., some Electron password fields block paste).",
+                example_type_text: "type_text('Hello World')",
+                typewrite_guidance: "- `pyautogui.typewrite()` is only appropriate for simple ASCII text without special characters; prefer `type_text()` when in doubt\n- Use `type_text('text')` for passwords, non-ASCII text, or any text containing special characters (`@`, `\\`, `(`, `)`, `#`, `!`, etc.). Example: `type_text('P@ssw0rd!#1')`\n- Use `pyperclip.copy()` + `pyautogui.hotkey('ctrl', 'v')` as a fallback for bulk text if `type_text()` is too slow for very long strings",
+            },
+            Platform::Macos => Self {
+                platform_desc: "a macOS desktop environment",
+                display_desc: "The display is a macOS desktop",
+                clipboard_paste_key: "command",
+                hotkey_examples: "'command', 'a'",
+                hotkey_note: " (command+a, command+q, command+shift+s, etc.). **On macOS, use `command` instead of `ctrl` for most shortcuts.**",
+                xdotool_tip: "",
+                type_text_import: "",
+                type_text_section: "",
+                clipboard_caveat: "Supports Unicode, backslashes, and all special characters. **Always use this method when the text contains special characters.**",
+                example_type_text: "pyperclip.copy('Hello World')\npyautogui.hotkey('command', 'v')",
+                typewrite_guidance: "- `pyautogui.typewrite()` is only appropriate for simple backslash-free ASCII text; prefer the clipboard method when in doubt\n- Use `pyperclip.copy()` + `pyautogui.hotkey('command', 'v')` for non-ASCII text, long strings, or any text containing backslashes (`\\`). Example for typing a password with a backslash: `pyperclip.copy('my\\\\pass'); pyautogui.hotkey('command', 'v')`",
+            },
+        }
+    }
+}
+
+/// Build the bash debugging tool section of the system prompt.
+fn build_bash_section(enabled: bool) -> &'static str {
+    if enabled {
+        r#"
+
+## Bash Debugging Tool
+
+You also have access to a bash shell for **debugging purposes only**. Use this when something is going wrong and you need to investigate — for example, to check if a process is running, inspect file contents, examine logs, check environment variables, or diagnose why the GUI is not behaving as expected.
+
+**IMPORTANT: Your primary interface is PyAutoGUI. Always prefer PyAutoGUI for interacting with the desktop. Only use bash when you need to debug or investigate an issue.**
+
+To run a bash command, use a fenced bash code block:
+
+```bash
+# Example: check if the application process is running
+ps aux | grep myapp
+
+# Example: inspect a log file
+cat /tmp/app.log
+
+# Example: check file system state
+ls -la /home/tester/Documents/
+```
+
+The command runs inside the container as the `tester` user. You will receive the stdout/stderr output of the command. After running a bash command, you will still receive a fresh screenshot and accessibility tree observation.
+
+### When to use bash vs PyAutoGUI
+- **PyAutoGUI** (primary): clicking, typing, keyboard shortcuts, all GUI interaction
+- **Bash** (debugging only): checking process state, reading files/logs, inspecting environment, verifying file changes, diagnosing issues when the GUI is unresponsive or behaving unexpectedly
+
+Do NOT use bash to launch GUI applications or perform actions that should be done through the GUI. The bash tool is strictly for observation and debugging."#
+    } else {
+        ""
+    }
+}
+
+/// Build the QA bug reporting section of the system prompt.
+fn build_qa_section(qa: bool, platform: Platform) -> String {
+    if !qa {
+        return String::new();
+    }
+
+    let qa_diagnostic_commands = match platform {
+        Platform::Linux => {
+            r#"- `cat /tmp/app.log` — check application log for errors, stack traces, warnings
+- `ps aux | grep <app_name>` — verify process state (crashed? zombie? high CPU/memory?)
+- `dmesg | tail -20` — check for kernel-level issues (segfaults, OOM kills)
+- `ls -la <relevant_paths>` — verify file state (missing files, wrong permissions, corrupted output)
+- `cat /proc/$(pgrep <app_name>)/status` — check process memory and resource usage
+- `journalctl --no-pager -n 50 2>/dev/null || true` — check system logs for D-Bus errors, GTK warnings
+- `xdotool getactivewindow getwindowname 2>/dev/null || true` — verify current window state"#
+        }
+        Platform::Macos => {
+            r#"- `cat /tmp/app.log` — check application log for errors, stack traces, warnings
+- `ps aux | grep <app_name>` — verify process state (crashed? zombie? high CPU/memory?)
+- `ls -la <relevant_paths>` — verify file state (missing files, wrong permissions, corrupted output)
+- `log show --predicate 'process == "<app_name>"' --last 5m 2>/dev/null | tail -50` — check system logs
+- `osascript -e 'tell application "System Events" to get name of first process whose frontmost is true'` — verify current frontmost app"#
+        }
+    };
+
+    format!(
+        r##"
+
+## QA Bug Reporting Mode (ACTIVE)
+
+You are also acting as a QA tester. While completing your task, watch for **application bugs** — unexpected behavior, UI glitches, crashes, incorrect data, broken workflows, missing features, or accessibility issues in the application under test.
+
+**IMPORTANT: Only report bugs in the application itself.** Do NOT report:
+- PyAutoGUI execution errors (these are your tooling, not app bugs)
+- Screenshot or accessibility tree capture issues
+- Network or Docker infrastructure problems
+- Issues caused by your own incorrect coordinates or actions
+
+### Diagnosing Bugs
+
+Before reporting a bug, use bash commands to gather diagnostic evidence. You have bash access — use it! Run these as appropriate:
+
+{qa_diagnostic_commands}
+
+Gather this evidence **before** emitting the BUG command so your report includes concrete data, not just visual observations.
+
+### Reporting a Bug
+
+When you find an app bug, emit the `BUG` command on its own line, followed by a detailed description:
+
+```
+BUG
+<One-line summary of the bug>
+<Detailed description: what you observed, what you expected, relevant log output or evidence>
+<Steps that led to this state>
+```
+
+After reporting a bug, **continue your task normally**. You can include code blocks in the same response as a BUG report. The bug will be logged and you should proceed with your objective.
+
+You may report multiple bugs throughout the test run. Each will receive a unique ID."##,
+        qa_diagnostic_commands = qa_diagnostic_commands,
     )
 }
 
