@@ -7,6 +7,10 @@ impl CustomProvider {
     pub fn create(api_key: &str, model: &str, base_url: &str) -> HttpProvider {
         HttpProvider::new(api_key, model, base_url, "Custom")
     }
+
+    pub fn create_with_client(api_key: &str, model: &str, base_url: &str, http: reqwest::Client) -> HttpProvider {
+        HttpProvider::with_client(api_key, model, base_url, "Custom", http)
+    }
 }
 
 #[cfg(test)]

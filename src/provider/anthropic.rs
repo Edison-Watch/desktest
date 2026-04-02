@@ -29,6 +29,15 @@ impl AnthropicProvider {
         }
     }
 
+    pub fn with_client(api_key: &str, model: &str, http: reqwest::Client) -> Self {
+        Self {
+            http,
+            api_key: api_key.into(),
+            model: model.into(),
+            base_url: "https://api.anthropic.com".into(),
+        }
+    }
+
     /// Override base URL (for testing with wiremock).
     pub fn with_base_url(mut self, url: &str) -> Self {
         self.base_url = url.into();

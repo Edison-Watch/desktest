@@ -7,6 +7,10 @@ impl OpenAiProvider {
     pub fn create(api_key: &str, model: &str) -> HttpProvider {
         HttpProvider::new(api_key, model, "https://api.openai.com", "OpenAI")
     }
+
+    pub fn create_with_client(api_key: &str, model: &str, http: reqwest::Client) -> HttpProvider {
+        HttpProvider::with_client(api_key, model, "https://api.openai.com", "OpenAI", http)
+    }
 }
 
 #[cfg(test)]

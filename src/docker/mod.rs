@@ -103,6 +103,10 @@ impl DockerSession {
             format!("VNC_PORT={container_vnc_port}"),
         ];
 
+        if let Some(password) = &config.vnc_password {
+            env.push(format!("VNC_PASSWORD={password}"));
+        }
+
         if let Some(secrets) = extra_env {
             for (key, value) in secrets {
                 env.push(format!("DESKTEST_SECRET_{key}={value}"));
@@ -357,6 +361,8 @@ mod tests {
             display_height: 1080,
             vnc_bind_addr: "127.0.0.1".into(),
             vnc_port: None,
+            vnc_password: None,
+            tls_ca_bundle: None,
             app_type: crate::config::AppType::Appimage,
             app_path: None,
             app_dir: None,

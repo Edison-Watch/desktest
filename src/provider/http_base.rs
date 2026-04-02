@@ -45,6 +45,17 @@ impl HttpProvider {
         }
     }
 
+    pub fn with_client(api_key: &str, model: &str, base_url: &str, label: &str, http: reqwest::Client) -> Self {
+        Self {
+            http,
+            api_key: api_key.into(),
+            model: model.into(),
+            base_url: base_url.into(),
+            completions_path: "/v1/chat/completions".into(),
+            label: label.into(),
+        }
+    }
+
     /// Override base URL (for testing with wiremock or custom endpoints).
     pub fn with_base_url(mut self, url: &str) -> Self {
         self.base_url = url.into();

@@ -13,6 +13,34 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::AppError;
 
+/// Build a `reqwest::Client` for LLM API providers, optionally restricted to a custom CA bundle.
+///
+/// When `ca_bundle_path` is `Some`, the client loads PEM certificates from the file and
+/// disables the built-in system root CAs, so only the specified CAs are trusted.
+pub fn build_provider_http_client(
+    ca_bundle_path: Option<&str>,
+) -> Result<reqwest::Client, AppError> {
+    let mut builder = reqwest::Client::builder();
+
+    if let Some(path) = ca_bundle_path {
+        let pem_data = std::fs::read(path).map_err(|e| {
+            AppError::Config(format!("Cannot read TLS CA bundle '{path}': {e}"))
+        })?;
+
+        for cert in reqwest::tls::Certificate::from_pem_bundle(&pem_data).map_err(|e| {
+            AppError::Config(format!("Invalid PEM certificates in '{path}': {e}"))
+        })? {
+            builder = builder.add_root_certificate(cert);
+        }
+
+        builder = builder.tls_built_in_root_certs(false);
+    }
+
+    builder
+        .build()
+        .map_err(|e| AppError::Config(format!("Failed to build HTTP client: {e}")))
+}
+
 /// Trait for LLM providers that can handle chat completions with optional tool use.
 ///
 /// Uses a boxed future return type to support dynamic dispatch (`Box<dyn LlmProvider>`).
@@ -136,6 +164,7 @@ pub fn create_provider(
     api_key: &str,
     model: &str,
     base_url: &str,
+    tls_ca_bundle: Option<&str>,
 ) -> Result<Box<dyn LlmProvider>, AppError> {
     // CLI providers use local authentication — no API key needed.
     if provider_name == "claude-cli" {
@@ -146,6 +175,7 @@ pub fn create_provider(
     }
 
     let resolved_key = resolve_api_key(api_key, provider_name)?;
+    let http = build_provider_http_client(tls_ca_bundle)?;
 
     // Treat any known default URL as "no custom URL was set" so that switching
     // providers via --provider doesn't accidentally send requests to the old
@@ -154,7 +184,7 @@ pub fn create_provider(
 
     match provider_name {
         "openai" => {
-            let mut client = openai::OpenAiProvider::create(&resolved_key, model);
+            let mut client = openai::OpenAiProvider::create_with_client(&resolved_key, model, http);
             if has_custom_url {
                 client = client.with_base_url(base_url);
             }
@@ -162,7 +192,7 @@ pub fn create_provider(
         }
         "anthropic" => {
             validate_image_support(provider_name, model)?;
-            let mut client = anthropic::AnthropicProvider::new(&resolved_key, model);
+            let mut client = anthropic::AnthropicProvider::with_client(&resolved_key, model, http);
             if has_custom_url {
                 client = client.with_base_url(base_url);
             }
@@ -174,7 +204,7 @@ pub fn create_provider(
             } else {
                 "https://openrouter.ai/api"
             };
-            let client = http_base::HttpProvider::new(&resolved_key, model, url, "OpenRouter");
+            let client = http_base::HttpProvider::with_client(&resolved_key, model, url, "OpenRouter", http);
             Ok(Box::new(client))
         }
         "cerebras" => {
@@ -183,28 +213,27 @@ pub fn create_provider(
             } else {
                 "https://api.cerebras.ai"
             };
-            let client = http_base::HttpProvider::new(&resolved_key, model, url, "Cerebras");
+            let client = http_base::HttpProvider::with_client(&resolved_key, model, url, "Cerebras", http);
             Ok(Box::new(client))
         }
         "gemini" => {
             if has_custom_url {
-                // Custom URL — assume standard OpenAI-compatible path
-                let client = http_base::HttpProvider::new(&resolved_key, model, base_url, "Gemini");
+                let client = http_base::HttpProvider::with_client(&resolved_key, model, base_url, "Gemini", http);
                 Ok(Box::new(client))
             } else {
-                // Default Gemini URL needs the non-standard path
-                let client = http_base::HttpProvider::new(
+                let client = http_base::HttpProvider::with_client(
                     &resolved_key,
                     model,
                     "https://generativelanguage.googleapis.com/v1beta/openai",
                     "Gemini",
+                    http,
                 )
                 .with_completions_path("/chat/completions");
                 Ok(Box::new(client))
             }
         }
         "custom" => {
-            let client = custom::CustomProvider::create(&resolved_key, model, base_url);
+            let client = custom::CustomProvider::create_with_client(&resolved_key, model, base_url, http);
             Ok(Box::new(client))
         }
         other => Err(AppError::Config(format!(
@@ -354,7 +383,7 @@ mod tests {
 
     #[test]
     fn test_create_provider_openai() {
-        let provider = create_provider("openai", "sk-test", "gpt-4.1", "https://api.openai.com");
+        let provider = create_provider("openai", "sk-test", "gpt-4.1", "https://api.openai.com", None);
         assert!(provider.is_ok());
     }
 
@@ -365,13 +394,14 @@ mod tests {
             "sk-ant-test",
             "claude-sonnet-4-20250514",
             "https://api.anthropic.com",
+            None,
         );
         assert!(provider.is_ok());
     }
 
     #[test]
     fn test_create_provider_custom() {
-        let provider = create_provider("custom", "sk-test", "local-model", "http://localhost:8080");
+        let provider = create_provider("custom", "sk-test", "local-model", "http://localhost:8080", None);
         assert!(provider.is_ok());
     }
 
@@ -382,6 +412,7 @@ mod tests {
             "sk-or-test",
             "anthropic/claude-sonnet-4",
             "https://api.anthropic.com",
+            None,
         );
         assert!(provider.is_ok());
     }
@@ -393,6 +424,7 @@ mod tests {
             "csk-test",
             "llama-4-scout-17b-16e-instruct",
             "https://api.anthropic.com",
+            None,
         );
         assert!(provider.is_ok());
     }
@@ -404,6 +436,7 @@ mod tests {
             "AIza-test",
             "gemini-2.5-flash",
             "https://api.anthropic.com",
+            None,
         );
         assert!(provider.is_ok());
     }
@@ -413,7 +446,7 @@ mod tests {
         // This test verifies the factory routes to ClaudeCliProvider.
         // It may fail if `claude` is not installed, which is expected —
         // the error should be a Config error, not "Unknown provider".
-        let result = create_provider("claude-cli", "", "ignored", "ignored");
+        let result = create_provider("claude-cli", "", "ignored", "ignored", None);
         match result {
             Ok(_) => {} // claude binary is installed
             Err(AppError::Config(msg)) => {
@@ -428,7 +461,7 @@ mod tests {
         // This test verifies the factory routes to CodexCliProvider.
         // It may fail if `codex` is not installed, which is expected —
         // the error should be a Config error, not "Unknown provider".
-        let result = create_provider("codex-cli", "", "ignored", "ignored");
+        let result = create_provider("codex-cli", "", "ignored", "ignored", None);
         match result {
             Ok(_) => {} // codex binary is installed
             Err(AppError::Config(msg)) => {
@@ -440,7 +473,7 @@ mod tests {
 
     #[test]
     fn test_create_provider_unknown() {
-        let result = create_provider("unknown", "sk-test", "model", "https://example.com");
+        let result = create_provider("unknown", "sk-test", "model", "https://example.com", None);
         assert!(result.is_err());
         let err = result.err().unwrap();
         assert!(err.to_string().contains("Unknown provider"));
@@ -448,7 +481,7 @@ mod tests {
 
     #[test]
     fn test_create_provider_with_custom_base_url() {
-        let provider = create_provider("openai", "sk-test", "gpt-4.1", "https://custom.api.com");
+        let provider = create_provider("openai", "sk-test", "gpt-4.1", "https://custom.api.com", None);
         assert!(provider.is_ok());
     }
 
@@ -459,6 +492,7 @@ mod tests {
             "sk-ant-test",
             "claude-instant-1.2",
             "https://api.anthropic.com",
+            None,
         );
         assert!(result.is_err());
         let err = result.err().unwrap();
@@ -472,6 +506,7 @@ mod tests {
             "sk-ant-test",
             "claude-sonnet-4-20250514",
             "https://api.anthropic.com",
+            None,
         );
         assert!(result.is_ok());
     }
