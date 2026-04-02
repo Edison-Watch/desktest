@@ -1044,7 +1044,8 @@ fn validate_app_config(app: &AppConfig) -> Result<(), AppError> {
         } => {
             if bundle_id.is_none() && app_path.is_none() {
                 return Err(AppError::Config(
-                    "MacosNative app: at least one of 'bundle_id' or 'app_path' must be specified.".into(),
+                    "MacosNative app: at least one of 'bundle_id' or 'app_path' must be specified."
+                        .into(),
                 ));
             }
         }
