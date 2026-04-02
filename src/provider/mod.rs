@@ -23,13 +23,12 @@ pub fn build_provider_http_client(
     let mut builder = reqwest::Client::builder();
 
     if let Some(path) = ca_bundle_path {
-        let pem_data = std::fs::read(path).map_err(|e| {
-            AppError::Config(format!("Cannot read TLS CA bundle '{path}': {e}"))
-        })?;
+        let pem_data = std::fs::read(path)
+            .map_err(|e| AppError::Config(format!("Cannot read TLS CA bundle '{path}': {e}")))?;
 
-        for cert in reqwest::tls::Certificate::from_pem_bundle(&pem_data).map_err(|e| {
-            AppError::Config(format!("Invalid PEM certificates in '{path}': {e}"))
-        })? {
+        for cert in reqwest::tls::Certificate::from_pem_bundle(&pem_data)
+            .map_err(|e| AppError::Config(format!("Invalid PEM certificates in '{path}': {e}")))?
+        {
             builder = builder.add_root_certificate(cert);
         }
 
@@ -204,7 +203,8 @@ pub fn create_provider(
             } else {
                 "https://openrouter.ai/api"
             };
-            let client = http_base::HttpProvider::with_client(&resolved_key, model, url, "OpenRouter", http);
+            let client =
+                http_base::HttpProvider::with_client(&resolved_key, model, url, "OpenRouter", http);
             Ok(Box::new(client))
         }
         "cerebras" => {
@@ -213,12 +213,19 @@ pub fn create_provider(
             } else {
                 "https://api.cerebras.ai"
             };
-            let client = http_base::HttpProvider::with_client(&resolved_key, model, url, "Cerebras", http);
+            let client =
+                http_base::HttpProvider::with_client(&resolved_key, model, url, "Cerebras", http);
             Ok(Box::new(client))
         }
         "gemini" => {
             if has_custom_url {
-                let client = http_base::HttpProvider::with_client(&resolved_key, model, base_url, "Gemini", http);
+                let client = http_base::HttpProvider::with_client(
+                    &resolved_key,
+                    model,
+                    base_url,
+                    "Gemini",
+                    http,
+                );
                 Ok(Box::new(client))
             } else {
                 let client = http_base::HttpProvider::with_client(
@@ -233,7 +240,8 @@ pub fn create_provider(
             }
         }
         "custom" => {
-            let client = custom::CustomProvider::create_with_client(&resolved_key, model, base_url, http);
+            let client =
+                custom::CustomProvider::create_with_client(&resolved_key, model, base_url, http);
             Ok(Box::new(client))
         }
         other => Err(AppError::Config(format!(
@@ -383,7 +391,13 @@ mod tests {
 
     #[test]
     fn test_create_provider_openai() {
-        let provider = create_provider("openai", "sk-test", "gpt-4.1", "https://api.openai.com", None);
+        let provider = create_provider(
+            "openai",
+            "sk-test",
+            "gpt-4.1",
+            "https://api.openai.com",
+            None,
+        );
         assert!(provider.is_ok());
     }
 
@@ -401,7 +415,13 @@ mod tests {
 
     #[test]
     fn test_create_provider_custom() {
-        let provider = create_provider("custom", "sk-test", "local-model", "http://localhost:8080", None);
+        let provider = create_provider(
+            "custom",
+            "sk-test",
+            "local-model",
+            "http://localhost:8080",
+            None,
+        );
         assert!(provider.is_ok());
     }
 
@@ -481,7 +501,13 @@ mod tests {
 
     #[test]
     fn test_create_provider_with_custom_base_url() {
-        let provider = create_provider("openai", "sk-test", "gpt-4.1", "https://custom.api.com", None);
+        let provider = create_provider(
+            "openai",
+            "sk-test",
+            "gpt-4.1",
+            "https://custom.api.com",
+            None,
+        );
         assert!(provider.is_ok());
     }
 

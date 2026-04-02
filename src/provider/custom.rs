@@ -8,7 +8,12 @@ impl CustomProvider {
         HttpProvider::new(api_key, model, base_url, "Custom")
     }
 
-    pub fn create_with_client(api_key: &str, model: &str, base_url: &str, http: reqwest::Client) -> HttpProvider {
+    pub fn create_with_client(
+        api_key: &str,
+        model: &str,
+        base_url: &str,
+        http: reqwest::Client,
+    ) -> HttpProvider {
         HttpProvider::with_client(api_key, model, base_url, "Custom", http)
     }
 }

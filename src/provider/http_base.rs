@@ -45,7 +45,13 @@ impl HttpProvider {
         }
     }
 
-    pub fn with_client(api_key: &str, model: &str, base_url: &str, label: &str, http: reqwest::Client) -> Self {
+    pub fn with_client(
+        api_key: &str,
+        model: &str,
+        base_url: &str,
+        label: &str,
+        http: reqwest::Client,
+    ) -> Self {
         Self {
             http,
             api_key: api_key.into(),
