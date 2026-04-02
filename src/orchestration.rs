@@ -1169,6 +1169,7 @@ async fn run_agent_loop(
         &config.api_key,
         &config.model,
         &config.api_base_url,
+        config.tls_ca_bundle.as_deref(),
     )?;
 
     let is_qa = run.qa;

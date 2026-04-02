@@ -20,9 +20,9 @@ pub struct AnthropicProvider {
 }
 
 impl AnthropicProvider {
-    pub fn new(api_key: &str, model: &str) -> Self {
+    pub fn with_client(api_key: &str, model: &str, http: reqwest::Client) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http,
             api_key: api_key.into(),
             model: model.into(),
             base_url: "https://api.anthropic.com".into(),
@@ -502,8 +502,12 @@ mod tests {
             .mount(&server)
             .await;
 
-        let provider = AnthropicProvider::new("sk-ant-test", "claude-sonnet-4-20250514")
-            .with_base_url(&server.uri());
+        let provider = AnthropicProvider::with_client(
+            "sk-ant-test",
+            "claude-sonnet-4-20250514",
+            reqwest::Client::new(),
+        )
+        .with_base_url(&server.uri());
         let messages = vec![user_message("Hi")];
         let result = provider.chat_completion(&messages, &[]).await.unwrap();
 
@@ -524,8 +528,12 @@ mod tests {
             .mount(&server)
             .await;
 
-        let provider = AnthropicProvider::new("sk-test", "claude-sonnet-4-20250514")
-            .with_base_url(&server.uri());
+        let provider = AnthropicProvider::with_client(
+            "sk-test",
+            "claude-sonnet-4-20250514",
+            reqwest::Client::new(),
+        )
+        .with_base_url(&server.uri());
         let messages = vec![system_message("Be concise."), user_message("Hi")];
         let result = provider.chat_completion(&messages, &[]).await;
         assert!(result.is_ok());
@@ -540,8 +548,12 @@ mod tests {
             .mount(&server)
             .await;
 
-        let provider = AnthropicProvider::new("sk-test", "claude-sonnet-4-20250514")
-            .with_base_url(&server.uri());
+        let provider = AnthropicProvider::with_client(
+            "sk-test",
+            "claude-sonnet-4-20250514",
+            reqwest::Client::new(),
+        )
+        .with_base_url(&server.uri());
         let result = provider.chat_completion(&[user_message("test")], &[]).await;
 
         assert!(result.is_err());
@@ -559,8 +571,12 @@ mod tests {
             .mount(&server)
             .await;
 
-        let provider = AnthropicProvider::new("sk-test", "claude-sonnet-4-20250514")
-            .with_base_url(&server.uri());
+        let provider = AnthropicProvider::with_client(
+            "sk-test",
+            "claude-sonnet-4-20250514",
+            reqwest::Client::new(),
+        )
+        .with_base_url(&server.uri());
         let result = provider.chat_completion(&[user_message("test")], &[]).await;
 
         assert!(result.is_err());
@@ -580,8 +596,12 @@ mod tests {
             .await;
 
         let provider: Box<dyn LlmProvider> = Box::new(
-            AnthropicProvider::new("sk-test", "claude-sonnet-4-20250514")
-                .with_base_url(&server.uri()),
+            AnthropicProvider::with_client(
+                "sk-test",
+                "claude-sonnet-4-20250514",
+                reqwest::Client::new(),
+            )
+            .with_base_url(&server.uri()),
         );
         let messages = vec![user_message("Hi")];
         let result = provider.chat_completion(&messages, &[]).await.unwrap();
@@ -605,8 +625,12 @@ mod tests {
             .mount(&server)
             .await;
 
-        let provider = AnthropicProvider::new("sk-test", "claude-sonnet-4-20250514")
-            .with_base_url(&server.uri());
+        let provider = AnthropicProvider::with_client(
+            "sk-test",
+            "claude-sonnet-4-20250514",
+            reqwest::Client::new(),
+        )
+        .with_base_url(&server.uri());
         let messages = vec![user_image_message("data:image/png;base64,iVBORw0KGgo=")];
         let result = provider.chat_completion(&messages, &[]).await;
         assert!(result.is_ok());
