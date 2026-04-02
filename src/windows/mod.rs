@@ -205,6 +205,20 @@ impl WindowsVmSession {
             .await;
         }
 
+        // Wait for swtpm socket to appear (up to 10s)
+        let swtpm_deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            if swtpm_sock.exists() {
+                break;
+            }
+            if tokio::time::Instant::now() >= swtpm_deadline {
+                return Err(AppError::Infra(
+                    "Timed out waiting for swtpm socket to appear".into(),
+                ));
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+
         // 4. Start virtiofsd for shared directory
         info!("Starting virtiofsd...");
         let virtiofsd_sock = shared_dir.join("virtiofsd.sock");
@@ -310,10 +324,22 @@ impl WindowsVmSession {
 
         // 6. Wait for agent_ready sentinel
         info!("Waiting for Windows VM agent to become ready...");
-        session
+        if let Err(e) = session
             .protocol
             .wait_for_agent_ready(DEFAULT_AGENT_READY_TIMEOUT)
-            .await?;
+            .await
+        {
+            // Tear down all running children before propagating the error
+            // to avoid orphaned QEMU/virtiofsd/swtpm processes.
+            Self::kill_child(&session.qemu_child).await;
+            Self::kill_child(&session.virtiofsd_child).await;
+            Self::kill_child(&session.swtpm_child).await;
+            let _ = tokio::fs::remove_file(&session.overlay_path).await;
+            let _ = tokio::fs::remove_file(&session.ovmf_vars_path).await;
+            let _ = tokio::fs::remove_dir_all(&session.tpm_state_dir).await;
+            let _ = tokio::fs::remove_dir_all(&session.shared_dir).await;
+            return Err(e);
+        }
 
         info!("Windows VM '{}' is ready", session.vm_name);
         Ok(session)

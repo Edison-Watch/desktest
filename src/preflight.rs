@@ -236,7 +236,7 @@ pub fn check_windows_vm() -> Result<(), AppError> {
         ));
     }
 
-    // Check KVM access
+    // Check KVM access (existence + permission)
     let kvm = std::path::Path::new("/dev/kvm");
     if !kvm.exists() {
         return Err(AppError::Config(
@@ -246,6 +246,20 @@ pub fn check_windows_vm() -> Result<(), AppError> {
              - AMD: sudo modprobe kvm_amd"
                 .into(),
         ));
+    }
+
+    // Verify we can actually open /dev/kvm (user must be in 'kvm' group)
+    match std::fs::File::open(kvm) {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+            return Err(AppError::Config(
+                "Permission denied opening /dev/kvm.\n\
+                 Add your user to the 'kvm' group: sudo usermod -aG kvm $USER\n\
+                 Then log out and back in for the change to take effect."
+                    .into(),
+            ));
+        }
+        Err(_) => {}
     }
 
     Ok(())
