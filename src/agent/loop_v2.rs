@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use tracing::{debug, info, warn};
 
+use crate::agent::DEFAULT_STEP_TIMEOUT_SECS;
 use crate::agent::context::{ContextManager, TrajectoryTurn};
 use crate::agent::llm_retry::{extract_reasoning, extract_text_content};
 use crate::agent::pyautogui::{self, SpecialCommand};
@@ -24,9 +25,6 @@ use crate::trajectory::{StepData, TrajectoryLogger};
 
 /// Default maximum number of agent steps per test.
 const DEFAULT_MAX_STEPS: usize = 15;
-
-/// Default per-step wall-clock timeout in seconds.
-const DEFAULT_STEP_TIMEOUT_SECS: u64 = 60;
 
 /// Default total wall-clock timeout for the entire test in seconds.
 const DEFAULT_TOTAL_TIMEOUT_SECS: u64 = 300;
