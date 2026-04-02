@@ -95,6 +95,10 @@ impl DockerSession {
         };
 
         // Verify image digest if one was specified.
+        // Note: digest verification uses `repo_digests` which is only populated
+        // for images pulled from a registry. Locally-built images (via
+        // `docker build`) have no repo_digests and will fail verification.
+        // Users should omit the `digest` field for locally-built images.
         if let Some(digest) = expected_digest {
             let inspect = client.inspect_image(&image_name).await.map_err(|e| {
                 AppError::Infra(format!(
@@ -114,9 +118,16 @@ impl DockerSession {
             });
 
             if !matched {
+                let hint = if repo_digests.is_empty() {
+                    " (repo_digests is empty — this image may have been built \
+                     locally rather than pulled from a registry; digest \
+                     verification only works for registry-pulled images)"
+                } else {
+                    ""
+                };
                 return Err(AppError::Config(format!(
                     "Image digest mismatch for '{image_name}': expected {full_digest}, \
-                     but image has repo_digests: {repo_digests:?}"
+                     but image has repo_digests: {repo_digests:?}{hint}"
                 )));
             }
             info!("Image digest verified: {full_digest}");

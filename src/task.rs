@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
@@ -120,6 +121,9 @@ pub enum AppConfig {
         image: String,
         /// Optional image digest for pinning (e.g. "sha256:a3ed95caeb02...").
         /// When set, the pulled image's digest is verified after pull.
+        /// Note: only works for registry-pulled images. Locally-built images
+        /// have no `repo_digests` and will fail verification — omit this field
+        /// for local images.
         #[serde(default)]
         digest: Option<String>,
         #[serde(default)]
@@ -1060,7 +1064,9 @@ fn validate_app_config(app: &AppConfig) -> Result<(), AppError> {
                 ));
             }
             if let Some(d) = digest {
-                let digest_re = regex::Regex::new(r"^sha256:[0-9a-f]{64}$").unwrap();
+                static DIGEST_RE: OnceLock<regex::Regex> = OnceLock::new();
+                let digest_re =
+                    DIGEST_RE.get_or_init(|| regex::Regex::new(r"^sha256:[0-9a-f]{64}$").unwrap());
                 if !digest_re.is_match(d) {
                     return Err(AppError::Config(format!(
                         "DockerImage app: 'digest' must match 'sha256:<64 hex chars>', got: {d}"

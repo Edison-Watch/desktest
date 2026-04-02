@@ -283,13 +283,20 @@ fn format_thought_lines(step: usize, thought: Option<&str>) -> Vec<String> {
         let clean = thought.trim().replace('\n', " ");
         if !clean.is_empty() {
             let wrapped = wrap_text(&format!("[Step {step}] {clean}"), CAPTION_LINE_WIDTH);
+            let was_truncated = wrapped.len() > CAPTION_MAX_THOUGHT_LINES;
             for (i, line) in wrapped.into_iter().enumerate() {
                 if i >= CAPTION_MAX_THOUGHT_LINES {
                     break;
                 }
                 lines.push(line);
             }
-            truncate_lines(&mut lines, CAPTION_MAX_THOUGHT_LINES);
+            if was_truncated {
+                if let Some(last) = lines.last_mut() {
+                    if !last.ends_with("...") {
+                        last.push_str("...");
+                    }
+                }
+            }
         }
     }
 
@@ -312,8 +319,11 @@ fn format_action_lines(action_code: &[String]) -> Vec<String> {
                 continue;
             }
             if count >= CAPTION_MAX_ACTION_LINES {
-                let len = lines.len();
-                truncate_lines(&mut lines, len);
+                if let Some(last) = lines.last_mut() {
+                    if !last.ends_with("...") {
+                        last.push_str("...");
+                    }
+                }
                 break 'outer;
             }
             let prefix = if trimmed.starts_with('#') { "  " } else { "> " };
@@ -329,18 +339,6 @@ fn format_action_lines(action_code: &[String]) -> Vec<String> {
     }
 
     lines
-}
-
-/// If `lines` exceeds `max`, append `...` to the last line as a truncation
-/// indicator. This is a no-op when the line already ends with `...`.
-fn truncate_lines(lines: &mut [String], max: usize) {
-    if lines.len() >= max {
-        if let Some(last) = lines.last_mut() {
-            if !last.ends_with("...") {
-                last.push_str("...");
-            }
-        }
-    }
 }
 
 /// Returns `true` for code lines that are visual noise in captions
@@ -499,27 +497,6 @@ mod tests {
         assert!(!is_noise_line("pyautogui.click(100, 200)"));
         assert!(!is_noise_line("# a comment"));
         assert!(!is_noise_line(""));
-    }
-
-    #[test]
-    fn test_truncate_lines_appends_ellipsis() {
-        let mut lines = vec!["line one".to_string(), "line two".to_string()];
-        truncate_lines(&mut lines, 2);
-        assert_eq!(lines.last().unwrap(), "line two...");
-    }
-
-    #[test]
-    fn test_truncate_lines_noop_when_under_max() {
-        let mut lines = vec!["only".to_string()];
-        truncate_lines(&mut lines, 3);
-        assert_eq!(lines.last().unwrap(), "only");
-    }
-
-    #[test]
-    fn test_truncate_lines_no_double_ellipsis() {
-        let mut lines = vec!["already...".to_string()];
-        truncate_lines(&mut lines, 1);
-        assert_eq!(lines.last().unwrap(), "already...");
     }
 
     #[test]
