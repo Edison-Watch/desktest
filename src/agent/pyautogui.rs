@@ -14,11 +14,9 @@ use std::time::Duration;
 use serde::Deserialize;
 use tracing::{debug, info, warn};
 
+use crate::agent::DEFAULT_STEP_TIMEOUT_SECS;
 use crate::error::AppError;
 use crate::session::{Session, SessionKind};
-
-/// Default per-code-block execution timeout in seconds.
-const DEFAULT_STEP_TIMEOUT_SECS: u64 = 60;
 
 /// The execute-action sandbox script, embedded at compile time.
 const EXECUTE_ACTION_SCRIPT: &str = include_str!("../../docker/execute-action.py");
