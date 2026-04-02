@@ -255,6 +255,17 @@ pub async fn run_suite(
     );
     println!("Running {} test(s)...\n", entries.len());
 
+    if !run.quiet && !entries.is_empty() {
+        let apps: Vec<&crate::task::AppConfig> = entries.iter().map(|e| &e.task_def.app).collect();
+        crate::warnings::warn_suite_resources(&run_config, &apps);
+    }
+
+    // Suppress per-test warnings inside suite — the suite-level warning above covers it.
+    let inner_run = crate::orchestration::RunConfig {
+        quiet: true,
+        ..run.clone()
+    };
+
     let suite_start = Instant::now();
     let mut test_results: Vec<TestResult> = Vec::new();
 
@@ -290,7 +301,7 @@ pub async fn run_suite(
         let result = crate::run_task(
             entry.task_def.clone(),
             run_config.clone(),
-            run.clone(),
+            inner_run.clone(),
             test_output_dir.clone(),
             monitor.clone(),
             None,

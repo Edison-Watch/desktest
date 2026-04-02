@@ -71,6 +71,10 @@ pub struct Cli {
     #[arg(long, default_value_t = false, global = true)]
     pub debug: bool,
 
+    /// Suppress resource usage warnings
+    #[arg(long, short = 'q', default_value_t = false, global = true)]
+    pub quiet: bool,
+
     /// Enable verbose trajectory logging (includes full LLM responses in trajectory.jsonl)
     #[arg(long, default_value_t = false, global = true)]
     pub verbose: bool,
