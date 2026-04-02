@@ -31,7 +31,7 @@ Install the desktest CLI by running `curl -fsSL https://raw.githubusercontent.co
 
 ## OSWorld Leaderboard
 
-Desktest is based on the agent harness as the [OSWorld](https://os-world.github.io/) benchmark for evaluating multimodal agents on real-world computer tasks. The leaderboard below tracks which models perform best, [updated weekly](https://github.com/Edison-Watch/osworld-leaderboard-updater):
+Desktest uses the same agent harness as the [OSWorld](https://os-world.github.io/) benchmark for evaluating multimodal agents on real-world computer tasks. The leaderboard below tracks which models perform best, [updated weekly](https://github.com/Edison-Watch/osworld-leaderboard-updater):
 
 [![OSWorld Leaderboard](https://raw.githubusercontent.com/Edison-Watch/osworld-leaderboard-updater/main/assets/osworld-leaderboard.svg)](https://github.com/Edison-Watch/osworld-leaderboard-updater)
 
