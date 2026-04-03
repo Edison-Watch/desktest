@@ -132,6 +132,12 @@ fn build_app_config(reader: &mut impl BufRead, app_type: &str) -> Result<AppConf
             let launch_cmd =
                 prompt_optional(reader, "Launch command (optional, press Enter to skip)")?;
             let electron = prompt_yes_no(reader, "Is this an Electron app?", false)?;
+            if bundle_id.is_none() && app_path.is_none() && launch_cmd.is_none() {
+                return Err(AppError::Config(
+                    "MacosTart app: at least one of 'bundle_id', 'app_path', or 'launch_cmd' must be provided."
+                        .into(),
+                ));
+            }
             Ok(AppConfig::MacosTart {
                 base_image,
                 bundle_id,
@@ -254,7 +260,16 @@ fn build_evaluator(reader: &mut impl BufRead) -> Result<EvaluatorConfig, AppErro
                     let expected = code_str.parse::<i32>().unwrap_or(0);
                     metrics.push(MetricConfig::ExitCode { command, expected });
                 }
-                _ => break,
+                _ => {
+                    if metrics.is_empty() {
+                        eprintln!(
+                            "    At least one metric is required for {} mode.",
+                            mode_str
+                        );
+                        continue;
+                    }
+                    break;
+                }
             }
         }
     }
