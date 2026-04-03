@@ -388,6 +388,47 @@ EXAMPLES:
         with_electron: bool,
     },
 
+    /// Prepare a Windows 11 golden image for QEMU/KVM-based testing
+    #[command(after_help = "\
+Creates a Windows 11 QCOW2 golden image ready for desktest Windows VM testing. \
+Requires a Linux host with KVM, QEMU, OVMF, swtpm, and sshpass.\n\n\
+Two-stage process:\n\
+  Stage 1: Unattended Windows install from ISO (15-30 min)\n\
+  Stage 2: Provision Python, PyAutoGUI, WinFsp, agent scripts via SSH (5-15 min)\n\n\
+PREREQUISITES:\n\
+  - Windows 11 ISO (evaluation or licensed)\n\
+  - VirtIO driver ISO (virtio-win.iso from https://fedorapeople.org/groups/virt/virtio-win/)\n\
+  - QEMU/KVM, OVMF, swtpm, virtiofsd, genisoimage, sshpass\n\n\
+EXAMPLES:
+  desktest init-windows --windows-iso Win11.iso --virtio-iso virtio-win.iso
+  desktest init-windows --windows-iso Win11.iso --virtio-iso virtio-win.iso --output my-golden.qcow2
+  desktest init-windows --windows-iso Win11.iso --virtio-iso virtio-win.iso --ram 8G --cpus 8")]
+    InitWindows {
+        /// Path to the Windows 11 ISO file
+        #[arg(long)]
+        windows_iso: std::path::PathBuf,
+
+        /// Path to the VirtIO driver ISO (virtio-win.iso)
+        #[arg(long)]
+        virtio_iso: std::path::PathBuf,
+
+        /// Output path for the QCOW2 golden image
+        #[arg(long, default_value = "desktest-windows.qcow2")]
+        output: std::path::PathBuf,
+
+        /// Disk size for the golden image (default: 64G)
+        #[arg(long, default_value = "64G")]
+        disk_size: String,
+
+        /// RAM for the installation VM
+        #[arg(long, default_value = "4G")]
+        ram: String,
+
+        /// Number of CPU cores for the installation VM
+        #[arg(long, default_value_t = 4)]
+        cpus: u32,
+    },
+
     /// Generate an interactive HTML trajectory viewer (best for human review in a browser)
     #[command(after_help = concat!(
         "For a CLI/agent-friendly text view, use `desktest logs` instead.\n\n",

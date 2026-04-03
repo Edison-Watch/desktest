@@ -164,21 +164,22 @@ Many widely-used open source projects perform macOS UI automation without any kn
 - **MacStadium / Orka** — data centers of physical Mac hardware with Apple licensing agreements
 - **Cirrus CI / Tart** — ephemeral macOS VMs on Apple Silicon, open source
 
-## Limitations Compared to Linux
+## Platform Comparison
 
-| Aspect | Linux (Docker) | macOS (Tart VM) |
-|--------|---------------|-----------------|
-| Parallel tests per host | Unlimited (Docker containers) | Max 2 (Apple VM limit) |
-| Environment startup | ~5s (container start) | ~5-7s (VM clone + resume) |
-| State isolation | Complete (container destroyed) | Complete (VM clone destroyed) |
-| Accessibility tree | pyatspi / AT-SPI2 (mature) | AXUIElement via Swift helper (via SSH localhost) |
-| Action execution | PyAutoGUI via X11 | PyAutoGUI via Quartz/CoreGraphics |
-| Screenshots | scrot (X11) | screencapture (built-in) |
-| Video recording | ffmpeg x11grab | screencapture -V (built-in) |
-| App deployment | Copy into container | Pre-installed in VM image or `open -a` |
-| Security boundary | Docker container (non-root user) | VM boundary (stronger) |
-| Headless operation | Native (Xvfb) | Requires VM (no headless macOS desktop) |
-| CI infrastructure | Any Linux host with Docker | Apple Silicon hardware only |
+| Aspect | Linux (Docker) | macOS (Tart VM) | Windows (QEMU/KVM) |
+|--------|---------------|-----------------|---------------------|
+| Parallel tests per host | Unlimited (Docker containers) | Max 2 (Apple VM limit) | Unlimited (limited by host resources) |
+| Environment startup | ~5s (container start) | ~5-7s (VM clone + resume) | ~30-60s (QCOW2 overlay + boot) |
+| State isolation | Complete (container destroyed) | Complete (VM clone destroyed) | Complete (QCOW2 overlay destroyed) |
+| Accessibility tree | pyatspi / AT-SPI2 (mature) | AXUIElement via Swift helper (via SSH localhost) | uiautomation (Windows UI Automation COM API) |
+| Action execution | PyAutoGUI via X11 | PyAutoGUI via Quartz/CoreGraphics | PyAutoGUI via Win32 SendInput |
+| Screenshots | scrot (X11) | screencapture (built-in) | PIL ImageGrab (Win32 GDI) |
+| Video recording | ffmpeg x11grab | screencapture -V (built-in) | ffmpeg gdigrab |
+| App deployment | Copy into container | Pre-installed in VM image or `open -a` | Copy via shared dir or `launch_cmd` |
+| Host↔Guest comms | Docker exec API | VirtIO-FS shared dir (file-based IPC) | VirtIO-FS shared dir (file-based IPC) |
+| Security boundary | Docker container (non-root user) | VM boundary (stronger) | VM boundary (stronger) |
+| Headless operation | Native (Xvfb) | Requires VM (no headless macOS desktop) | Native (QEMU `-display none`) |
+| CI infrastructure | Any Linux host with Docker | Apple Silicon hardware only | Linux host with KVM |
 
 ## Clean State Management
 

@@ -129,6 +129,75 @@ desktest init-macos --with-electron
 
 See [macOS Support](macos-support.md) for details on TCC permissions and the SSH localhost workaround for accessibility.
 
-## Windows Tests — Planned
+## Windows Tests (QEMU/KVM)
 
-Windows VM support is planned. Expected to work with any CI environment that can run Windows VMs (QEMU/libvirt, Hyper-V). Details TBD.
+Windows tests require a **Linux host with KVM** (hardware virtualization). Software emulation (TCG) is too slow for interactive desktop testing.
+
+### GitHub Actions
+
+Standard free-tier `ubuntu-latest` runners do **not** expose `/dev/kvm`. Use larger runners (4+ vCPU) or self-hosted runners:
+
+```yaml
+jobs:
+  windows-e2e-test:
+    # IMPORTANT: Standard ubuntu-latest runners do NOT have KVM.
+    # Use a larger runner or self-hosted runner with KVM access.
+    runs-on: ubuntu-latest-4-cores  # Example: 4-core larger runner
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check KVM availability
+        run: |
+          if [ ! -e /dev/kvm ]; then
+            echo "::error::KVM is not available. Use a larger runner or self-hosted runner."
+            exit 1
+          fi
+          sudo chmod 666 /dev/kvm
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 qemu-utils ovmf swtpm virtiofsd
+      - name: Install desktest
+        run: curl -fsSL https://raw.githubusercontent.com/Edison-Watch/desktest/master/install.sh | sh
+      - name: Download golden image
+        run: |
+          # Download from your org's storage (S3, GCS, artifact registry, etc.)
+          # The golden image is ~15-25 GB — cache or compress with zstd
+          echo "Configure golden image download here"
+      - name: Run Windows tests
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: desktest suite tests/windows/
+```
+
+### Golden Image Preparation
+
+Run `desktest init-windows` once to create a QCOW2 golden image. This two-stage process installs Windows from ISO (unattended) and provisions all dependencies via SSH:
+
+```bash
+# Requires: Windows 11 ISO + VirtIO driver ISO (user provides both)
+desktest init-windows \
+  --windows-iso Win11.iso \
+  --virtio-iso virtio-win.iso \
+  --output desktest-windows.qcow2
+```
+
+The golden image includes: Python 3, PyAutoGUI, uiautomation (UIA), WinFsp + VirtIO-FS, vm-agent (scheduled task), auto-login, disabled UAC/Defender/Windows Update.
+
+Store the golden image in cloud storage or a shared artifact registry. Each test creates a QCOW2 overlay (copy-on-write), so the base image is never modified.
+
+### Self-Hosted Runner Setup
+
+For best performance, use a dedicated Linux machine or cloud VM with nested virtualization:
+
+```bash
+# Install dependencies
+sudo apt install qemu-system-x86 qemu-utils ovmf swtpm virtiofsd
+
+# Grant KVM access
+sudo usermod -aG kvm github-runner
+
+# Build golden image once
+desktest init-windows --windows-iso Win11.iso --virtio-iso virtio-win.iso
+```
+
+See [Windows CI Guide](../dev-docs/windows-ci-guide.md) for detailed setup instructions, cloud provider compatibility, caching strategies, and troubleshooting.

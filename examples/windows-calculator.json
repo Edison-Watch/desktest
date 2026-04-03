@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "id": "windows-calculator-add",
+  "instruction": "Open the Windows Calculator app, compute 42 + 58, and verify the result shows 100.",
+  "app": {
+    "type": "windows_vm",
+    "base_image": "desktest-windows.qcow2",
+    "launch_cmd": "calc.exe"
+  },
+  "config": [],
+  "evaluator": {
+    "mode": "hybrid",
+    "metrics": [
+      {
+        "type": "command_output",
+        "command": "powershell -Command \"(Get-Process Calculator -ErrorAction SilentlyContinue).Id\"",
+        "match_mode": "regex",
+        "expected": "\\d+"
+      }
+    ]
+  },
+  "timeout": 180,
+  "max_steps": 15,
+  "metadata": {
+    "description": "Tests basic Windows Calculator interaction: launching the app, clicking buttons to compute 42 + 58, and verifying the result.",
+    "tags": ["windows", "calculator", "qemu"],
+    "platform": "windows"
+  }
+}

@@ -82,6 +82,16 @@ desktest run examples/macos-native-textedit.json --config config.json
 
 See [docs/macos-support.md](../docs/macos-support.md) for the full macOS testing guide.
 
+### `windows-calculator.json` — Windows Calculator (QEMU/KVM VM)
+
+Tests basic Windows Calculator interaction inside a QEMU/KVM VM. Requires a Linux host with KVM, QEMU, and a golden image prepared with `desktest init-windows`.
+
+```bash
+desktest run examples/windows-calculator.json --config config.json
+```
+
+See [dev-docs/windows-ci-guide.md](../dev-docs/windows-ci-guide.md) for the full Windows testing guide.
+
 ## Custom Docker Images
 
 `Dockerfile.libreoffice` shows how to create a compatible custom image.
@@ -156,7 +166,7 @@ See `src/task.rs` for the full schema definition. Key fields:
   "id": "unique-test-id",
   "instruction": "What the agent should do",
   "completion_condition": "Optional — when the agent should consider the task done",
-  "app": { "type": "appimage|folder|docker_image|vnc_attach|macos_tart|macos_native", "..." : "..." },
+  "app": { "type": "appimage|folder|docker_image|vnc_attach|macos_tart|macos_native|windows_vm|windows_native", "..." : "..." },
   "config": [ { "type": "execute|copy|open|sleep", "..." : "..." } ],
   "evaluator": {
     "mode": "llm|programmatic|hybrid",

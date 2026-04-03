@@ -233,12 +233,12 @@ Desktest is MIT-licensed. For Windows VM support:
 4. ✓ Interactive mode support — refactored `interactive.rs` from Docker-only to session-agnostic; all session types (Docker, Tart, Native, WindowsVm, WindowsNative) now work with both pause and step modes
 5. ✓ Refined a11y tree quality — added TSV header line, `AutomationId` as description column, `IsOffscreen` filtering (on by default), `max_depth=30` limit, `state` column (disabled/checked/selected/expanded/collapsed), `escape_tsv()` helper for consistent escaping
 
-### Phase 3: Golden Image Automation and CI
+### Phase 3: Golden Image Automation and CI ✓
 
-1. `desktest init-windows` command
-2. `windows/provision.ps1` and `windows/Autounattend.xml`
-3. CI/CD integration guide (GitHub Actions with KVM, etc.)
-4. Windows-specific test examples
+1. ✓ `desktest init-windows` command — two-stage golden image provisioning: Stage 1 boots QEMU with Windows ISO + VirtIO ISO + Autounattend ISO for unattended install; Stage 2 provisions via SSH (Python, PyAutoGUI, WinFsp, agent scripts, scheduled task, system tweaks)
+2. ✓ `windows/provision.ps1` and `windows/Autounattend.xml` — UEFI GPT partitioning, VirtIO driver loading, OOBE skip, OpenSSH Server, TPM bypass, auto-login; provisioning installs Python 3, pip packages, WinFsp + VirtIO-FS mount config, deploys agent scripts, registers scheduled task
+3. ✓ CI/CD integration guide (`dev-docs/windows-ci-guide.md`) — GitHub Actions workflow YAML with explicit limitations (KVM required, larger runners needed, golden image caching), self-hosted runner setup, cloud nested virt matrix, troubleshooting
+4. ✓ Windows Calculator test example (`examples/windows-calculator.json`)
 
 ## Risks and Mitigations
 
