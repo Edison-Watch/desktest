@@ -146,6 +146,12 @@ fn build_app_config(reader: &mut impl BufRead, app_type: &str) -> Result<AppConf
                 "Bundle ID (e.g., com.apple.TextEdit, or press Enter to skip)",
             )?;
             let app_path = prompt_optional(reader, "App path (optional, press Enter to skip)")?;
+            if bundle_id.is_none() && app_path.is_none() {
+                return Err(AppError::Config(
+                    "MacosNative app: at least one of 'bundle_id' or 'app_path' must be provided."
+                        .into(),
+                ));
+            }
             Ok(AppConfig::MacosNative {
                 bundle_id,
                 app_path,
@@ -178,6 +184,12 @@ fn build_app_config(reader: &mut impl BufRead, app_type: &str) -> Result<AppConf
                 reader,
                 "Launch command (e.g., notepad.exe, or press Enter to skip)",
             )?;
+            if app_path.is_none() && launch_cmd.is_none() {
+                return Err(AppError::Config(
+                    "WindowsNative app: at least one of 'app_path' or 'launch_cmd' must be provided."
+                        .into(),
+                ));
+            }
             Ok(AppConfig::WindowsNative {
                 app_path,
                 launch_cmd,
@@ -271,9 +283,12 @@ fn prompt_string(
         io::stderr().flush().ok();
 
         let mut line = String::new();
-        reader
+        let bytes = reader
             .read_line(&mut line)
             .map_err(|e| AppError::Config(format!("Failed to read input: {e}")))?;
+        if bytes == 0 {
+            return Err(AppError::Config("Unexpected end of input (EOF)".into()));
+        }
         let trimmed = line.trim();
 
         if trimmed.is_empty() {
@@ -292,9 +307,12 @@ fn prompt_optional(reader: &mut impl BufRead, label: &str) -> Result<Option<Stri
     io::stderr().flush().ok();
 
     let mut line = String::new();
-    reader
+    let bytes = reader
         .read_line(&mut line)
         .map_err(|e| AppError::Config(format!("Failed to read input: {e}")))?;
+    if bytes == 0 {
+        return Ok(None);
+    }
     let trimmed = line.trim();
     if trimmed.is_empty() {
         Ok(None)
@@ -309,9 +327,12 @@ fn prompt_yes_no(reader: &mut impl BufRead, label: &str, default: bool) -> Resul
     io::stderr().flush().ok();
 
     let mut line = String::new();
-    reader
+    let bytes = reader
         .read_line(&mut line)
         .map_err(|e| AppError::Config(format!("Failed to read input: {e}")))?;
+    if bytes == 0 {
+        return Ok(default);
+    }
     let trimmed = line.trim().to_lowercase();
     if trimmed.is_empty() {
         Ok(default)
@@ -343,9 +364,12 @@ fn prompt_choice(
         io::stderr().flush().ok();
 
         let mut line = String::new();
-        reader
+        let bytes = reader
             .read_line(&mut line)
             .map_err(|e| AppError::Config(format!("Failed to read input: {e}")))?;
+        if bytes == 0 {
+            return Err(AppError::Config("Unexpected end of input (EOF)".into()));
+        }
         let trimmed = line.trim();
 
         if trimmed.is_empty() {
