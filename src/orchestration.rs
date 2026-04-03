@@ -68,7 +68,10 @@ pub(crate) fn load_config_or_defaults(
         match Config::load_and_validate(config_path) {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("Config error: {e}");
+                eprintln!(
+                    "Config error: {}",
+                    crate::error::format_error_with_suggestion(&e)
+                );
                 std::process::exit(e.exit_code());
             }
         }
@@ -1159,6 +1162,7 @@ pub(crate) async fn build_agent_loop_config(
         verbose: run.verbose,
         bash_enabled: run.bash_enabled,
         qa: run.qa,
+        quiet: run.quiet,
         display_width: config.display_width,
         display_height: config.display_height,
         early_exit: task_def.early_exit.clone(),
