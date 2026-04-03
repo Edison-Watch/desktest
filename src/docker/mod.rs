@@ -199,7 +199,9 @@ impl DockerSession {
             // fusermount/fusermount3 are setuid binaries — no-new-privileges
             // blocks setuid, so we must relax it when FUSE is needed.
             host_config.security_opt = None;
-            info!("FUSE enabled: added CAP_SYS_ADMIN and /dev/fuse device (no-new-privileges relaxed)");
+            info!(
+                "FUSE enabled: added CAP_SYS_ADMIN and /dev/fuse device (no-new-privileges relaxed)"
+            );
         }
 
         let mut exposed_ports = std::collections::HashMap::new();
