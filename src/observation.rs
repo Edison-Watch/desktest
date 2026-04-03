@@ -143,7 +143,7 @@ impl ObservationConfig {
                 a11y_cmd: MACOS_A11Y_CMD.iter().map(|s| (*s).to_string()).collect(),
                 ..Self::default()
             },
-            SessionKind::WindowsVm(_) => Self {
+            SessionKind::WindowsVm(_) | SessionKind::WindowsNative(_) => Self {
                 screenshot_cmd: WINDOWS_SCREENSHOT_CMD
                     .iter()
                     .map(|s| (*s).to_string())

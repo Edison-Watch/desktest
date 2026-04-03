@@ -48,6 +48,7 @@ pub enum AppType {
     MacosTart,
     MacosNative,
     WindowsVm,
+    WindowsNative,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -215,6 +216,10 @@ impl Config {
                 self.app_type = AppType::WindowsVm;
                 self.electron = false;
             }
+            crate::task::AppConfig::WindowsNative { .. } => {
+                self.app_type = AppType::WindowsNative;
+                self.electron = false;
+            }
         }
     }
 
@@ -290,6 +295,9 @@ impl Config {
             }
             AppType::WindowsVm => {
                 // Validation happens in task.rs (base_image check)
+            }
+            AppType::WindowsNative => {
+                // Validation happens in task.rs (app_path or launch_cmd check)
             }
         }
 
