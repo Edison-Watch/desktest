@@ -33,10 +33,14 @@ pub async fn run_init_windows(
     cpus: u32,
     disk_size: &str,
 ) -> Result<(), AppError> {
-    // 1. Verify prerequisites
+    // 1. Verify prerequisites (spawn_blocking to avoid blocking the Tokio runtime)
     crate::preflight::check_windows_vm()?;
-    let iso_tool = check_iso_builder()?;
-    check_sshpass_installed()?;
+    let iso_tool = tokio::task::spawn_blocking(check_iso_builder)
+        .await
+        .map_err(|e| AppError::Infra(format!("Preflight check panicked: {e}")))??;
+    tokio::task::spawn_blocking(check_sshpass_installed)
+        .await
+        .map_err(|e| AppError::Infra(format!("Preflight check panicked: {e}")))??;
 
     // Validate inputs exist
     if !windows_iso.exists() {
@@ -327,11 +331,11 @@ async fn stage2_provision(
     cpus: u32,
     work_dir: &Path,
 ) -> Result<(), AppError> {
-    // Set up UEFI and TPM again (fresh instances for Stage 2 boot)
-    let ovmf_vars_path = work_dir.join("OVMF_VARS_s2.fd");
-    tokio::fs::copy("/usr/share/OVMF/OVMF_VARS.fd", &ovmf_vars_path)
-        .await
-        .map_err(|e| AppError::Infra(format!("Cannot copy OVMF_VARS template: {e}")))?;
+    // Reuse the OVMF_VARS written by Stage 1 — it contains EFI boot entries
+    // that the Windows installer wrote (pointing to \EFI\Microsoft\Boot\bootmgfw.efi).
+    // Using a fresh OVMF_VARS would lose these entries, forcing UEFI fallback scan
+    // which can be slow or fail on some OVMF versions.
+    let ovmf_vars_path = work_dir.join("OVMF_VARS.fd");
 
     let tpm_state_dir = work_dir.join("tpm-s2");
     tokio::fs::create_dir_all(&tpm_state_dir).await?;
@@ -602,18 +606,20 @@ async fn run_sshpass(ssh_opts: &[&str], cmd: &[&str]) -> Result<(), AppError> {
     args.extend_from_slice(ssh_opts);
     args.extend_from_slice(cmd);
 
-    let status = tokio::process::Command::new("sshpass")
+    let output = tokio::process::Command::new("sshpass")
         .args(&args)
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
-        .status()
+        .output()
         .await
         .map_err(|e| AppError::Infra(format!("sshpass/ssh failed: {e}")))?;
 
-    if !status.success() {
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(AppError::Infra(format!(
-            "SSH command failed with exit code {}",
-            status.code().unwrap_or(-1)
+            "SSH command failed with exit code {}: {}",
+            output.status.code().unwrap_or(-1),
+            stderr.trim()
         )));
     }
     Ok(())
