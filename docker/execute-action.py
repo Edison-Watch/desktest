@@ -26,6 +26,11 @@ try:
     HAS_RESTRICTED_PYTHON = True
 except ImportError:
     HAS_RESTRICTED_PYTHON = False
+    print(
+        "WARNING: RestrictedPython not installed — falling back to unrestricted exec(). "
+        "Install RestrictedPython for AST-level sandboxing of LLM-generated code.",
+        file=sys.stderr,
+    )
 
 os.environ.setdefault("DISPLAY", ":99")
 

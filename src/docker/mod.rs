@@ -297,6 +297,7 @@ impl DockerSession {
         ("pyautogui", "python3-pyautogui"),
         ("Xlib", "python3-xlib"),
         ("pyatspi", "python3-pyatspi"),
+        ("RestrictedPython", "RestrictedPython (pip)"),
     ];
 
     /// Validate that a custom Docker image has all required dependencies.
