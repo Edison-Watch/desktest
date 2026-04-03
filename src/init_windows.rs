@@ -5,6 +5,19 @@ use tracing::info;
 
 use crate::error::AppError;
 
+/// Shared configuration for the init-windows stages.
+struct InitConfig<'a> {
+    windows_dir: &'a Path,
+    windows_iso: &'a Path,
+    virtio_iso: &'a Path,
+    output: &'a Path,
+    ram: &'a str,
+    cpus: u32,
+    disk_size: &'a str,
+    iso_tool: &'a str,
+    work_dir: &'a Path,
+}
+
 /// Run `desktest init-windows`: prepare a Windows 11 golden image for QEMU/KVM testing.
 ///
 /// Two-stage process:
@@ -57,22 +70,23 @@ pub async fn run_init_windows(
     println!();
 
     // Create temporary working directory
-    let work_dir = std::env::temp_dir().join(format!("desktest-init-windows-{}", std::process::id()));
+    let work_dir =
+        std::env::temp_dir().join(format!("desktest-init-windows-{}", std::process::id()));
     std::fs::create_dir_all(&work_dir)
         .map_err(|e| AppError::Infra(format!("Cannot create work dir: {e}")))?;
 
-    let result = run_both_stages(
-        &windows_dir,
+    let cfg = InitConfig {
+        windows_dir: &windows_dir,
         windows_iso,
         virtio_iso,
         output,
         ram,
         cpus,
         disk_size,
-        &iso_tool,
-        &work_dir,
-    )
-    .await;
+        iso_tool: &iso_tool,
+        work_dir: &work_dir,
+    };
+    let result = run_both_stages(&cfg).await;
 
     // Clean up work directory
     let _ = std::fs::remove_dir_all(&work_dir);
@@ -86,7 +100,10 @@ pub async fn run_init_windows(
         println!("Golden image '{}' is ready!", output.display());
         println!();
         println!("Next steps:");
-        println!("  1. Create a task JSON with '\"type\": \"windows_vm\"' and '\"base_image\": \"{}\"'", output.display());
+        println!(
+            "  1. Create a task JSON with '\"type\": \"windows_vm\"' and '\"base_image\": \"{}\"'",
+            output.display()
+        );
         println!("  2. Run: desktest run your-task.json");
         println!();
         println!("The image includes: Python 3, PyAutoGUI, uiautomation, WinFsp,");
@@ -96,20 +113,26 @@ pub async fn run_init_windows(
     result
 }
 
-async fn run_both_stages(
-    windows_dir: &Path,
-    windows_iso: &Path,
-    virtio_iso: &Path,
-    output: &Path,
-    ram: &str,
-    cpus: u32,
-    disk_size: &str,
-    iso_tool: &str,
-    work_dir: &Path,
-) -> Result<(), AppError> {
+async fn run_both_stages(cfg: &InitConfig<'_>) -> Result<(), AppError> {
     // ── Stage 1: Windows installation from ISO ──────────────────────────
     println!("Stage 1: Installing Windows from ISO (this takes 15-30 minutes)...");
-    stage1_install(
+    stage1_install(cfg).await?;
+    println!("Stage 1 complete: Windows installed.");
+    println!();
+
+    // ── Stage 2: Provisioning via SSH ───────────────────────────────────
+    println!("Stage 2: Provisioning dependencies via SSH...");
+    stage2_provision(cfg.windows_dir, cfg.output, cfg.ram, cfg.cpus, cfg.work_dir).await?;
+    println!("Stage 2 complete: Golden image provisioned.");
+
+    Ok(())
+}
+
+/// Stage 1: Create a secondary ISO with Autounattend.xml, boot QEMU with
+/// Windows ISO + VirtIO ISO + secondary ISO, wait for unattended install
+/// to complete (QEMU exits when guest shuts down).
+async fn stage1_install(cfg: &InitConfig<'_>) -> Result<(), AppError> {
+    let InitConfig {
         windows_dir,
         windows_iso,
         virtio_iso,
@@ -119,33 +142,7 @@ async fn run_both_stages(
         disk_size,
         iso_tool,
         work_dir,
-    )
-    .await?;
-    println!("Stage 1 complete: Windows installed.");
-    println!();
-
-    // ── Stage 2: Provisioning via SSH ───────────────────────────────────
-    println!("Stage 2: Provisioning dependencies via SSH...");
-    stage2_provision(windows_dir, output, ram, cpus, work_dir).await?;
-    println!("Stage 2 complete: Golden image provisioned.");
-
-    Ok(())
-}
-
-/// Stage 1: Create a secondary ISO with Autounattend.xml, boot QEMU with
-/// Windows ISO + VirtIO ISO + secondary ISO, wait for unattended install
-/// to complete (QEMU exits when guest shuts down).
-async fn stage1_install(
-    windows_dir: &Path,
-    windows_iso: &Path,
-    virtio_iso: &Path,
-    output: &Path,
-    ram: &str,
-    cpus: u32,
-    disk_size: &str,
-    iso_tool: &str,
-    work_dir: &Path,
-) -> Result<(), AppError> {
+    } = cfg;
     // 1. Create secondary ISO containing Autounattend.xml
     let autounattend_iso = work_dir.join("autounattend.iso");
     let iso_staging = work_dir.join("iso-staging");
@@ -167,7 +164,14 @@ async fn stage1_install(
     let iso_staging_str = iso_staging.to_string_lossy().to_string();
     run_command(
         iso_tool,
-        &["-o", &iso_output_str, "-J", "-R", "-quiet", &iso_staging_str],
+        &[
+            "-o",
+            &iso_output_str,
+            "-J",
+            "-R",
+            "-quiet",
+            &iso_staging_str,
+        ],
     )
     .await?;
 
@@ -175,7 +179,13 @@ async fn stage1_install(
     info!("Creating QCOW2 disk ({disk_size})...");
     run_command(
         "qemu-img",
-        &["create", "-f", "qcow2", &output.to_string_lossy(), disk_size],
+        &[
+            "create",
+            "-f",
+            "qcow2",
+            &output.to_string_lossy(),
+            disk_size,
+        ],
     )
     .await?;
 
@@ -221,8 +231,7 @@ async fn stage1_install(
     let tpm_chardev = format!("socket,id=chrtpm,path={}", swtpm_sock.display());
     let windows_iso_arg = format!("file={},media=cdrom,index=0", windows_iso.display());
     let virtio_iso_arg = format!("file={},media=cdrom,index=1", virtio_iso.display());
-    let autounattend_iso_arg =
-        format!("file={},media=cdrom,index=2", autounattend_iso.display());
+    let autounattend_iso_arg = format!("file={},media=cdrom,index=2", autounattend_iso.display());
 
     let mut qemu_child = tokio::process::Command::new("qemu-system-x86_64")
         .args([
@@ -275,7 +284,10 @@ async fn stage1_install(
         .spawn()
         .map_err(|e| AppError::Infra(format!("Failed to spawn QEMU: {e}")))?;
 
-    println!("QEMU started (PID: {:?}). Waiting for Windows installation to complete...", qemu_child.id());
+    println!(
+        "QEMU started (PID: {:?}). Waiting for Windows installation to complete...",
+        qemu_child.id()
+    );
     println!("(The VM will shut down automatically when installation finishes)");
 
     // Wait for QEMU to exit (Windows installs and then shuts down via Autounattend)
@@ -391,7 +403,10 @@ async fn stage2_provision(
         .spawn()
         .map_err(|e| AppError::Infra(format!("Failed to spawn QEMU (stage 2): {e}")))?;
 
-    println!("QEMU started (PID: {:?}). Waiting for SSH...", qemu_child.id());
+    println!(
+        "QEMU started (PID: {:?}). Waiting for SSH...",
+        qemu_child.id()
+    );
 
     // Wait for SSH to become available
     match wait_for_ssh().await {
@@ -432,24 +447,48 @@ async fn copy_and_provision(
     qemu_child: &mut tokio::process::Child,
 ) -> Result<(), AppError> {
     let ssh_opts = [
-        "-o", "StrictHostKeyChecking=no",
-        "-o", "UserKnownHostsFile=/dev/null",
-        "-o", "PreferredAuthentications=password",
-        "-o", "PubkeyAuthentication=no",
-        "-p", "2222",
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+        "-o",
+        "PreferredAuthentications=password",
+        "-o",
+        "PubkeyAuthentication=no",
+        "-p",
+        "2222",
     ];
 
     // Create the provisioning directory on the guest
-    run_sshpass(&ssh_opts, &["tester@localhost", "mkdir", "-p", "C:\\Temp\\desktest-provision"]).await
-        .map_err(|e| AppError::Infra(format!("Failed to create provision dir on guest: {e}")))?;
+    run_sshpass(
+        &ssh_opts,
+        &[
+            "tester@localhost",
+            "mkdir",
+            "-p",
+            "C:\\Temp\\desktest-provision",
+        ],
+    )
+    .await
+    .map_err(|e| AppError::Infra(format!("Failed to create provision dir on guest: {e}")))?;
 
     // SCP agent scripts
-    let scripts = ["vm-agent.py", "execute-action.py", "get-a11y-tree.py", "win-screenshot.py"];
+    let scripts = [
+        "vm-agent.py",
+        "execute-action.py",
+        "get-a11y-tree.py",
+        "win-screenshot.py",
+    ];
     for script in &scripts {
         let src = windows_dir.join(script);
         if src.exists() {
             println!("  Copying {script}...");
-            run_scp(&ssh_opts, &src, "tester@localhost:C:\\Temp\\desktest-provision\\").await?;
+            run_scp(
+                &ssh_opts,
+                &src,
+                "tester@localhost:C:\\Temp\\desktest-provision\\",
+            )
+            .await?;
         } else {
             tracing::warn!("{script} not found at {}", src.display());
         }
@@ -478,7 +517,7 @@ async fn copy_and_provision(
     let status = tokio::process::Command::new("sshpass")
         .args(["-p", "desktest"])
         .args(["ssh"])
-        .args(&ssh_opts)
+        .args(ssh_opts)
         .args([
             "tester@localhost",
             "powershell",
@@ -526,12 +565,18 @@ async fn wait_for_ssh() -> Result<(), AppError> {
             .args(["-p", "desktest"])
             .args([
                 "ssh",
-                "-o", "StrictHostKeyChecking=no",
-                "-o", "UserKnownHostsFile=/dev/null",
-                "-o", "PreferredAuthentications=password",
-                "-o", "PubkeyAuthentication=no",
-                "-o", "ConnectTimeout=5",
-                "-p", "2222",
+                "-o",
+                "StrictHostKeyChecking=no",
+                "-o",
+                "UserKnownHostsFile=/dev/null",
+                "-o",
+                "PreferredAuthentications=password",
+                "-o",
+                "PubkeyAuthentication=no",
+                "-o",
+                "ConnectTimeout=5",
+                "-p",
+                "2222",
                 "tester@localhost",
                 "echo",
                 "ready",
@@ -612,8 +657,7 @@ async fn run_scp(ssh_opts: &[&str], src: &Path, dest: &str) -> Result<(), AppErr
 
 /// Wait for a Unix socket to appear on disk.
 async fn wait_for_socket(path: &Path, timeout_secs: u64) -> Result<(), AppError> {
-    let deadline =
-        tokio::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
     loop {
         if path.exists() {
             return Ok(());

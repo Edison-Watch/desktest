@@ -959,8 +959,15 @@ async fn main() {
             if !cli.quiet {
                 warnings::warn_init_windows_resources();
             }
-            match init_windows::run_init_windows(windows_iso, virtio_iso, output, ram, *cpus, disk_size)
-                .await
+            match init_windows::run_init_windows(
+                windows_iso,
+                virtio_iso,
+                output,
+                ram,
+                *cpus,
+                disk_size,
+            )
+            .await
             {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {
