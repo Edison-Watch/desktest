@@ -1,0 +1,818 @@
+{
+  "$defs": {
+    "AppConfig": {
+      "description": "Application deployment configuration. The 'type' field selects the deployment model.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Deploy an AppImage file into the container.",
+          "properties": {
+            "electron": {
+              "default": false,
+              "description": "Whether this is an Electron app.",
+              "type": "boolean"
+            },
+            "path": {
+              "description": "Path to the AppImage file.",
+              "type": "string"
+            },
+            "type": {
+              "const": "appimage"
+            }
+          },
+          "required": [
+            "type",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Deploy a folder-based app with a shell entrypoint.",
+          "properties": {
+            "dir": {
+              "description": "Path to the app directory.",
+              "type": "string"
+            },
+            "electron": {
+              "default": false,
+              "description": "Whether this is an Electron app.",
+              "type": "boolean"
+            },
+            "entrypoint": {
+              "description": "Shell script to launch the app.",
+              "type": "string"
+            },
+            "type": {
+              "const": "folder"
+            }
+          },
+          "required": [
+            "type",
+            "dir",
+            "entrypoint"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Use a pre-built custom Docker image.",
+          "properties": {
+            "digest": {
+              "description": "Optional image digest for pinning.",
+              "pattern": "^sha256:[a-f0-9]{64}$",
+              "type": "string"
+            },
+            "entrypoint_cmd": {
+              "description": "Custom entrypoint command.",
+              "type": "string"
+            },
+            "image": {
+              "description": "Docker image name (e.g., my-app:latest).",
+              "type": "string"
+            },
+            "needs_fuse": {
+              "default": false,
+              "description": "Grant CAP_SYS_ADMIN and /dev/fuse access.",
+              "type": "boolean"
+            },
+            "type": {
+              "const": "docker_image"
+            }
+          },
+          "required": [
+            "type",
+            "image"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Attach to an existing running desktop (for `desktest attach` mode).",
+          "properties": {
+            "note": {
+              "description": "Optional note about the attach target.",
+              "type": "string"
+            },
+            "type": {
+              "const": "vnc_attach"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "anyOf": [
+            {
+              "required": [
+                "bundle_id"
+              ]
+            },
+            {
+              "required": [
+                "app_path"
+              ]
+            },
+            {
+              "required": [
+                "launch_cmd"
+              ]
+            }
+          ],
+          "description": "Run a macOS app inside a Tart VM.",
+          "properties": {
+            "app_path": {
+              "description": "Path to a .app bundle.",
+              "type": "string"
+            },
+            "base_image": {
+              "description": "Tart base image to clone (e.g., desktest-macos:latest).",
+              "type": "string"
+            },
+            "bundle_id": {
+              "description": "macOS bundle identifier (e.g., com.apple.TextEdit).",
+              "type": "string"
+            },
+            "electron": {
+              "default": false,
+              "description": "Whether this is an Electron app.",
+              "type": "boolean"
+            },
+            "launch_cmd": {
+              "description": "Arbitrary launch command (takes precedence).",
+              "type": "string"
+            },
+            "type": {
+              "const": "macos_tart"
+            }
+          },
+          "required": [
+            "type",
+            "base_image"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "anyOf": [
+            {
+              "required": [
+                "bundle_id"
+              ]
+            },
+            {
+              "required": [
+                "app_path"
+              ]
+            }
+          ],
+          "description": "Test a macOS app on the host desktop (no VM).",
+          "properties": {
+            "app_path": {
+              "description": "Path to a .app bundle on the host.",
+              "type": "string"
+            },
+            "bundle_id": {
+              "description": "macOS bundle identifier.",
+              "type": "string"
+            },
+            "type": {
+              "const": "macos_native"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "anyOf": [
+            {
+              "required": [
+                "app_path"
+              ]
+            },
+            {
+              "required": [
+                "launch_cmd"
+              ]
+            }
+          ],
+          "description": "Run a Windows app inside a QEMU/KVM VM.",
+          "properties": {
+            "app_path": {
+              "description": "App file to deploy into the VM.",
+              "type": "string"
+            },
+            "base_image": {
+              "description": "Path to QCOW2 golden image.",
+              "type": "string"
+            },
+            "installer_cmd": {
+              "description": "Installer command to run after deployment.",
+              "type": "string"
+            },
+            "launch_cmd": {
+              "description": "PowerShell launch command.",
+              "type": "string"
+            },
+            "type": {
+              "const": "windows_vm"
+            }
+          },
+          "required": [
+            "type",
+            "base_image"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "anyOf": [
+            {
+              "required": [
+                "app_path"
+              ]
+            },
+            {
+              "required": [
+                "launch_cmd"
+              ]
+            }
+          ],
+          "description": "Test a Windows app on the host desktop (no VM).",
+          "properties": {
+            "app_path": {
+              "description": "Path to the application executable.",
+              "type": "string"
+            },
+            "launch_cmd": {
+              "description": "PowerShell/cmd launch command.",
+              "type": "string"
+            },
+            "type": {
+              "const": "windows_native"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "EarlyExitCondition": {
+      "description": "Condition for early exit — programmatic check or LLM judgment.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "actual_path": {
+              "type": "string"
+            },
+            "compare_mode": {
+              "default": "exact",
+              "enum": [
+                "exact",
+                "normalized"
+              ],
+              "type": "string"
+            },
+            "expected_path": {
+              "type": "string"
+            },
+            "type": {
+              "const": "file_compare"
+            }
+          },
+          "required": [
+            "type",
+            "actual_path",
+            "expected_path"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "expected": {
+              "type": "string"
+            },
+            "match_mode": {
+              "default": "contains",
+              "enum": [
+                "contains",
+                "equals",
+                "regex"
+              ],
+              "type": "string"
+            },
+            "type": {
+              "const": "command_output"
+            }
+          },
+          "required": [
+            "type",
+            "command",
+            "expected"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "should_not_exist": {
+              "default": false,
+              "type": "boolean"
+            },
+            "type": {
+              "const": "file_exists"
+            }
+          },
+          "required": [
+            "type",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "expected": {
+              "type": "integer"
+            },
+            "type": {
+              "const": "exit_code"
+            }
+          },
+          "required": [
+            "type",
+            "command",
+            "expected"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Use the agent's LLM to evaluate a natural language condition.",
+          "properties": {
+            "prompt": {
+              "description": "Natural language condition to evaluate.",
+              "type": "string"
+            },
+            "type": {
+              "const": "llm_judge"
+            }
+          },
+          "required": [
+            "type",
+            "prompt"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "EarlyExitConfig": {
+      "additionalProperties": false,
+      "description": "Early exit configuration — exit the agent loop early when a condition is met.",
+      "properties": {
+        "check_every": {
+          "default": 1,
+          "description": "Check every N steps.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "condition": {
+          "$ref": "#/$defs/EarlyExitCondition"
+        },
+        "message": {
+          "description": "Human-readable message for the early exit reason.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "condition"
+      ],
+      "type": "object"
+    },
+    "EvaluatorConfig": {
+      "additionalProperties": false,
+      "description": "Evaluation configuration for determining test pass/fail.",
+      "properties": {
+        "conjunction": {
+          "default": "and",
+          "description": "How to combine multiple metrics: 'and' (all must pass) or 'or' (any must pass).",
+          "enum": [
+            "and",
+            "or"
+          ],
+          "type": "string"
+        },
+        "eval_timeout_secs": {
+          "description": "Per-execution timeout in seconds for evaluator commands.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "metrics": {
+          "description": "Programmatic metrics (used in programmatic and hybrid modes).",
+          "items": {
+            "$ref": "#/$defs/MetricConfig"
+          },
+          "type": "array"
+        },
+        "mode": {
+          "description": "llm = agent verdict only, programmatic = metrics only (no agent loop), hybrid = both required.",
+          "enum": [
+            "llm",
+            "programmatic",
+            "hybrid"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "type": "object"
+    },
+    "MetricConfig": {
+      "description": "A programmatic evaluation metric.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Compare a file from the container against an expected file.",
+          "properties": {
+            "actual_path": {
+              "description": "Path to the file inside the container.",
+              "type": "string"
+            },
+            "compare_mode": {
+              "default": "exact",
+              "description": "Comparison mode.",
+              "enum": [
+                "exact",
+                "normalized"
+              ],
+              "type": "string"
+            },
+            "expected_path": {
+              "description": "Path to the expected file on the host.",
+              "type": "string"
+            },
+            "type": {
+              "const": "file_compare"
+            }
+          },
+          "required": [
+            "type",
+            "actual_path",
+            "expected_path"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Semantically compare structured data files.",
+          "properties": {
+            "actual_path": {
+              "type": "string"
+            },
+            "expected_path": {
+              "type": "string"
+            },
+            "format": {
+              "description": "File format for semantic parsing.",
+              "enum": [
+                "json",
+                "yaml",
+                "xml",
+                "csv"
+              ],
+              "type": "string"
+            },
+            "type": {
+              "const": "file_compare_semantic"
+            }
+          },
+          "required": [
+            "type",
+            "actual_path",
+            "expected_path",
+            "format"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Run a command and check stdout.",
+          "properties": {
+            "command": {
+              "description": "Command to run inside the container.",
+              "type": "string"
+            },
+            "expected": {
+              "description": "Expected output.",
+              "type": "string"
+            },
+            "match_mode": {
+              "default": "contains",
+              "enum": [
+                "contains",
+                "equals",
+                "regex"
+              ],
+              "type": "string"
+            },
+            "type": {
+              "const": "command_output"
+            }
+          },
+          "required": [
+            "type",
+            "command",
+            "expected"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Check if a file exists (or does not exist) in the container.",
+          "properties": {
+            "path": {
+              "description": "Path to check inside the container.",
+              "type": "string"
+            },
+            "should_not_exist": {
+              "default": false,
+              "description": "If true, assert the file does NOT exist.",
+              "type": "boolean"
+            },
+            "type": {
+              "const": "file_exists"
+            }
+          },
+          "required": [
+            "type",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Run a command and check its exit code.",
+          "properties": {
+            "command": {
+              "description": "Command to run inside the container.",
+              "type": "string"
+            },
+            "expected": {
+              "description": "Expected exit code.",
+              "type": "integer"
+            },
+            "type": {
+              "const": "exit_code"
+            }
+          },
+          "required": [
+            "type",
+            "command",
+            "expected"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Run a Python replay script inside the container.",
+          "properties": {
+            "screenshots_dir": {
+              "description": "Directory containing expected screenshots.",
+              "type": "string"
+            },
+            "script_path": {
+              "description": "Path to the Python script on the host.",
+              "type": "string"
+            },
+            "type": {
+              "const": "script_replay"
+            }
+          },
+          "required": [
+            "type",
+            "script_path"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "SecretDef": {
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "description": "Optional default value when the environment variable is not set.",
+          "type": "string"
+        },
+        "env": {
+          "description": "Environment variable name to read the secret value from.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "env"
+      ],
+      "type": "object"
+    },
+    "SetupStep": {
+      "description": "A setup step to execute before the agent loop.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Run a shell command inside the container.",
+          "properties": {
+            "command": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "execute"
+            }
+          },
+          "required": [
+            "type",
+            "command"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Copy a file or directory into the container.",
+          "properties": {
+            "dest": {
+              "description": "Destination path in the container.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "src": {
+              "description": "Source path on the host.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "copy"
+            }
+          },
+          "required": [
+            "type",
+            "src",
+            "dest"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Open a file with xdg-open or a specified application.",
+          "properties": {
+            "app": {
+              "description": "Application to open with (optional).",
+              "type": "string"
+            },
+            "target": {
+              "description": "File or URL to open.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "open"
+            }
+          },
+          "required": [
+            "type",
+            "target"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Wait for a specified number of seconds.",
+          "properties": {
+            "seconds": {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            "type": {
+              "const": "sleep"
+            }
+          },
+          "required": [
+            "type",
+            "seconds"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$id": "https://desktest.dev/schemas/task-v1.0.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Schema for desktest task JSON files (schema_version 1.0)",
+  "properties": {
+    "a11y_timeout_secs": {
+      "description": "Accessibility tree extraction timeout in seconds. Skips adaptive probe if set.",
+      "minimum": 1,
+      "type": "integer"
+    },
+    "app": {
+      "$ref": "#/$defs/AppConfig"
+    },
+    "completion_condition": {
+      "description": "Optional description of when the agent should consider the task done.",
+      "type": "string"
+    },
+    "config": {
+      "default": [],
+      "description": "Setup steps to execute before the agent loop.",
+      "items": {
+        "$ref": "#/$defs/SetupStep"
+      },
+      "type": "array"
+    },
+    "early_exit": {
+      "$ref": "#/$defs/EarlyExitConfig"
+    },
+    "evaluator": {
+      "$ref": "#/$defs/EvaluatorConfig"
+    },
+    "id": {
+      "description": "Unique identifier for this task.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "instruction": {
+      "description": "Natural language instruction for the agent — what it should do.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "max_a11y_nodes": {
+      "default": 10000,
+      "description": "Maximum number of accessibility tree nodes to extract.",
+      "minimum": 1,
+      "type": "integer"
+    },
+    "max_steps": {
+      "default": 15,
+      "description": "Maximum steps for the agent loop.",
+      "minimum": 1,
+      "type": "integer"
+    },
+    "metadata": {
+      "description": "Arbitrary metadata (tags, author, description, etc.)."
+    },
+    "replay_screenshots_dir": {
+      "description": "Directory containing expected screenshots for replay visual assertions.",
+      "type": "string"
+    },
+    "replay_script": {
+      "description": "Path to a codified Python replay script (generated by `desktest codify`).",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "description": "Schema version. Must be \"1.0\".",
+      "type": "string"
+    },
+    "secrets": {
+      "additionalProperties": {
+        "$ref": "#/$defs/SecretDef"
+      },
+      "description": "Named secrets sourced from environment variables. Keys are placeholder names for {{key}} substitution.",
+      "type": "object"
+    },
+    "timeout": {
+      "default": 300,
+      "description": "Overall test timeout in seconds.",
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "instruction",
+    "app"
+  ],
+  "title": "Desktest Task Definition",
+  "type": "object"
+}

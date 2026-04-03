@@ -8,6 +8,7 @@ mod docker;
 mod error;
 mod evaluator;
 mod init_macos;
+mod init_task;
 mod init_windows;
 mod interactive;
 mod logs;
@@ -24,6 +25,7 @@ mod recording;
 mod redact;
 mod results;
 mod review;
+mod schema;
 mod session;
 mod setup;
 mod suite;
@@ -306,6 +308,15 @@ async fn main() {
     };
 
     match command {
+        Command::Init { output, app_type } => {
+            match init_task::run_init(output, app_type.as_deref()) {
+                Ok(()) => std::process::exit(0),
+                Err(e) => {
+                    eprintln!("Init failed: {e}");
+                    std::process::exit(e.exit_code());
+                }
+            }
+        }
         Command::Validate { task } => match task::TaskDefinition::load(task) {
             Ok(task_def) => {
                 println!(
@@ -1054,6 +1065,27 @@ async fn main() {
                 std::process::exit(e.exit_code());
             }
         },
+        Command::Schema { out } => {
+            if let Some(path) = out {
+                match schema::write_schema(path) {
+                    Ok(()) => {
+                        println!("Schema written to {}", path.display());
+                        std::process::exit(0);
+                    }
+                    Err(e) => {
+                        eprintln!("Error: {e}");
+                        std::process::exit(e.exit_code());
+                    }
+                }
+            } else {
+                let schema_json = schema::generate_task_schema();
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&schema_json).expect("schema serialization")
+                );
+                std::process::exit(0);
+            }
+        }
     }
 }
 
