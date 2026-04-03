@@ -139,11 +139,14 @@ async fn create_session(
             crate::session::WindowsNativeSession::create(),
         ))
     } else {
-        let (custom_image, needs_fuse) = match &task_def.app {
+        let (custom_image, expected_digest, needs_fuse) = match &task_def.app {
             task::AppConfig::DockerImage {
-                image, needs_fuse, ..
-            } => (Some(image.as_str()), *needs_fuse),
-            _ => (None, false),
+                image,
+                digest,
+                needs_fuse,
+                ..
+            } => (Some(image.as_str()), digest.as_deref(), *needs_fuse),
+            _ => (None, None, false),
         };
 
         info!("Creating Docker container...");
@@ -155,7 +158,7 @@ async fn create_session(
             }
             r = async {
                 let effective_image = resolve_image_name(config, custom_image).await?;
-                docker::DockerSession::create(config, effective_image, extra_env, run.no_network, needs_fuse).await
+                docker::DockerSession::create(config, effective_image, extra_env, run.no_network, needs_fuse, expected_digest).await
             } => r?,
         };
         Ok(SessionKind::Docker(docker_session))

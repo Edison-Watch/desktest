@@ -45,6 +45,7 @@ impl DockerSession {
         extra_env: Option<&std::collections::HashMap<String, String>>,
         no_network: bool,
         needs_fuse: bool,
+        expected_digest: Option<&str>,
     ) -> Result<Self, AppError> {
         let client = Docker::connect_with_local_defaults()
             .map_err(|e| AppError::Infra(format!("Cannot connect to Docker: {e}")))?;
@@ -93,6 +94,45 @@ impl DockerSession {
             IMAGE_NAME.to_string()
         };
 
+        // Verify image digest if one was specified.
+        // Note: digest verification uses `repo_digests` which is only populated
+        // for images pulled from a registry. Locally-built images (via
+        // `docker build`) have no repo_digests and will fail verification.
+        // Users should omit the `digest` field for locally-built images.
+        if let Some(digest) = expected_digest {
+            let inspect = client.inspect_image(&image_name).await.map_err(|e| {
+                AppError::Infra(format!(
+                    "Cannot inspect image '{image_name}' for digest verification: {e}"
+                ))
+            })?;
+
+            let full_digest = format!(
+                "sha256:{}",
+                digest.strip_prefix("sha256:").unwrap_or(digest)
+            );
+
+            let repo_digests = inspect.repo_digests.unwrap_or_default();
+            let matched = repo_digests.iter().any(|rd| {
+                // repo_digests entries look like "image@sha256:abc123..."
+                rd.ends_with(&full_digest) || rd.contains(&format!("@{full_digest}"))
+            });
+
+            if !matched {
+                let hint = if repo_digests.is_empty() {
+                    " (repo_digests is empty — this image may have been built \
+                     locally rather than pulled from a registry; digest \
+                     verification only works for registry-pulled images)"
+                } else {
+                    ""
+                };
+                return Err(AppError::Config(format!(
+                    "Image digest mismatch for '{image_name}': expected {full_digest}, \
+                     but image has repo_digests: {repo_digests:?}{hint}"
+                )));
+            }
+            info!("Image digest verified: {full_digest}");
+        }
+
         // VNC port inside the container is always 5900.
         // If the user specified a host port, we bind it; otherwise VNC runs but isn't exposed.
         let container_vnc_port = "5900";
@@ -138,6 +178,10 @@ impl DockerSession {
             } else {
                 None
             },
+            // Security hardening: drop all capabilities by default and prevent
+            // privilege escalation. Specific caps are added back below as needed.
+            cap_drop: Some(vec!["ALL".to_string()]),
+            security_opt: Some(vec!["no-new-privileges:true".to_string()]),
             ..Default::default()
         };
 
@@ -152,7 +196,12 @@ impl DockerSession {
                 path_in_container: Some("/dev/fuse".to_string()),
                 cgroup_permissions: Some("rwm".to_string()),
             }]);
-            info!("FUSE enabled: added CAP_SYS_ADMIN and /dev/fuse device");
+            // fusermount/fusermount3 are setuid binaries — no-new-privileges
+            // blocks setuid, so we must relax it when FUSE is needed.
+            host_config.security_opt = None;
+            info!(
+                "FUSE enabled: added CAP_SYS_ADMIN and /dev/fuse device (no-new-privileges relaxed)"
+            );
         }
 
         let mut exposed_ports = std::collections::HashMap::new();
@@ -250,6 +299,7 @@ impl DockerSession {
         ("pyautogui", "python3-pyautogui"),
         ("Xlib", "python3-xlib"),
         ("pyatspi", "python3-pyatspi"),
+        ("RestrictedPython", "RestrictedPython (pip)"),
     ];
 
     /// Validate that a custom Docker image has all required dependencies.
@@ -398,7 +448,7 @@ mod tests {
     #[ignore] // Requires Docker daemon
     async fn test_container_create_start_stop() {
         let config = test_config();
-        let session = DockerSession::create(&config, None, None, false, false)
+        let session = DockerSession::create(&config, None, None, false, false, None)
             .await
             .unwrap();
 
@@ -422,7 +472,7 @@ mod tests {
     #[ignore] // Requires Docker daemon
     async fn test_exec_command() {
         let config = test_config();
-        let session = DockerSession::create(&config, None, None, false, false)
+        let session = DockerSession::create(&config, None, None, false, false, None)
             .await
             .unwrap();
 
@@ -436,7 +486,7 @@ mod tests {
     #[ignore] // Requires Docker daemon
     async fn test_copy_file_into_container() {
         let config = test_config();
-        let session = DockerSession::create(&config, None, None, false, false)
+        let session = DockerSession::create(&config, None, None, false, false, None)
             .await
             .unwrap();
 
@@ -510,7 +560,7 @@ mod tests {
     async fn test_attach_to_running_container() {
         // Create a container, then attach to it
         let config = test_config();
-        let session = DockerSession::create(&config, None, None, false, false)
+        let session = DockerSession::create(&config, None, None, false, false, None)
             .await
             .unwrap();
         let container_id = session.container_id.clone();

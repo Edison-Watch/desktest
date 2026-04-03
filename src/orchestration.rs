@@ -318,12 +318,15 @@ pub(crate) async fn run_task(
         info!("Using native Windows session (no VM, no isolation)");
         SessionKind::WindowsNative(crate::session::WindowsNativeSession::create())
     } else {
-        // Determine custom Docker image and FUSE requirement from task definition
-        let (custom_image, needs_fuse) = match &task_def.app {
+        // Determine custom Docker image, digest, and FUSE requirement from task definition
+        let (custom_image, expected_digest, needs_fuse) = match &task_def.app {
             task::AppConfig::DockerImage {
-                image, needs_fuse, ..
-            } => (Some(image.as_str()), *needs_fuse),
-            _ => (None, false),
+                image,
+                digest,
+                needs_fuse,
+                ..
+            } => (Some(image.as_str()), digest.as_deref(), *needs_fuse),
+            _ => (None, None, false),
         };
 
         info!("Creating Docker container...");
@@ -335,7 +338,7 @@ pub(crate) async fn run_task(
             }
             r = async {
                 let effective_image = resolve_image_name(&config, custom_image).await?;
-                docker::DockerSession::create(&config, effective_image, extra_env, run.no_network, needs_fuse).await
+                docker::DockerSession::create(&config, effective_image, extra_env, run.no_network, needs_fuse, expected_digest).await
             } => r?,
         };
         SessionKind::Docker(docker_session)

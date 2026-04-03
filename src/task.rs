@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
@@ -118,6 +119,13 @@ pub enum AppConfig {
     /// Use a pre-built custom Docker image.
     DockerImage {
         image: String,
+        /// Optional image digest for pinning (e.g. "sha256:a3ed95caeb02...").
+        /// When set, the pulled image's digest is verified after pull.
+        /// Note: only works for registry-pulled images. Locally-built images
+        /// have no `repo_digests` and will fail verification — omit this field
+        /// for local images.
+        #[serde(default)]
+        digest: Option<String>,
         #[serde(default)]
         entrypoint_cmd: Option<String>,
         /// When true, the container gets `CAP_SYS_ADMIN` and `/dev/fuse`.
@@ -1105,6 +1113,28 @@ fn validate_app_config(app: &AppConfig) -> Result<(), AppError> {
                 ));
             }
         }
+        AppConfig::DockerImage { image, digest, .. } => {
+            if image.is_empty() {
+                return Err(AppError::Config(
+                    "DockerImage app: 'image' must not be empty.".into(),
+                ));
+            }
+            if let Some(d) = digest {
+                static DIGEST_RE: OnceLock<regex::Regex> = OnceLock::new();
+                let digest_re =
+                    DIGEST_RE.get_or_init(|| regex::Regex::new(r"^sha256:[0-9a-f]{64}$").unwrap());
+                if !digest_re.is_match(d) {
+                    return Err(AppError::Config(format!(
+                        "DockerImage app: 'digest' must match 'sha256:<64 hex chars>', got: {d}"
+                    )));
+                }
+            }
+            if image.contains("@sha256:") && digest.is_some() {
+                return Err(AppError::Config(
+                    "DockerImage app: image already contains an inline digest (@sha256:...) — remove the separate 'digest' field or remove the inline digest from 'image'.".into(),
+                ));
+            }
+        }
         _ => {}
     }
     Ok(())
@@ -1229,6 +1259,107 @@ mod tests {
             } => {
                 assert_eq!(image, "my-libreoffice:latest");
                 assert_eq!(entrypoint_cmd.as_deref(), Some("libreoffice --writer"));
+            }
+            _ => panic!("Expected DockerImage app config"),
+        }
+    }
+
+    #[test]
+    fn test_parse_docker_image_with_digest() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "digest-test",
+            "instruction": "test",
+            "app": {
+                "type": "docker_image",
+                "image": "my-app:latest",
+                "digest": "sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4"
+            }
+        }"#;
+        let task = TaskDefinition::parse_and_validate(json).unwrap();
+        match &task.app {
+            AppConfig::DockerImage { image, digest, .. } => {
+                assert_eq!(image, "my-app:latest");
+                assert_eq!(
+                    digest.as_deref(),
+                    Some("sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4")
+                );
+            }
+            _ => panic!("Expected DockerImage app config"),
+        }
+    }
+
+    #[test]
+    fn test_docker_image_digest_validation_bad_format() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "digest-bad",
+            "instruction": "test",
+            "app": {
+                "type": "docker_image",
+                "image": "my-app:latest",
+                "digest": "md5:abcdef"
+            }
+        }"#;
+        let err = TaskDefinition::parse_and_validate(json).unwrap_err();
+        assert!(
+            err.to_string().contains("digest"),
+            "error should mention digest: {err}"
+        );
+    }
+
+    #[test]
+    fn test_docker_image_digest_conflicts_with_inline() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "digest-conflict",
+            "instruction": "test",
+            "app": {
+                "type": "docker_image",
+                "image": "my-app@sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4",
+                "digest": "sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4"
+            }
+        }"#;
+        let err = TaskDefinition::parse_and_validate(json).unwrap_err();
+        assert!(
+            err.to_string().contains("inline digest"),
+            "error should mention inline digest: {err}"
+        );
+    }
+
+    #[test]
+    fn test_docker_image_empty_image_rejected() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "empty-image",
+            "instruction": "test",
+            "app": {
+                "type": "docker_image",
+                "image": ""
+            }
+        }"#;
+        let err = TaskDefinition::parse_and_validate(json).unwrap_err();
+        assert!(
+            err.to_string().contains("must not be empty"),
+            "error should say image must not be empty: {err}"
+        );
+    }
+
+    #[test]
+    fn test_docker_image_without_digest_still_works() {
+        let json = r#"{
+            "schema_version": "1.0",
+            "id": "no-digest",
+            "instruction": "test",
+            "app": {
+                "type": "docker_image",
+                "image": "my-app:latest"
+            }
+        }"#;
+        let task = TaskDefinition::parse_and_validate(json).unwrap();
+        match &task.app {
+            AppConfig::DockerImage { digest, .. } => {
+                assert!(digest.is_none());
             }
             _ => panic!("Expected DockerImage app config"),
         }
