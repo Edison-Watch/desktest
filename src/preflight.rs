@@ -289,6 +289,20 @@ pub fn check_api_key(config: &Config) -> Result<(), AppError> {
     provider::resolve_api_key(&config.api_key, &config.provider).map(|_| ())
 }
 
+/// Check that we're running on Windows (required for native Windows sessions).
+pub fn check_windows_native() -> Result<(), AppError> {
+    if cfg!(target_os = "windows") {
+        Ok(())
+    } else {
+        Err(AppError::Config(
+            "WindowsNative sessions require running on a Windows host.\n\
+             The current host is not Windows. Use 'windows_vm' app type instead\n\
+             to test Windows apps via QEMU/KVM."
+                .into(),
+        ))
+    }
+}
+
 /// Run all preflight checks for commands that need Docker + LLM.
 ///
 /// Skips API key check when `needs_llm` is false (e.g., --replay mode).
@@ -301,6 +315,7 @@ pub async fn run_preflight(
     let is_macos_tart = matches!(app, Some(AppConfig::MacosTart { .. }));
     let is_macos_native = matches!(app, Some(AppConfig::MacosNative { .. }));
     let is_windows_vm = matches!(app, Some(AppConfig::WindowsVm { .. }));
+    let is_windows_native = matches!(app, Some(AppConfig::WindowsNative { .. }));
 
     if is_macos_tart {
         check_tart()?;
@@ -308,6 +323,8 @@ pub async fn run_preflight(
         check_native_macos()?;
     } else if is_windows_vm {
         check_windows_vm()?;
+    } else if is_windows_native {
+        check_windows_native()?;
     } else {
         let _client = check_docker().await?;
     }

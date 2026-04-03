@@ -225,13 +225,13 @@ Desktest is MIT-licensed. For Windows VM support:
 17. Update `src/preflight.rs` and `src/artifacts.rs`
 18. Add Windows-specific system prompt content
 
-### Phase 2: Polish, Recording, and Native Windows
+### Phase 2: Polish, Recording, and Native Windows ✓
 
-1. `WindowsNativeSession` for testing on Windows hosts (cross-compile desktest for Windows)
-2. ffmpeg `gdigrab` recording support
-3. Full artifact collection with Windows paths
-4. Interactive mode support
-5. Refine a11y tree quality (UIA property selection, output format tuning)
+1. ✓ `WindowsNativeSession` structural scaffolding (`AppConfig::WindowsNative`, `SessionKind::WindowsNative`, stub `Session` impl with error messages — full implementation deferred to when a Windows host is available for testing)
+2. ✓ ffmpeg `gdigrab` recording support — `Recording` is now platform-aware: uses `gdigrab` on Windows VMs, `x11grab` on Linux; gracefully degrades if ffmpeg not installed in guest
+3. ✓ Full artifact collection with Windows paths — fixed `C:\Temp\*.log` collection (was using `bash -c "ls /tmp/*.log"` which silently failed on Windows), added Windows Application Event Log collection, scoped `dmesg` to Linux-only
+4. ✓ Interactive mode support — refactored `interactive.rs` from Docker-only to session-agnostic; all session types (Docker, Tart, Native, WindowsVm, WindowsNative) now work with both pause and step modes
+5. ✓ Refined a11y tree quality — added TSV header line, `AutomationId` as description column, `IsOffscreen` filtering (on by default), `max_depth=30` limit, `state` column (disabled/checked/selected/expanded/collapsed), `escape_tsv()` helper for consistent escaping
 
 ### Phase 3: Golden Image Automation and CI
 

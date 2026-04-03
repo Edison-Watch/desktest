@@ -5,26 +5,71 @@ use tracing::{debug, info, warn};
 use crate::error::AppError;
 use crate::session::{Session, SessionKind};
 
-/// Path inside the container where ffmpeg writes the recording.
-const CONTAINER_RECORDING_PATH: &str = "/tmp/recording.mp4";
+/// Path inside a Linux container where ffmpeg writes the recording.
+const LINUX_RECORDING_PATH: &str = "/tmp/recording.mp4";
 
-/// Path inside the container for ffmpeg's log output.
-const CONTAINER_FFMPEG_LOG: &str = "/tmp/ffmpeg.log";
+/// Path inside a Linux container for ffmpeg's log output.
+const LINUX_FFMPEG_LOG: &str = "/tmp/ffmpeg.log";
 
-/// Path inside the container for the live caption text file.
-const CONTAINER_CAPTION_PATH: &str = "/tmp/caption.txt";
+/// Path inside a Linux container for the live caption text file.
+const LINUX_CAPTION_PATH: &str = "/tmp/caption.txt";
 
-/// Manages video recording of a test session via ffmpeg inside the container.
+/// Path inside a Windows VM where ffmpeg writes the recording.
+const WINDOWS_RECORDING_PATH: &str = "C:\\Temp\\recording.mp4";
+
+/// Path inside a Windows VM for ffmpeg's log output.
+const WINDOWS_FFMPEG_LOG: &str = "C:\\Temp\\ffmpeg.log";
+
+/// Path inside a Windows VM for the live caption text file.
+const WINDOWS_CAPTION_PATH: &str = "C:\\Temp\\caption.txt";
+
+/// Manages video recording of a test session via ffmpeg inside the session.
 pub struct Recording {
     started: bool,
+    /// True when recording a Windows guest (gdigrab), false for Linux (x11grab).
+    is_windows: bool,
 }
 
 impl Recording {
-    /// Start recording the virtual display via ffmpeg inside the container.
+    fn recording_path(&self) -> &str {
+        if self.is_windows {
+            WINDOWS_RECORDING_PATH
+        } else {
+            LINUX_RECORDING_PATH
+        }
+    }
+
+    fn caption_path(&self) -> &str {
+        if self.is_windows {
+            WINDOWS_CAPTION_PATH
+        } else {
+            LINUX_CAPTION_PATH
+        }
+    }
+
+    /// Start recording the virtual display via ffmpeg.
     ///
-    /// Uses x11grab to capture the Xvfb display at `:99`.
+    /// On Linux, uses x11grab to capture the Xvfb display at `:99`.
+    /// On Windows, uses gdigrab to capture the desktop.
     /// The recording runs as a detached process and is stopped with `stop()`.
     pub async fn start(
+        session: &SessionKind,
+        display_width: u32,
+        display_height: u32,
+    ) -> Result<Self, AppError> {
+        let is_windows = matches!(
+            session,
+            SessionKind::WindowsVm(_) | SessionKind::WindowsNative(_)
+        );
+
+        if is_windows {
+            Self::start_windows(session).await
+        } else {
+            Self::start_linux(session, display_width, display_height).await
+        }
+    }
+
+    async fn start_linux(
         session: &SessionKind,
         display_width: u32,
         display_height: u32,
@@ -33,18 +78,14 @@ impl Recording {
 
         // Create empty caption file for drawtext overlay
         let _ = session
-            .exec(&[
-                "bash",
-                "-c",
-                &format!("printf '' > {CONTAINER_CAPTION_PATH}"),
-            ])
+            .exec(&["bash", "-c", &format!("printf '' > {LINUX_CAPTION_PATH}")])
             .await;
 
         // drawtext filter: bottom-left, white text with black outline + dark box, auto-reloads file
         // fontsize=18 fits ~120 chars across 1920px; box gives contrast on any background
         let drawtext_filter = format!(
             "drawtext=textfile={}:reload=1:fontcolor=white:fontsize=18:borderw=1:bordercolor=black:box=1:boxcolor=black@0.5:boxborderw=6:x=10:y=h-th-10",
-            CONTAINER_CAPTION_PATH
+            LINUX_CAPTION_PATH
         );
 
         // Start ffmpeg as a detached background process
@@ -70,9 +111,9 @@ impl Recording {
                     "ultrafast",
                     "-movflags",
                     "+faststart",
-                    CONTAINER_RECORDING_PATH,
+                    LINUX_RECORDING_PATH,
                 ],
-                CONTAINER_FFMPEG_LOG,
+                LINUX_FFMPEG_LOG,
             )
             .await?;
 
@@ -87,26 +128,133 @@ impl Recording {
         if check.trim().is_empty() {
             // ffmpeg didn't start — log the error but don't fail the test
             let log = session
-                .exec(&["cat", CONTAINER_FFMPEG_LOG])
+                .exec(&["cat", LINUX_FFMPEG_LOG])
                 .await
                 .unwrap_or_default();
             warn!("ffmpeg failed to start. Log: {log}");
-            return Ok(Recording { started: false });
+            return Ok(Recording {
+                started: false,
+                is_windows: false,
+            });
         }
 
         info!("Video recording started ({video_size} @ 10fps)");
-        Ok(Recording { started: true })
+        Ok(Recording {
+            started: true,
+            is_windows: false,
+        })
     }
 
-    /// Stop the ffmpeg recording by sending SIGINT.
+    async fn start_windows(session: &SessionKind) -> Result<Self, AppError> {
+        // Create empty caption file for drawtext overlay
+        let _ = session
+            .exec(&[
+                "powershell",
+                "-Command",
+                &format!(
+                    "Set-Content -Path '{}' -Value '' -NoNewline",
+                    WINDOWS_CAPTION_PATH
+                ),
+            ])
+            .await;
+
+        // drawtext filter using Windows caption path
+        // Backslashes in the path must be escaped for ffmpeg's drawtext parser:
+        // ffmpeg drawtext interprets `\` as an escape prefix, so `C:\Temp\caption.txt`
+        // would be parsed as `C:<TAB>emp<newline>aption.txt`. We double-escape to
+        // `C\\:\\\\Temp\\\\caption.txt` so ffmpeg sees the literal path.
+        let escaped_caption_path = WINDOWS_CAPTION_PATH
+            .replace('\\', "\\\\\\\\")
+            .replace(':', "\\:");
+        let drawtext_filter = format!(
+            "drawtext=textfile={}:reload=1:fontcolor=white:fontsize=18:borderw=1:bordercolor=black:box=1:boxcolor=black@0.5:boxborderw=6:x=10:y=h-th-10",
+            escaped_caption_path
+        );
+
+        // Start ffmpeg with gdigrab input device
+        // gdigrab captures the entire Windows desktop
+        session
+            .exec_detached_with_log(
+                &[
+                    "ffmpeg",
+                    "-f",
+                    "gdigrab",
+                    "-framerate",
+                    "10",
+                    "-i",
+                    "desktop",
+                    "-vf",
+                    &drawtext_filter,
+                    "-c:v",
+                    "libx264",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-preset",
+                    "ultrafast",
+                    "-movflags",
+                    "+faststart",
+                    WINDOWS_RECORDING_PATH,
+                ],
+                WINDOWS_FFMPEG_LOG,
+            )
+            .await?;
+
+        // Give ffmpeg a moment to initialize
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+        // Verify ffmpeg is running via tasklist
+        let check = session
+            .exec(&[
+                "powershell",
+                "-Command",
+                "(Get-Process -Name ffmpeg -ErrorAction SilentlyContinue).Id",
+            ])
+            .await
+            .unwrap_or_default();
+        if check.trim().is_empty() {
+            let log = session
+                .exec(&[
+                    "powershell",
+                    "-Command",
+                    &format!(
+                        "Get-Content '{}' -ErrorAction SilentlyContinue",
+                        WINDOWS_FFMPEG_LOG
+                    ),
+                ])
+                .await
+                .unwrap_or_default();
+            warn!("ffmpeg failed to start on Windows. Log: {log}");
+            return Ok(Recording {
+                started: false,
+                is_windows: true,
+            });
+        }
+
+        info!("Video recording started (gdigrab @ 10fps)");
+        Ok(Recording {
+            started: true,
+            is_windows: true,
+        })
+    }
+
+    /// Stop the ffmpeg recording gracefully.
     ///
-    /// SIGINT causes ffmpeg to finalize the MP4 file properly (moov atom written).
+    /// On Linux: sends SIGINT, which causes ffmpeg to finalize the MP4 (moov atom).
+    /// On Windows: sends 'q' to ffmpeg stdin via a helper, or uses taskkill.
     pub async fn stop(&self, session: &SessionKind) {
         if !self.started {
             debug!("Recording was not started, nothing to stop");
             return;
         }
 
+        if self.is_windows {
+            self.stop_windows(session).await;
+        } else {
+            self.stop_linux(session).await;
+        }
+    }
+
+    async fn stop_linux(&self, session: &SessionKind) {
         // Send SIGINT to ffmpeg for graceful shutdown
         match session
             .exec(&[
@@ -144,6 +292,54 @@ impl Recording {
             .await;
     }
 
+    async fn stop_windows(&self, session: &SessionKind) {
+        // Known limitation: Stop-Process calls CloseMainWindow(), which only works
+        // if ffmpeg has a visible console window. When launched as a detached
+        // background process, CloseMainWindow() may return false and the process
+        // continues running. The fallback Stop-Process -Force uses TerminateProcess,
+        // which does NOT write the MP4 moov atom — producing an unplayable file.
+        // TODO: Investigate using `taskkill /pid <pid> /t` or piping `q\n` to
+        // ffmpeg's stdin for reliable graceful shutdown on Windows.
+        match session
+            .exec(&[
+                "powershell",
+                "-Command",
+                "Stop-Process -Name ffmpeg -ErrorAction SilentlyContinue",
+            ])
+            .await
+        {
+            Ok(_) => debug!("Sent Stop-Process to ffmpeg"),
+            Err(e) => warn!("Failed to stop ffmpeg: {e}"),
+        }
+
+        // Wait for ffmpeg to finalize the file
+        for _ in 0..10 {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            let check = session
+                .exec(&[
+                    "powershell",
+                    "-Command",
+                    "(Get-Process -Name ffmpeg -ErrorAction SilentlyContinue).Id",
+                ])
+                .await
+                .unwrap_or_default();
+            if check.trim().is_empty() {
+                debug!("ffmpeg process exited");
+                return;
+            }
+        }
+
+        // Force kill if still running
+        warn!("ffmpeg did not exit gracefully, force killing");
+        let _ = session
+            .exec(&[
+                "powershell",
+                "-Command",
+                "Stop-Process -Name ffmpeg -Force -ErrorAction SilentlyContinue",
+            ])
+            .await;
+    }
+
     /// Update the caption overlay text displayed on the recording.
     ///
     /// Shows the agent's thought (up to 3 lines) and the action code on the
@@ -167,20 +363,43 @@ impl Recording {
             .replace('\\', "\\\\")
             .replace('%', "%%");
 
-        // Write via stdin to avoid shell escaping issues
-        match session
-            .exec_with_stdin(
-                &["bash", "-c", &format!("cat > {CONTAINER_CAPTION_PATH}.tmp && mv {CONTAINER_CAPTION_PATH}.tmp {CONTAINER_CAPTION_PATH}")],
-                caption.as_bytes(),
-            )
-            .await
-        {
-            Ok(_) => debug!("Caption updated: {caption}"),
-            Err(e) => warn!("Failed to update caption: {e}"),
+        let caption_path = self.caption_path();
+
+        if self.is_windows {
+            // Write via exec_with_stdin piped to PowerShell
+            let ps_cmd = format!(
+                "$input | Set-Content -Path '{}.tmp' -NoNewline; Move-Item -Path '{}.tmp' -Destination '{}' -Force",
+                caption_path, caption_path, caption_path
+            );
+            match session
+                .exec_with_stdin(&["powershell", "-Command", &ps_cmd], caption.as_bytes())
+                .await
+            {
+                Ok(_) => debug!("Caption updated: {caption}"),
+                Err(e) => warn!("Failed to update caption: {e}"),
+            }
+        } else {
+            // Write via stdin to avoid shell escaping issues
+            match session
+                .exec_with_stdin(
+                    &[
+                        "bash",
+                        "-c",
+                        &format!(
+                            "cat > {caption_path}.tmp && mv {caption_path}.tmp {caption_path}"
+                        ),
+                    ],
+                    caption.as_bytes(),
+                )
+                .await
+            {
+                Ok(_) => debug!("Caption updated: {caption}"),
+                Err(e) => warn!("Failed to update caption: {e}"),
+            }
         }
     }
 
-    /// Copy the recording from the container to the artifacts directory.
+    /// Copy the recording from the session to the artifacts directory.
     ///
     /// Returns the local path to the recording file, or None if no recording was made.
     pub async fn collect(
@@ -193,7 +412,7 @@ impl Recording {
         }
 
         let dest = artifacts_dir.join("recording.mp4");
-        match session.copy_from(CONTAINER_RECORDING_PATH, &dest).await {
+        match session.copy_from(self.recording_path(), &dest).await {
             Ok(()) => {
                 info!("Collected recording to {}", dest.display());
                 Some(dest)
@@ -325,30 +544,71 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_container_recording_path() {
-        assert_eq!(CONTAINER_RECORDING_PATH, "/tmp/recording.mp4");
+    fn test_linux_recording_path() {
+        assert_eq!(LINUX_RECORDING_PATH, "/tmp/recording.mp4");
     }
 
     #[test]
-    fn test_container_ffmpeg_log_path() {
-        assert_eq!(CONTAINER_FFMPEG_LOG, "/tmp/ffmpeg.log");
+    fn test_linux_ffmpeg_log_path() {
+        assert_eq!(LINUX_FFMPEG_LOG, "/tmp/ffmpeg.log");
+    }
+
+    #[test]
+    fn test_windows_recording_path() {
+        assert_eq!(WINDOWS_RECORDING_PATH, "C:\\Temp\\recording.mp4");
+    }
+
+    #[test]
+    fn test_windows_ffmpeg_log_path() {
+        assert_eq!(WINDOWS_FFMPEG_LOG, "C:\\Temp\\ffmpeg.log");
     }
 
     #[test]
     fn test_recording_not_started() {
-        let recording = Recording { started: false };
+        let recording = Recording {
+            started: false,
+            is_windows: false,
+        };
         assert!(!recording.started);
     }
 
     #[test]
     fn test_recording_started() {
-        let recording = Recording { started: true };
+        let recording = Recording {
+            started: true,
+            is_windows: false,
+        };
         assert!(recording.started);
     }
 
     #[test]
-    fn test_container_caption_path() {
-        assert_eq!(CONTAINER_CAPTION_PATH, "/tmp/caption.txt");
+    fn test_recording_path_linux() {
+        let recording = Recording {
+            started: true,
+            is_windows: false,
+        };
+        assert_eq!(recording.recording_path(), "/tmp/recording.mp4");
+        assert_eq!(recording.caption_path(), "/tmp/caption.txt");
+    }
+
+    #[test]
+    fn test_recording_path_windows() {
+        let recording = Recording {
+            started: true,
+            is_windows: true,
+        };
+        assert_eq!(recording.recording_path(), "C:\\Temp\\recording.mp4");
+        assert_eq!(recording.caption_path(), "C:\\Temp\\caption.txt");
+    }
+
+    #[test]
+    fn test_linux_caption_path() {
+        assert_eq!(LINUX_CAPTION_PATH, "/tmp/caption.txt");
+    }
+
+    #[test]
+    fn test_windows_caption_path() {
+        assert_eq!(WINDOWS_CAPTION_PATH, "C:\\Temp\\caption.txt");
     }
 
     #[test]

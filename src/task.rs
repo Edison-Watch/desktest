@@ -180,6 +180,18 @@ pub enum AppConfig {
         #[serde(default)]
         installer_cmd: Option<String>,
     },
+    /// Test a Windows app on the host desktop (no VM, no isolation).
+    ///
+    /// Requires desktest compiled for Windows. At least one of `app_path` or
+    /// `launch_cmd` must be provided.
+    WindowsNative {
+        /// Path to the application executable on the host.
+        #[serde(default)]
+        app_path: Option<String>,
+        /// Arbitrary launch command (PowerShell/cmd). Takes precedence over app_path.
+        #[serde(default)]
+        launch_cmd: Option<String>,
+    },
 }
 
 /// A setup step to execute before the agent loop.
@@ -608,6 +620,17 @@ fn apply_secrets_to_app(
                 *cmd = substitute_secrets(cmd, resolved, defined)?;
             }
             if let Some(cmd) = installer_cmd {
+                *cmd = substitute_secrets(cmd, resolved, defined)?;
+            }
+        }
+        AppConfig::WindowsNative {
+            app_path,
+            launch_cmd,
+        } => {
+            if let Some(ap) = app_path {
+                *ap = substitute_secrets(ap, resolved, defined)?;
+            }
+            if let Some(cmd) = launch_cmd {
                 *cmd = substitute_secrets(cmd, resolved, defined)?;
             }
         }
