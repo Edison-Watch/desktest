@@ -152,6 +152,25 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
+    /// Scaffold a new task JSON file interactively
+    #[command(after_help = "\
+\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m
+  desktest init                                    \x1b[2m# Interactive scaffold → task.json\x1b[0m
+  desktest init my-test.json                       \x1b[2m# Custom output path\x1b[0m
+  desktest init my-test.json --app-type folder     \x1b[2m# Skip app type prompt\x1b[0m")]
+    Init {
+        /// Output file path (default: task.json)
+        #[arg(default_value = "task.json")]
+        output: std::path::PathBuf,
+
+        /// App type to scaffold (skip interactive prompt). Valid values:
+        /// appimage, folder, docker_image, macos_tart, macos_native, windows_vm, windows_native
+        #[arg(long, value_parser = clap::builder::PossibleValuesParser::new([
+            "appimage", "folder", "docker_image", "macos_tart", "macos_native", "windows_vm", "windows_native"
+        ]))]
+        app_type: Option<String>,
+    },
+
     /// Validate a task JSON file against the schema without running anything
     #[command(after_help = "\
 \x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m
@@ -427,6 +446,17 @@ EXAMPLES:
         /// Number of CPU cores for the installation VM
         #[arg(long, default_value_t = 4)]
         cpus: u32,
+    },
+
+    /// Print the JSON Schema for task definition files
+    #[command(after_help = "\
+\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m
+  desktest schema                                  \x1b[2m# Print schema to stdout\x1b[0m
+  desktest schema --out task-schema.json           \x1b[2m# Write schema to file\x1b[0m")]
+    Schema {
+        /// Write schema to a file instead of stdout
+        #[arg(long = "out")]
+        out: Option<std::path::PathBuf>,
     },
 
     /// Generate an interactive HTML trajectory viewer (best for human review in a browser)
