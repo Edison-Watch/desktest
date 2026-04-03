@@ -49,8 +49,13 @@ const GREY: &str = "\x1b[38;2;155;164;166m";
 const WHITE_BOLD: &str = "\x1b[1;97m";
 const RESET: &str = "\x1b[0m";
 
+/// Returns true if colored output should be suppressed.
+fn should_disable_color(cli_no_color: bool) -> bool {
+    cli_no_color || std::env::var_os("NO_COLOR").is_some()
+}
+
 /// Print the Hackbox banner and return the box width (for separator alignment).
-fn print_banner(version: &str) -> usize {
+fn print_banner(version: &str, no_color: bool) -> usize {
     const LOGO_LINES: &[&str] = &[
         " ██████╗ ███████╗███████╗██╗  ██╗████████╗███████╗███████╗████████╗",
         " ██╔══██╗██╔════╝██╔════╝██║ ██╔╝╚══██╔══╝██╔════╝██╔════╝╚══██╔══╝",
@@ -61,7 +66,7 @@ fn print_banner(version: &str) -> usize {
     ];
 
     let is_tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
-    if !is_tty {
+    if !is_tty || no_color {
         for line in LOGO_LINES {
             println!("{line}");
         }
@@ -287,13 +292,15 @@ async fn main() {
     let cli = Cli::parse();
     setup_logging(cli.debug);
 
+    let no_color = should_disable_color(cli.no_color);
+
     let command = match &cli.command {
         Some(cmd) => cmd,
         None => {
             let mut cmd = Cli::command();
             let version = cmd.get_version().unwrap_or("unknown").to_string();
-            let box_width = print_banner(&version);
-            if box_width > 0 {
+            let box_width = print_banner(&version, no_color);
+            if box_width > 0 && !no_color {
                 // Thin cyan dashed separator between banner and help
                 let sep_units = box_width / 2;
                 println!("{CYAN}  {}{RESET}", "─ ".repeat(sep_units));
@@ -905,6 +912,9 @@ async fn main() {
         Command::Logs {
             artifacts_dir,
             brief,
+            summary,
+            failures,
+            json,
             step,
             steps,
         } => {
@@ -919,7 +929,14 @@ async fn main() {
                 },
                 _ => None,
             };
-            match logs::print_logs(artifacts_dir, *brief, step_filter) {
+            let opts = logs::LogsOptions {
+                brief: *brief,
+                summary: *summary,
+                failures: *failures,
+                json: *json,
+                step_filter,
+            };
+            match logs::print_logs(artifacts_dir, opts) {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {
                     eprintln!("Error: {e}");

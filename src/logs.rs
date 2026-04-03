@@ -1,19 +1,24 @@
 //! Print trajectory logs to the terminal in a structured text format.
 //!
-//! Usage: `desktest logs <artifacts_dir> [--brief] [--step N]`
+//! Usage: `desktest logs <artifacts_dir> [--brief] [--summary] [--failures] [--json] [--step N]`
 
 use std::path::Path;
 
 use crate::codify;
 use crate::error::AppError;
 
+/// Options for the `logs` subcommand.
+pub struct LogsOptions {
+    pub brief: bool,
+    pub summary: bool,
+    pub failures: bool,
+    pub json: bool,
+    pub step_filter: Option<Vec<usize>>,
+}
+
 /// Print trajectory logs to stdout.
-pub fn print_logs(
-    artifacts_dir: &Path,
-    brief: bool,
-    step_filter: Option<Vec<usize>>,
-) -> Result<(), AppError> {
-    if brief && step_filter.is_some() {
+pub fn print_logs(artifacts_dir: &Path, opts: LogsOptions) -> Result<(), AppError> {
+    if opts.brief && opts.step_filter.is_some() {
         return Err(AppError::Config(
             "--brief and --step/--steps cannot be used together".into(),
         ));
@@ -23,7 +28,21 @@ pub fn print_logs(
     let entries = codify::load_trajectory(&trajectory_path)?;
 
     if entries.is_empty() {
-        println!("No trajectory entries found.");
+        if opts.json {
+            println!(
+                "{}",
+                serde_json::json!({
+                    "steps": [],
+                    "summary": {
+                        "total_steps": 0,
+                        "result": "empty",
+                        "duration_secs": null,
+                    }
+                })
+            );
+        } else {
+            println!("No trajectory entries found.");
+        }
         return Ok(());
     }
 
@@ -38,8 +57,32 @@ pub fn print_logs(
         .map(|e| e.result.as_str())
         .unwrap_or("unknown");
     let duration = compute_duration(&entries);
+    let duration_secs = compute_duration_secs(&entries);
 
-    // Print header
+    // Apply step filter
+    let entries_filtered: Vec<&codify::TrajectoryRecord> = if let Some(ref filter) = opts.step_filter {
+        let filter_set: std::collections::HashSet<usize> = filter.iter().copied().collect();
+        entries.iter().filter(|e| filter_set.contains(&e.step)).collect()
+    } else {
+        entries.iter().collect()
+    };
+
+    // Apply failures filter
+    let entries_view: Vec<&codify::TrajectoryRecord> = if opts.failures {
+        entries_filtered
+            .into_iter()
+            .filter(|e| is_failure(&e.result))
+            .collect()
+    } else {
+        entries_filtered
+    };
+
+    if opts.json {
+        print_json(&entries_view, &task_id, total_steps, final_result, last_step_num, duration_secs);
+        return Ok(());
+    }
+
+    // Print header (to stderr when --summary or --failures so stdout stays clean for piping)
     println!("== Trajectory Review ==");
     if let Some(id) = &task_id {
         println!("Task:       {id}");
@@ -51,23 +94,18 @@ pub fn print_logs(
     }
     println!();
 
-    if brief {
-        print_brief(&entries);
-    } else if let Some(ref filter) = step_filter {
-        let filter_set: std::collections::HashSet<usize> = filter.iter().copied().collect();
-        let matching: Vec<_> = entries
-            .iter()
-            .filter(|e| filter_set.contains(&e.step))
-            .collect();
-        if matching.is_empty() {
-            println!("No entries found for the requested steps.");
+    if opts.summary {
+        print_summary(&entries_view);
+    } else if opts.brief {
+        print_brief(&entries_view);
+    } else if entries_view.is_empty() {
+        if opts.failures {
+            println!("No failed steps found.");
         } else {
-            for entry in matching {
-                print_step_detail(entry);
-            }
+            println!("No entries found for the requested steps.");
         }
     } else {
-        for entry in &entries {
+        for entry in &entries_view {
             print_step_detail(entry);
         }
     }
@@ -75,8 +113,102 @@ pub fn print_logs(
     Ok(())
 }
 
-fn print_brief(entries: &[codify::TrajectoryRecord]) {
-    println!("{:<6} {:<12} {:<26} Thought", "Step", "Result", "Timestamp");
+/// Check if a result string indicates a failure.
+fn is_failure(result: &str) -> bool {
+    matches!(result, "fail" | "timeout" | "max_steps")
+        || result.starts_with("error")
+}
+
+fn print_json(
+    entries: &[&codify::TrajectoryRecord],
+    task_id: &Option<String>,
+    total_steps: usize,
+    final_result: &str,
+    last_step_num: usize,
+    duration_secs: Option<u64>,
+) {
+    let steps: Vec<serde_json::Value> = entries
+        .iter()
+        .map(|e| {
+            let mut step = serde_json::json!({
+                "step": e.step,
+                "timestamp": e.timestamp,
+                "result": e.result,
+                "action_code": e.action_code,
+            });
+            let map = step.as_object_mut().unwrap();
+            if let Some(ref t) = e.thought {
+                map.insert("thought".into(), serde_json::json!(t));
+            }
+            if let Some(ref at) = e.action_type {
+                map.insert("action_type".into(), serde_json::json!(at));
+            }
+            if let Some(ref ef) = e.error_feedback {
+                map.insert("error_feedback".into(), serde_json::json!(ef));
+            }
+            if let Some(ref bo) = e.bash_output {
+                map.insert("bash_output".into(), serde_json::json!(bo));
+            }
+            if let Some(ref sp) = e.screenshot_path {
+                map.insert("screenshot_path".into(), serde_json::json!(sp));
+            }
+            step
+        })
+        .collect();
+
+    let mut output = serde_json::json!({
+        "steps": steps,
+        "summary": {
+            "total_steps": total_steps,
+            "result": final_result,
+            "result_display": format_result(final_result, last_step_num),
+            "duration_secs": duration_secs,
+        }
+    });
+    if let Some(id) = task_id {
+        output["summary"]["task_id"] = serde_json::json!(id);
+    }
+
+    println!("{}", serde_json::to_string_pretty(&output).unwrap());
+}
+
+fn print_summary(entries: &[&codify::TrajectoryRecord]) {
+    if entries.is_empty() {
+        println!("No matching steps.");
+        return;
+    }
+    println!(
+        "{:<6} {:<8} {:<14} {}",
+        "Step", "Status", "Type", "Summary"
+    );
+    println!("{}", "-".repeat(72));
+    for entry in entries {
+        let status = if is_failure(&entry.result) {
+            "\u{2717}"
+        } else if entry.result == "done" {
+            "\u{2713}"
+        } else {
+            "\u{2713}"
+        };
+        let action_type = entry.action_type.as_deref().unwrap_or("-");
+        let thought = entry
+            .thought
+            .as_deref()
+            .unwrap_or("")
+            .replace('\n', " ");
+        let thought_truncated: String = thought.chars().take(44).collect();
+        println!(
+            "{:<6} {:<8} {:<14} {}",
+            entry.step, status, action_type, thought_truncated
+        );
+    }
+}
+
+fn print_brief(entries: &[&codify::TrajectoryRecord]) {
+    println!(
+        "{:<6} {:<12} {:<26} Thought",
+        "Step", "Result", "Timestamp"
+    );
     println!("{}", "-".repeat(80));
     for entry in entries {
         let thought = entry.thought.as_deref().unwrap_or("").replace('\n', " ");
@@ -102,6 +234,9 @@ fn print_step_detail(entry: &codify::TrajectoryRecord) {
         for line in entry.action_code.lines() {
             println!("  {line}");
         }
+    }
+    if let Some(error) = &entry.error_feedback {
+        println!("Error: {error}");
     }
     println!("Result: {}", entry.result);
     println!();
@@ -130,6 +265,15 @@ fn compute_duration(entries: &[codify::TrajectoryRecord]) -> Option<String> {
     } else {
         Some(format!("{secs}s"))
     }
+}
+
+fn compute_duration_secs(entries: &[codify::TrajectoryRecord]) -> Option<u64> {
+    if entries.len() < 2 {
+        return None;
+    }
+    let first = parse_timestamp_secs(&entries[0].timestamp)?;
+    let last = parse_timestamp_secs(&entries[entries.len() - 1].timestamp)?;
+    last.checked_sub(first)
 }
 
 /// Parse an ISO 8601 / RFC 3339 timestamp into approximate epoch seconds.

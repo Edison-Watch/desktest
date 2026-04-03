@@ -83,11 +83,13 @@ pub struct Cli {
     #[arg(long, default_value_t = false, global = true)]
     pub record: bool,
 
-    /// Display resolution as WxH (e.g., 1280x720, 1920x1080) or preset (720p, 1080p)
-    #[arg(long, global = true)]
+    /// Display resolution: preset (720p, 1080p) or custom WxH (e.g., 1280x720, 1920x1080)
+    #[arg(long, global = true, value_name = "PRESET|WxH")]
     pub resolution: Option<String>,
 
-    /// Enable live monitoring web dashboard (open http://localhost:7860 to watch)
+    /// Enable live monitoring web dashboard (open http://localhost:7860 to watch).
+    /// When running over SSH, the server IP from SSH_CONNECTION is auto-detected
+    /// and shown in the URL so remote users get a reachable address
     #[arg(long, default_value_t = false, global = true)]
     pub monitor: bool,
 
@@ -148,6 +150,10 @@ pub struct Cli {
     /// Disable outbound network access from the container (sets Docker network mode to "none")
     #[arg(long, default_value_t = false, global = true)]
     pub no_network: bool,
+
+    /// Disable colored output (also respects NO_COLOR environment variable)
+    #[arg(long, default_value_t = false, global = true)]
+    pub no_color: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -326,6 +332,10 @@ pub enum Command {
         "\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m\n",
         "  desktest logs desktest_artifacts/\n",
         "  desktest logs desktest_artifacts/ --brief\n",
+        "  desktest logs desktest_artifacts/ --summary\n",
+        "  desktest logs desktest_artifacts/ --summary --failures\n",
+        "  desktest logs desktest_artifacts/ --json\n",
+        "  desktest logs desktest_artifacts/ --json | jq '.steps[] | select(.result != \"success\")'\n",
         "  desktest logs desktest_artifacts/ --step 3\n",
         "  desktest logs desktest_artifacts/ --steps 3-7\n",
         "  desktest logs desktest_artifacts/ --steps 1,3,5-8"
@@ -338,6 +348,18 @@ pub enum Command {
         #[arg(long, default_value_t = false)]
         brief: bool,
 
+        /// Show one-line-per-step summary with action type and pass/fail status
+        #[arg(long, default_value_t = false)]
+        summary: bool,
+
+        /// Show only failed steps (can be combined with --summary or --json)
+        #[arg(long, default_value_t = false)]
+        failures: bool,
+
+        /// Output as structured JSON (for jq, CI reporting, and analytics)
+        #[arg(long, default_value_t = false)]
+        json: bool,
+
         /// Show only a specific step number
         #[arg(long, conflicts_with = "steps")]
         step: Option<usize>,
@@ -347,10 +369,11 @@ pub enum Command {
         steps: Option<String>,
     },
 
-    /// Check that all prerequisites are installed and configured
+    /// Check prerequisites (Docker, Tart, API keys, etc.) and display current configuration
     #[command(after_help = concat!(
-        "Verifies Docker daemon connectivity, API key availability, and displays ",
-        "current configuration. Use this to troubleshoot setup issues.\n\n",
+        "Verifies Docker daemon connectivity, Tart/QEMU availability (platform-dependent), ",
+        "API key availability, and displays current configuration including model, provider, ",
+        "and resolution. Use this to troubleshoot setup issues.\n\n",
         "\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m\n",
         "  desktest doctor\n",
         "  desktest doctor --config config.json"
