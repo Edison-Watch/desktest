@@ -177,6 +177,12 @@ fn build_app_config(reader: &mut impl BufRead, app_type: &str) -> Result<AppConf
             )?;
             let installer_cmd =
                 prompt_optional(reader, "Installer command (optional, press Enter to skip)")?;
+            if app_path.is_none() && launch_cmd.is_none() {
+                return Err(AppError::Config(
+                    "WindowsVm app: at least one of 'app_path' or 'launch_cmd' must be provided."
+                        .into(),
+                ));
+            }
             Ok(AppConfig::WindowsVm {
                 base_image,
                 app_path,
@@ -262,10 +268,7 @@ fn build_evaluator(reader: &mut impl BufRead) -> Result<EvaluatorConfig, AppErro
                 }
                 _ => {
                     if metrics.is_empty() {
-                        eprintln!(
-                            "    At least one metric is required for {} mode.",
-                            mode_str
-                        );
+                        eprintln!("    At least one metric is required for {} mode.", mode_str);
                         continue;
                     }
                     break;
