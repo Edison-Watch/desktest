@@ -1065,6 +1065,15 @@ async fn main() {
                 std::process::exit(e.exit_code());
             }
         },
+        Command::Completions { shell } => {
+            clap_complete::generate(
+                *shell,
+                &mut Cli::command(),
+                "desktest",
+                &mut std::io::stdout(),
+            );
+            std::process::exit(0);
+        }
         Command::Schema { out } => {
             if let Some(path) = out {
                 match schema::write_schema(path) {
