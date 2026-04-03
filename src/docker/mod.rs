@@ -196,7 +196,10 @@ impl DockerSession {
                 path_in_container: Some("/dev/fuse".to_string()),
                 cgroup_permissions: Some("rwm".to_string()),
             }]);
-            info!("FUSE enabled: added CAP_SYS_ADMIN and /dev/fuse device");
+            // fusermount/fusermount3 are setuid binaries — no-new-privileges
+            // blocks setuid, so we must relax it when FUSE is needed.
+            host_config.security_opt = None;
+            info!("FUSE enabled: added CAP_SYS_ADMIN and /dev/fuse device (no-new-privileges relaxed)");
         }
 
         let mut exposed_ports = std::collections::HashMap::new();

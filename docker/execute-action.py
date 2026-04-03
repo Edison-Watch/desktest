@@ -215,6 +215,7 @@ def main():
             '**=': _operator.ipow, '&=': _operator.iand,
             '|=': _operator.ior, '^=': _operator.ixor,
             '<<=': _operator.ilshift, '>>=': _operator.irshift,
+            '@=': _operator.imatmul,
         }
         namespace["_inplacevar_"] = lambda op, x, y: _INPLACE_OPS[op](x, y)
 
