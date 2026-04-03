@@ -12,7 +12,7 @@ triggers:
 
 # Desktest CLI Skill
 
-Desktest is a general computer use CLI for automated E2E testing of desktop applications using LLM agents. It spins up a Docker container (Linux) or Tart VM (macOS) with a desktop environment, deploys an app, and runs an agent that interacts via screenshots + PyAutoGUI.
+Desktest is a general computer use CLI for automated E2E testing of desktop applications using LLM agents. It spins up a Docker container (Linux), Tart VM (macOS), or QEMU/KVM VM (Windows) with a desktop environment, deploys an app, and runs an agent that interacts via screenshots + PyAutoGUI.
 
 ## Key Commands
 
@@ -72,6 +72,8 @@ desktest codify trajectory.jsonl --steps 1,2,5,6       # Only include specific s
 desktest codify trajectory.jsonl --with-screenshots     # Add screenshot comparison assertions
 desktest codify trajectory.jsonl --with-screenshots --threshold 0.95  # Custom similarity threshold
 desktest codify trajectory.jsonl --delay 1.0            # Custom delay between steps (default: 0.5)
+desktest init-macos                              # Prepare a macOS golden image for Tart VM testing
+desktest init-windows --windows-iso Win11.iso --virtio-iso virtio-win.iso  # Prepare a Windows golden image
 desktest update                                 # Update desktest to the latest GitHub release
 desktest update --force                         # Force reinstall even if already on latest
 ```
@@ -250,7 +252,7 @@ test-results/
   "instruction": "What the agent should do",
   "completion_condition": "Optional — when the agent should consider the task done",
   "app": {
-    "type": "appimage|folder|docker_image|vnc_attach|macos_tart|macos_native",
+    "type": "appimage|folder|docker_image|vnc_attach|macos_tart|macos_native|windows_vm|windows_native",
     "path": "./app.AppImage",
     "electron": true
   },

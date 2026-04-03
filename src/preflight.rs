@@ -415,6 +415,22 @@ pub async fn run_doctor(config: &Config) -> bool {
         println!("Native macOS .... skipped (requires macOS)");
     }
 
+    // Windows VM check (informational — only relevant on Linux with KVM)
+    if cfg!(target_os = "linux") {
+        print!("Windows VM ...... ");
+        let _ = std::io::stdout().flush();
+        match check_windows_vm() {
+            Ok(()) => {
+                println!("ok (QEMU/KVM + OVMF + swtpm + virtiofsd available)");
+            }
+            Err(_) => {
+                println!("not available (optional — needed for Windows VM testing)");
+            }
+        }
+    } else {
+        println!("Windows VM ...... skipped (requires Linux with KVM)");
+    }
+
     // CLI binary check (replaces API key check for CLI-based providers)
     if config.provider == "claude-cli" {
         print!("Claude CLI ..... ");

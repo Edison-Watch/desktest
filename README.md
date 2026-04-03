@@ -1,6 +1,6 @@
 <img width="571" height="174" alt="Screenshot 2026-04-01 at 20 38 16" src="https://github.com/user-attachments/assets/fe2bf5aa-cba4-4e20-ad8f-93beb6399988" />
 
-Desktest is a general computer use CLI for automated end-to-end virtualised testing of desktop applications using LLM-powered agents. Spins up a disposable 🐳 Docker container (Linux) or [Tart VM (macOS)](https://tart.run/) with a desktop environment, deploys any apps, and runs a computer-use agent that interacts with it based on your prompt. Built with coding agents in mind as first-class citizen users of `desktest`. 
+Desktest is a general computer use CLI for automated end-to-end virtualised testing of desktop applications using LLM-powered agents. Spins up a disposable 🐳 Docker container (Linux), [Tart VM (macOS)](https://tart.run/), or QEMU/KVM VM (Windows) with a desktop environment, deploys any apps, and runs a computer-use agent that interacts with it based on your prompt. Built with coding agents in mind as first-class citizen users of `desktest`.
 
 Once happy -> Convert agent trajectories to deterministic CI code
 
@@ -24,7 +24,7 @@ Install the desktest CLI by running `curl -fsSL https://raw.githubusercontent.co
 
 - **Prompt → Computer use**: Flexible evaluation metrics (see [task definitions](#computer-use-agent-task-definition))
 - **Observability**: Live monitoring dashboard, video recordings, `desktest logs` for agents
-- **Virtualized OS**: Linux, MacOS, Windows (WIP) + Any docker image you want
+- **Virtualized OS**: Linux, macOS, Windows + Any docker image you want
 - **[CI integration](docs/ci.md)**: Run suite of tests, codified deterministic agent trajectories
 - **QA agent** (`--qa`): Autonomous QA reports via slack webhooks/markdown
 - **[SSH monitoring](docs/remote-monitoring.md)**: access the dashboard and VNC from another machine via SSH or direct network access
@@ -82,9 +82,17 @@ TLDR: Run `desktest doctor` to verify your setup.
 </details>
 
 <details>
-<summary><b>To run tests (Windows apps — planned)</b></summary>
+<summary><b>To run tests (Windows apps)</b></summary>
 
-- Windows VM support is planned but not yet designed. Expected to use QEMU/libvirt or Hyper-V with Windows VMs, RDP or VNC for display access, and UI Automation APIs for accessibility. Details TBD.
+- Linux host with KVM enabled (Intel VT-x or AMD-V)
+- QEMU, OVMF, swtpm, and virtiofsd installed (`sudo apt install qemu-system-x86 qemu-utils ovmf swtpm virtiofsd`)
+- [sshpass](https://linux.die.net/man/1/sshpass) installed (`sudo apt install sshpass`) — for golden image provisioning
+- [genisoimage](https://linux.die.net/man/1/genisoimage) or mkisofs installed (`sudo apt install genisoimage`) — for golden image provisioning
+- A Windows 11 ISO (evaluation or licensed) and [VirtIO driver ISO](https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/)
+- A golden image prepared via `desktest init-windows` (handles Python, PyAutoGUI, uiautomation, WinFsp, agent scripts, and system configuration automatically)
+- An LLM API key (same as Linux), **or** `--provider claude-cli` to use your Claude Code subscription
+
+See [Windows CI Guide](dev-docs/windows-ci-guide.md) for CI/CD setup details.
 
 </details>
 
@@ -164,6 +172,7 @@ Commands:
   logs          View trajectory logs in the terminal (supports --steps N, N-M, or N,M,X-Y)
   monitor       Start a persistent monitor server for multi-phase runs
   init-macos    Prepare a macOS golden image for Tart VM testing
+  init-windows  Prepare a Windows 11 golden image for QEMU/KVM testing
   doctor        Check that all prerequisites are installed and configured
   update        Update desktest to the latest release from GitHub
 
@@ -231,7 +240,8 @@ See `examples/` for more examples including folder deploys and custom Docker ima
 | `vnc_attach` | Attach to an existing running desktop (see [Attach Mode](docs/attach-mode.md)) |
 | `macos_tart` | macOS app in a Tart VM — isolated, destroyed after test (see [macOS Support](docs/macos-support.md)) |
 | `macos_native` | macOS app on host desktop, no VM isolation (see [macOS Support](docs/macos-support.md)) |
-| `windows` | **(Planned)** Windows app in a VM — details TBD |
+| `windows_vm` | Windows app in a QEMU/KVM VM — isolated, QCOW2 overlay destroyed after test (see [Windows CI Guide](dev-docs/windows-ci-guide.md)) |
+| `windows_native` | Windows app on host desktop, no VM isolation (scaffolding — full implementation pending) |
 
 > **Electron apps**: Add `"electron": true` to your app config to use the `desktest-desktop:electron` image with Node.js pre-installed. See [examples/ELECTRON_QUICKSTART.md](examples/ELECTRON_QUICKSTART.md).
 
@@ -339,15 +349,15 @@ Developer writes task.json
    │ desktest CLI  │  validate / run / suite / interactive
    └────┬─────────┘
         │
-        ├─── Linux ────────────────────┐     ├─── macOS ────────────────────┐
-        │  Docker Container            │     │  Tart VM (or native host)    │
-        │  Xvfb + XFCE + x11vnc        │     │  Native macOS desktop        │
-        │  PyAutoGUI (X11)             │     │  PyAutoGUI (Quartz)          │
-        │  pyatspi (AT-SPI2)           │     │  a11y-helper (AXUIElement)   │
-        │  scrot (screenshot)          │     │  screencapture (screenshot)  │
-        └──────────┬───────────────────┘     └──────────┬───────────────────┘
-                   │ screenshot + a11y tree             │
-                   └──────────────┬─────────────────────┘
+        ├─── Linux ──────────────┐  ├─── macOS ─────────────┐  ├─── Windows ────────────┐
+        │  Docker Container      │  │  Tart VM / native host │  │  QEMU/KVM VM           │
+        │  Xvfb + XFCE + x11vnc  │  │  Native macOS desktop  │  │  Windows 11 desktop    │
+        │  PyAutoGUI (X11)       │  │  PyAutoGUI (Quartz)    │  │  PyAutoGUI (Win32)     │
+        │  pyatspi (AT-SPI2)     │  │  a11y-helper (AXUIEl.) │  │  uiautomation (UIA)    │
+        │  scrot (screenshot)    │  │  screencapture         │  │  PIL ImageGrab         │
+        └──────────┬─────────────┘  └──────────┬─────────────┘  └──────────┬─────────────┘
+                   │ screenshot + a11y tree     │                          │
+                   └──────────────┬─────────────┴──────────────────────────┘
                                   ▼
                      ┌──────────────────┐
                      │  LLM Agent Loop  │  observe → think → act → repeat

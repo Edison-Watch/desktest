@@ -8,6 +8,7 @@ mod docker;
 mod error;
 mod evaluator;
 mod init_macos;
+mod init_windows;
 mod interactive;
 mod logs;
 mod monitor;
@@ -943,6 +944,27 @@ async fn main() {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {
                     eprintln!("init-macos failed: {e}");
+                    std::process::exit(e.exit_code());
+                }
+            }
+        }
+        Command::InitWindows {
+            windows_iso,
+            virtio_iso,
+            output,
+            disk_size,
+            ram,
+            cpus,
+        } => {
+            if !cli.quiet {
+                warnings::warn_init_windows_resources();
+            }
+            match init_windows::run_init_windows(windows_iso, virtio_iso, output, ram, *cpus, disk_size)
+                .await
+            {
+                Ok(()) => std::process::exit(0),
+                Err(e) => {
+                    eprintln!("init-windows failed: {e}");
                     std::process::exit(e.exit_code());
                 }
             }

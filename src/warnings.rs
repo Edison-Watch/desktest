@@ -110,6 +110,14 @@ pub fn warn_suite_resources(config: &Config, apps: &[&AppConfig]) {
     }
 }
 
+/// Warn before running init-windows (golden image provisioning).
+pub fn warn_init_windows_resources() {
+    eprintln!(
+        "Warning: This will install Windows 11 from ISO and provision dependencies \
+         (~40-60 GB disk, may take 30-60 minutes)."
+    );
+}
+
 /// Warn before running init-macos (golden image provisioning).
 pub fn warn_init_macos_resources() {
     eprintln!(
