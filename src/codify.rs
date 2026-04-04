@@ -6,12 +6,12 @@ use std::io::BufRead;
 use std::path::Path;
 
 use base64::Engine;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::AppError;
 
 /// A trajectory entry as read back from the JSONL file.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TrajectoryRecord {
     pub step: usize,
     pub timestamp: String,

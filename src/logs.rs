@@ -334,3 +334,374 @@ fn load_task_id(artifacts_dir: &Path) -> Option<String> {
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::codify::TrajectoryRecord;
+
+    fn make_entry(step: usize, result: &str, thought: Option<&str>, action_type: Option<&str>) -> TrajectoryRecord {
+        TrajectoryRecord {
+            step,
+            timestamp: format!("2026-01-01T00:00:{:02}Z", step),
+            action_code: format!("pyautogui.click({}, 200)", step * 100),
+            thought: thought.map(|s| s.to_string()),
+            screenshot_path: Some(format!("step_{step:03}.png")),
+            result: result.to_string(),
+            bash_output: None,
+            error_feedback: if result.starts_with("error") {
+                Some("something went wrong".into())
+            } else {
+                None
+            },
+            action_type: action_type.map(|s| s.to_string()),
+        }
+    }
+
+    fn sample_entries() -> Vec<TrajectoryRecord> {
+        vec![
+            make_entry(1, "success", Some("Click the button"), Some("python")),
+            make_entry(2, "success", Some("Type hello"), Some("python")),
+            make_entry(3, "error:crash", Some("Try to save"), Some("python")),
+            make_entry(4, "success", Some("Retry save"), Some("python")),
+            make_entry(5, "done", Some("Task complete"), None),
+        ]
+    }
+
+    // --- is_failure tests ---
+
+    #[test]
+    fn test_is_failure_fail() {
+        assert!(is_failure("fail"));
+    }
+
+    #[test]
+    fn test_is_failure_timeout() {
+        assert!(is_failure("timeout"));
+    }
+
+    #[test]
+    fn test_is_failure_max_steps() {
+        assert!(is_failure("max_steps"));
+    }
+
+    #[test]
+    fn test_is_failure_error_prefix() {
+        assert!(is_failure("error"));
+        assert!(is_failure("error:crash"));
+        assert!(is_failure("error:something went wrong"));
+    }
+
+    #[test]
+    fn test_is_failure_success_is_not_failure() {
+        assert!(!is_failure("success"));
+    }
+
+    #[test]
+    fn test_is_failure_done_is_not_failure() {
+        assert!(!is_failure("done"));
+    }
+
+    #[test]
+    fn test_is_failure_wait_is_not_failure() {
+        assert!(!is_failure("wait"));
+    }
+
+    // --- format_result tests ---
+
+    #[test]
+    fn test_format_result_done() {
+        assert_eq!(format_result("done", 5), "PASS (done at step 5)");
+    }
+
+    #[test]
+    fn test_format_result_success() {
+        assert_eq!(format_result("success", 3), "OK (last step 3)");
+    }
+
+    #[test]
+    fn test_format_result_error() {
+        assert_eq!(format_result("error", 2), "ERROR (at step 2)");
+    }
+
+    #[test]
+    fn test_format_result_other() {
+        assert_eq!(format_result("timeout", 7), "TIMEOUT (at step 7)");
+    }
+
+    // --- failures filter integration tests (via print_logs on temp dir) ---
+
+    fn write_trajectory(dir: &Path, entries: &[TrajectoryRecord]) {
+        let path = dir.join("trajectory.jsonl");
+        let lines: Vec<String> = entries
+            .iter()
+            .map(|e| serde_json::to_string(e).unwrap())
+            .collect();
+        std::fs::write(path, lines.join("\n")).unwrap();
+    }
+
+    #[test]
+    fn test_print_logs_default_succeeds() {
+        let dir = tempfile::tempdir().unwrap();
+        write_trajectory(dir.path(), &sample_entries());
+        let opts = LogsOptions {
+            brief: false,
+            summary: false,
+            failures: false,
+            json: false,
+            step_filter: None,
+        };
+        assert!(print_logs(dir.path(), opts).is_ok());
+    }
+
+    #[test]
+    fn test_print_logs_brief_succeeds() {
+        let dir = tempfile::tempdir().unwrap();
+        write_trajectory(dir.path(), &sample_entries());
+        let opts = LogsOptions {
+            brief: true,
+            summary: false,
+            failures: false,
+            json: false,
+            step_filter: None,
+        };
+        assert!(print_logs(dir.path(), opts).is_ok());
+    }
+
+    #[test]
+    fn test_print_logs_summary_succeeds() {
+        let dir = tempfile::tempdir().unwrap();
+        write_trajectory(dir.path(), &sample_entries());
+        let opts = LogsOptions {
+            brief: false,
+            summary: true,
+            failures: false,
+            json: false,
+            step_filter: None,
+        };
+        assert!(print_logs(dir.path(), opts).is_ok());
+    }
+
+    #[test]
+    fn test_print_logs_failures_only_succeeds() {
+        let dir = tempfile::tempdir().unwrap();
+        write_trajectory(dir.path(), &sample_entries());
+        let opts = LogsOptions {
+            brief: false,
+            summary: false,
+            failures: true,
+            json: false,
+            step_filter: None,
+        };
+        assert!(print_logs(dir.path(), opts).is_ok());
+    }
+
+    #[test]
+    fn test_print_logs_summary_with_failures_succeeds() {
+        let dir = tempfile::tempdir().unwrap();
+        write_trajectory(dir.path(), &sample_entries());
+        let opts = LogsOptions {
+            brief: false,
+            summary: true,
+            failures: true,
+            json: false,
+            step_filter: None,
+        };
+        assert!(print_logs(dir.path(), opts).is_ok());
+    }
+
+    #[test]
+    fn test_print_logs_brief_with_step_filter_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        write_trajectory(dir.path(), &sample_entries());
+        let opts = LogsOptions {
+            brief: true,
+            summary: false,
+            failures: false,
+            json: false,
+            step_filter: Some(vec![1]),
+        };
+        assert!(print_logs(dir.path(), opts).is_err());
+    }
+
+    #[test]
+    fn test_print_logs_empty_trajectory() {
+        let dir = tempfile::tempdir().unwrap();
+        write_trajectory(dir.path(), &[]);
+        let opts = LogsOptions {
+            brief: false,
+            summary: false,
+            failures: false,
+            json: false,
+            step_filter: None,
+        };
+        assert!(print_logs(dir.path(), opts).is_ok());
+    }
+
+    #[test]
+    fn test_print_logs_empty_trajectory_json() {
+        let dir = tempfile::tempdir().unwrap();
+        write_trajectory(dir.path(), &[]);
+        let opts = LogsOptions {
+            brief: false,
+            summary: false,
+            failures: false,
+            json: true,
+            step_filter: None,
+        };
+        assert!(print_logs(dir.path(), opts).is_ok());
+    }
+
+    #[test]
+    fn test_print_logs_step_filter() {
+        let dir = tempfile::tempdir().unwrap();
+        write_trajectory(dir.path(), &sample_entries());
+        let opts = LogsOptions {
+            brief: false,
+            summary: false,
+            failures: false,
+            json: false,
+            step_filter: Some(vec![2, 4]),
+        };
+        assert!(print_logs(dir.path(), opts).is_ok());
+    }
+
+    #[test]
+    fn test_print_logs_missing_trajectory_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        // No trajectory file written
+        let opts = LogsOptions {
+            brief: false,
+            summary: false,
+            failures: false,
+            json: false,
+            step_filter: None,
+        };
+        assert!(print_logs(dir.path(), opts).is_err());
+    }
+
+    // --- JSON output structure tests ---
+
+    #[test]
+    fn test_json_output_structure() {
+        let entries = sample_entries();
+        let refs: Vec<&TrajectoryRecord> = entries.iter().collect();
+        // Capture JSON by building it directly (same logic as print_json)
+        let steps: Vec<serde_json::Value> = refs
+            .iter()
+            .map(|e| {
+                let mut step = serde_json::json!({
+                    "step": e.step,
+                    "timestamp": e.timestamp,
+                    "result": e.result,
+                    "action_code": e.action_code,
+                });
+                let map = step.as_object_mut().unwrap();
+                if let Some(ref t) = e.thought {
+                    map.insert("thought".into(), serde_json::json!(t));
+                }
+                if let Some(ref at) = e.action_type {
+                    map.insert("action_type".into(), serde_json::json!(at));
+                }
+                if let Some(ref ef) = e.error_feedback {
+                    map.insert("error_feedback".into(), serde_json::json!(ef));
+                }
+                step
+            })
+            .collect();
+
+        let output = serde_json::json!({
+            "steps": steps,
+            "summary": {
+                "total_steps": 5,
+                "result": "done",
+                "result_display": format_result("done", 5),
+                "duration_secs": 4u64,
+            }
+        });
+
+        // Verify top-level keys
+        assert!(output.get("steps").unwrap().is_array());
+        assert!(output.get("summary").unwrap().is_object());
+
+        // Verify step count
+        assert_eq!(output["steps"].as_array().unwrap().len(), 5);
+
+        // Verify summary fields
+        let summary = &output["summary"];
+        assert_eq!(summary["total_steps"], 5);
+        assert_eq!(summary["result"], "done");
+        assert_eq!(summary["duration_secs"], 4);
+
+        // Verify error step has error_feedback
+        let error_step = &output["steps"][2];
+        assert_eq!(error_step["result"], "error:crash");
+        assert!(error_step.get("error_feedback").is_some());
+
+        // Verify success step has no error_feedback
+        let ok_step = &output["steps"][0];
+        assert!(ok_step.get("error_feedback").is_none());
+    }
+
+    #[test]
+    fn test_json_failures_filter() {
+        let entries = sample_entries();
+        let refs: Vec<&TrajectoryRecord> = entries.iter().collect();
+        let failures: Vec<&&TrajectoryRecord> = refs.iter().filter(|e| is_failure(&e.result)).collect();
+
+        // Only step 3 (error:crash) should be a failure
+        assert_eq!(failures.len(), 1);
+        assert_eq!(failures[0].step, 3);
+    }
+
+    // --- compute_duration tests ---
+
+    #[test]
+    fn test_compute_duration_multiple_entries() {
+        let entries = sample_entries();
+        let dur = compute_duration(&entries);
+        assert_eq!(dur, Some("4s".to_string()));
+    }
+
+    #[test]
+    fn test_compute_duration_single_entry() {
+        let entries = vec![make_entry(1, "success", None, None)];
+        assert_eq!(compute_duration(&entries), None);
+    }
+
+    #[test]
+    fn test_compute_duration_secs() {
+        let entries = sample_entries();
+        assert_eq!(compute_duration_secs(&entries), Some(4));
+    }
+
+    // --- load_task_id tests ---
+
+    #[test]
+    fn test_load_task_id_present() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("task.json"),
+            r#"{"id": "my-test-task", "schema_version": 1}"#,
+        )
+        .unwrap();
+        assert_eq!(load_task_id(dir.path()), Some("my-test-task".to_string()));
+    }
+
+    #[test]
+    fn test_load_task_id_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(load_task_id(dir.path()), None);
+    }
+
+    #[test]
+    fn test_load_task_id_no_id_field() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("task.json"),
+            r#"{"name": "something"}"#,
+        )
+        .unwrap();
+        assert_eq!(load_task_id(dir.path()), None);
+    }
+}
