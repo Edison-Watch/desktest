@@ -139,8 +139,7 @@ For repeated runs, create a config JSON file instead of passing flags every time
 {
   "api_key": "sk-your-key-here",
   "provider": "anthropic",
-  "model": "claude-sonnet-4-5-20250929",
-  "app_type": "folder"
+  "model": "claude-sonnet-4-5-20250929"
 }
 ```
 
