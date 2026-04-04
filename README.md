@@ -22,7 +22,7 @@ Install the desktest CLI by running `curl -fsSL https://raw.githubusercontent.co
 
 ## Getting Started
 
-New to desktest? Follow the [Getting Started guide](GETTING_STARTED.md) for a 15-minute walkthrough from installation to your first test.
+New to desktest? Follow the [Getting Started guide](GETTING_STARTED.md) for a walkthrough from installation to your first test.
 
 ## Features
 

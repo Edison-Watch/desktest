@@ -1,6 +1,6 @@
 # Getting Started with Desktest
 
-A 15-minute guide to running your first automated desktop test.
+A guide to running your first automated desktop test.
 
 ## 1. Install
 
