@@ -41,7 +41,14 @@ pub(crate) use orchestration::run_task;
 
 use clap::{CommandFactory, Parser};
 use cli::{Cli, Command};
+use error::format_error_with_suggestion;
 use orchestration::{LlmOverrides, RunConfig};
+
+/// Print an `AppError` to stderr with actionable suggestion (if any) and exit.
+fn exit_with_error(label: &str, e: &error::AppError) -> ! {
+    eprintln!("{label}: {}", format_error_with_suggestion(e));
+    std::process::exit(e.exit_code());
+}
 
 // ANSI color constants (Brand: #C3FFFD = Core Cyan, #9BA4A6 = Graphene Grey)
 const CYAN: &str = "\x1b[38;2;195;255;253m";
@@ -321,10 +328,7 @@ async fn main() {
         Command::Init { output, app_type } => {
             match init_task::run_init(output, app_type.as_deref()) {
                 Ok(()) => std::process::exit(0),
-                Err(e) => {
-                    eprintln!("Init failed: {e}");
-                    std::process::exit(e.exit_code());
-                }
+                Err(e) => exit_with_error("Init failed", &e),
             }
         }
         Command::Validate { task } => match task::TaskDefinition::load(task) {
@@ -335,18 +339,12 @@ async fn main() {
                 );
                 std::process::exit(0);
             }
-            Err(e) => {
-                eprintln!("Validation error: {e}");
-                std::process::exit(e.exit_code());
-            }
+            Err(e) => exit_with_error("Validation error", &e),
         },
         Command::Run { task, replay } => {
             let mut task_def = match task::TaskDefinition::load(task) {
                 Ok(t) => t,
-                Err(e) => {
-                    eprintln!("Task load error: {e}");
-                    std::process::exit(e.exit_code());
-                }
+                Err(e) => exit_with_error("Task load error", &e),
             };
 
             if !*replay && task_def.has_replay_script() && !task_def.is_programmatic_only() {
@@ -362,8 +360,7 @@ async fn main() {
                     );
                 }
                 if let Err(e) = task_def.apply_replay_override() {
-                    eprintln!("Error: {e}");
-                    std::process::exit(e.exit_code());
+                    exit_with_error("Error", &e);
                 }
             }
 
@@ -377,8 +374,11 @@ async fn main() {
             if let Err(e) =
                 preflight::run_preflight(&run_config, needs_llm, Some(&task_def.app)).await
             {
-                eprintln!("Preflight check failed: {e}");
-                eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
+                let formatted = format_error_with_suggestion(&e);
+                eprintln!("Preflight check failed: {formatted}");
+                if !formatted.contains("desktest doctor") {
+                    eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
+                }
                 std::process::exit(e.exit_code());
             }
 
@@ -413,8 +413,7 @@ async fn main() {
                     std::process::exit(if outcome.passed { 0 } else { 1 });
                 }
                 Err(e) => {
-                    eprintln!("Error: {e}");
-                    std::process::exit(e.exit_code());
+                    exit_with_error("Error", &e);
                 }
             }
         }
@@ -470,10 +469,7 @@ async fn main() {
                 Ok(suite_result) => {
                     std::process::exit(suite::suite_exit_code(&suite_result));
                 }
-                Err(e) => {
-                    eprintln!("Suite error: {e}");
-                    std::process::exit(e.exit_code());
-                }
+                Err(e) => exit_with_error("Suite error", &e),
             }
         }
         Command::Attach {
@@ -483,10 +479,7 @@ async fn main() {
         } => {
             let mut task_def = match task::TaskDefinition::load(task) {
                 Ok(t) => t,
-                Err(e) => {
-                    eprintln!("Task load error: {e}");
-                    std::process::exit(e.exit_code());
-                }
+                Err(e) => exit_with_error("Task load error", &e),
             };
 
             if !*replay && task_def.has_replay_script() && !task_def.is_programmatic_only() {
@@ -502,8 +495,7 @@ async fn main() {
                     );
                 }
                 if let Err(e) = task_def.apply_replay_override() {
-                    eprintln!("Error: {e}");
-                    std::process::exit(e.exit_code());
+                    exit_with_error("Error", &e);
                 }
             }
 
@@ -517,8 +509,11 @@ async fn main() {
             if let Err(e) =
                 preflight::run_preflight(&run_config, needs_llm, Some(&task_def.app)).await
             {
-                eprintln!("Preflight check failed: {e}");
-                eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
+                let formatted = format_error_with_suggestion(&e);
+                eprintln!("Preflight check failed: {formatted}");
+                if !formatted.contains("desktest doctor") {
+                    eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
+                }
                 std::process::exit(e.exit_code());
             }
 
@@ -554,8 +549,7 @@ async fn main() {
                     std::process::exit(if outcome.passed { 0 } else { 1 });
                 }
                 Err(e) => {
-                    eprintln!("Error: {e}");
-                    std::process::exit(e.exit_code());
+                    exit_with_error("Error", &e);
                 }
             }
         }
@@ -566,10 +560,7 @@ async fn main() {
         } => {
             let task_def = match task::TaskDefinition::load(task) {
                 Ok(t) => t,
-                Err(e) => {
-                    eprintln!("Task load error: {e}");
-                    std::process::exit(e.exit_code());
-                }
+                Err(e) => exit_with_error("Task load error", &e),
             };
 
             let run_config = orchestration::load_config_or_defaults(
@@ -584,8 +575,11 @@ async fn main() {
             if let Err(e) =
                 preflight::run_preflight(&run_config, needs_llm, Some(&task_def.app)).await
             {
-                eprintln!("Preflight check failed: {e}");
-                eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
+                let formatted = format_error_with_suggestion(&e);
+                eprintln!("Preflight check failed: {formatted}");
+                if !formatted.contains("desktest doctor") {
+                    eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
+                }
                 std::process::exit(e.exit_code());
             }
 
@@ -623,8 +617,7 @@ async fn main() {
                     if !step && !validate_only && e.is_interrupt() {
                         std::process::exit(0);
                     }
-                    eprintln!("Error: {e}");
-                    std::process::exit(e.exit_code());
+                    exit_with_error("Error", &e);
                 }
             }
         }
@@ -639,10 +632,7 @@ async fn main() {
         } => {
             let entries = match codify::load_trajectory(trajectory) {
                 Ok(e) => e,
-                Err(e) => {
-                    eprintln!("Error loading trajectory: {e}");
-                    std::process::exit(e.exit_code());
-                }
+                Err(e) => exit_with_error("Error loading trajectory", &e),
             };
 
             let step_filter = match steps {
@@ -845,10 +835,7 @@ async fn main() {
 
             let mut task_def = match task::TaskDefinition::load(task) {
                 Ok(t) => t,
-                Err(e) => {
-                    eprintln!("Task load error: {e}");
-                    std::process::exit(e.exit_code());
-                }
+                Err(e) => exit_with_error("Task load error", &e),
             };
 
             // Set replay fields from CLI args and delegate to shared method
@@ -858,8 +845,7 @@ async fn main() {
                 .map(|p| p.to_string_lossy().to_string());
 
             if let Err(e) = task_def.apply_replay_override() {
-                eprintln!("Error: {e}");
-                std::process::exit(e.exit_code());
+                exit_with_error("Error", &e);
             }
 
             let run_config = orchestration::load_config_or_defaults(
@@ -871,8 +857,11 @@ async fn main() {
             // Replay mode doesn't need LLM
             if let Err(e) = preflight::run_preflight(&run_config, false, Some(&task_def.app)).await
             {
-                eprintln!("Preflight check failed: {e}");
-                eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
+                let formatted = format_error_with_suggestion(&e);
+                eprintln!("Preflight check failed: {formatted}");
+                if !formatted.contains("desktest doctor") {
+                    eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
+                }
                 std::process::exit(e.exit_code());
             }
 
@@ -907,8 +896,7 @@ async fn main() {
                     std::process::exit(if outcome.passed { 0 } else { 1 });
                 }
                 Err(e) => {
-                    eprintln!("Error: {e}");
-                    std::process::exit(e.exit_code());
+                    exit_with_error("Error", &e);
                 }
             }
         }
@@ -942,8 +930,7 @@ async fn main() {
             match logs::print_logs(artifacts_dir, opts) {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {
-                    eprintln!("Error: {e}");
-                    std::process::exit(e.exit_code());
+                    exit_with_error("Error", &e);
                 }
             }
         }
@@ -1080,10 +1067,7 @@ async fn main() {
                 }
                 std::process::exit(0);
             }
-            Err(e) => {
-                eprintln!("Error generating review: {e}");
-                std::process::exit(e.exit_code());
-            }
+            Err(e) => exit_with_error("Error generating review", &e),
         },
         Command::Completions { shell } => {
             clap_complete::generate(
@@ -1101,10 +1085,7 @@ async fn main() {
                         println!("Schema written to {}", path.display());
                         std::process::exit(0);
                     }
-                    Err(e) => {
-                        eprintln!("Error: {e}");
-                        std::process::exit(e.exit_code());
-                    }
+                    Err(e) => exit_with_error("Error", &e),
                 }
             } else {
                 let schema_json = schema::generate_task_schema();

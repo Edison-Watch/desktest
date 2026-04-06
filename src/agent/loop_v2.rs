@@ -62,6 +62,8 @@ pub struct AgentLoopV2Config {
     pub redactor: Option<Redactor>,
     /// Optional early exit condition — exit the loop early when met.
     pub early_exit: Option<EarlyExitConfig>,
+    /// Suppress progress output to stderr.
+    pub quiet: bool,
 }
 
 impl Default for AgentLoopV2Config {
@@ -82,6 +84,7 @@ impl Default for AgentLoopV2Config {
             test_id: String::new(),
             redactor: None,
             early_exit: None,
+            quiet: false,
         }
     }
 }
@@ -186,6 +189,13 @@ impl<'a> AgentLoopV2<'a> {
 
         // Capture initial observation (before any action)
         info!("Capturing initial observation...");
+        if !self.config.quiet {
+            eprintln!(
+                "[Agent] Starting: max_steps={}, timeout={}s",
+                self.config.max_steps,
+                self.config.total_timeout.as_secs()
+            );
+        }
         let mut current_observation = self.capture_observation_for_step(0).await?;
 
         // TestStart is published by run_task_inner in main.rs with the full task context.
@@ -193,6 +203,13 @@ impl<'a> AgentLoopV2<'a> {
         loop {
             // Check total timeout
             if start_time.elapsed() >= self.config.total_timeout {
+                if !self.config.quiet {
+                    eprintln!(
+                        "[Agent] Timeout ({}s) exceeded after {} steps",
+                        self.config.total_timeout.as_secs(),
+                        step_index
+                    );
+                }
                 warn!(
                     "Total timeout ({:?}) exceeded after {} steps",
                     self.config.total_timeout, step_index
@@ -225,6 +242,12 @@ impl<'a> AgentLoopV2<'a> {
 
             // Check max steps
             if step_index >= self.config.max_steps {
+                if !self.config.quiet {
+                    eprintln!(
+                        "[Agent] Max steps ({}) reached without completion",
+                        self.config.max_steps
+                    );
+                }
                 warn!("Max steps ({}) reached", self.config.max_steps);
                 let data = StepData {
                     step_index,
@@ -253,6 +276,12 @@ impl<'a> AgentLoopV2<'a> {
 
             step_index += 1;
             info!("--- Step {}/{} ---", step_index, self.config.max_steps);
+            if !self.config.quiet {
+                eprintln!(
+                    "[Step {}/{}] Analyzing screenshot + a11y tree...",
+                    step_index, self.config.max_steps
+                );
+            }
 
             // Build messages with sliding window context
             let messages = self.context.build_messages(&current_observation);
@@ -298,6 +327,23 @@ impl<'a> AgentLoopV2<'a> {
             self.update_caption(step_index, &response_text, &all_blocks)
                 .await;
 
+            if !self.config.quiet {
+                let action_desc = if !code_blocks.is_empty() || !bash_blocks.is_empty() {
+                    format!(
+                        "Executing {} action(s)...",
+                        code_blocks.len() + bash_blocks.len()
+                    )
+                } else if parsed.command.is_some() {
+                    "Processing command...".to_string()
+                } else {
+                    "No actions extracted, re-observing...".to_string()
+                };
+                eprintln!(
+                    "[Step {}/{}] {action_desc}",
+                    step_index, self.config.max_steps
+                );
+            }
+
             let turn_result = pyautogui::process_turn(
                 self.session,
                 &response_text,
@@ -318,6 +364,9 @@ impl<'a> AgentLoopV2<'a> {
             if let Some(ref command) = turn_result.command {
                 match command {
                     SpecialCommand::Done => {
+                        if !self.config.quiet {
+                            eprintln!("[Step {step_index}/{}] DONE", self.config.max_steps);
+                        }
                         info!("Agent signalled DONE at step {step_index}");
                         let data = StepData {
                             step_index,
@@ -348,6 +397,9 @@ impl<'a> AgentLoopV2<'a> {
                         });
                     }
                     SpecialCommand::Fail => {
+                        if !self.config.quiet {
+                            eprintln!("[Step {step_index}/{}] FAIL", self.config.max_steps);
+                        }
                         info!("Agent signalled FAIL at step {step_index}");
                         let data = StepData {
                             step_index,
@@ -378,6 +430,12 @@ impl<'a> AgentLoopV2<'a> {
                         });
                     }
                     SpecialCommand::Wait => {
+                        if !self.config.quiet {
+                            eprintln!(
+                                "[Step {step_index}/{}] WAIT — re-observing...",
+                                self.config.max_steps
+                            );
+                        }
                         info!("Agent signalled WAIT at step {step_index}, re-observing...");
                         let data = StepData {
                             step_index,
@@ -442,6 +500,30 @@ impl<'a> AgentLoopV2<'a> {
             // If no code blocks were extracted (text-only response without special commands)
             if turn_result.executions.is_empty() && turn_result.command.is_none() {
                 warn!("No code blocks or special commands in LLM response, re-observing...");
+            }
+
+            if !self.config.quiet {
+                let elapsed = start_time.elapsed();
+                if turn_result.all_succeeded {
+                    eprintln!(
+                        "[Step {}/{}] Completed ({:.1}s elapsed)",
+                        step_index,
+                        self.config.max_steps,
+                        elapsed.as_secs_f64()
+                    );
+                } else {
+                    let err_msg = turn_result
+                        .error_feedback
+                        .as_deref()
+                        .unwrap_or("unknown error");
+                    eprintln!(
+                        "[Step {}/{}] Error: {} ({:.1}s elapsed)",
+                        step_index,
+                        self.config.max_steps,
+                        err_msg,
+                        elapsed.as_secs_f64()
+                    );
+                }
             }
 
             // Capture new observation after action(s)
@@ -1106,6 +1188,7 @@ mod tests {
         assert!(!config.verbose);
         assert!(!config.bash_enabled);
         assert!(!config.qa);
+        assert!(!config.quiet);
     }
 
     #[test]
@@ -1126,6 +1209,7 @@ mod tests {
             test_id: String::new(),
             redactor: None,
             early_exit: None,
+            quiet: false,
         };
         assert_eq!(config.max_steps, 25);
         assert_eq!(config.llm_max_retries, 7);
