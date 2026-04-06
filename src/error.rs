@@ -71,8 +71,7 @@ fn suggest_fix(error: &AppError) -> Option<&'static str> {
     }
 
     // Docker errors
-    if msg.contains("Cannot connect to Docker") || msg.contains("Docker daemon is not responding")
-    {
+    if msg.contains("Cannot connect to Docker") || msg.contains("Docker daemon is not responding") {
         return Some("Run `desktest doctor` to check Docker status.");
     }
 
@@ -97,10 +96,14 @@ fn suggest_fix_docker(error: &bollard::errors::Error) -> Option<&'static str> {
         );
     }
     if msg.contains("permission denied") {
-        return Some("Add your user to the docker group: `sudo usermod -aG docker $USER`, then log out and back in.");
+        return Some(
+            "Add your user to the docker group: `sudo usermod -aG docker $USER`, then log out and back in.",
+        );
     }
     if msg.contains("404") || msg.contains("No such image") {
-        return Some("The Docker image was not found. Check the image name or run `docker pull <image>`.");
+        return Some(
+            "The Docker image was not found. Check the image name or run `docker pull <image>`.",
+        );
     }
     None
 }
@@ -110,20 +113,23 @@ fn suggest_fix_http(error: &reqwest::Error) -> Option<&'static str> {
         return Some("The LLM API request timed out. Check your network or try a different model.");
     }
     if error.is_connect() {
-        return Some("Cannot reach the API server. Check your network connection and api_base_url.");
+        return Some(
+            "Cannot reach the API server. Check your network connection and api_base_url.",
+        );
     }
     let status = error.status();
     if status == Some(reqwest::StatusCode::UNAUTHORIZED) {
         return Some("API key is invalid or expired. Check your API key with `desktest doctor`.");
     }
     if status == Some(reqwest::StatusCode::TOO_MANY_REQUESTS) {
-        return Some("Rate limited by the API. Wait a moment and retry, or use a different API key.");
+        return Some(
+            "Rate limited by the API. Wait a moment and retry, or use a different API key.",
+        );
     }
-    if status
-        .map(|s| s.is_server_error())
-        .unwrap_or(false)
-    {
-        return Some("The API server returned an error. This is usually transient — retry shortly.");
+    if status.map(|s| s.is_server_error()).unwrap_or(false) {
+        return Some(
+            "The API server returned an error. This is usually transient — retry shortly.",
+        );
     }
     None
 }
@@ -136,9 +142,9 @@ fn suggest_fix_io(error: &std::io::Error) -> Option<&'static str> {
         std::io::ErrorKind::PermissionDenied => {
             Some("Permission denied. Check file permissions or run with appropriate privileges.")
         }
-        std::io::ErrorKind::AddrInUse => {
-            Some("Port is already in use. Choose a different --monitor-port or stop the conflicting process.")
-        }
+        std::io::ErrorKind::AddrInUse => Some(
+            "Port is already in use. Choose a different --monitor-port or stop the conflicting process.",
+        ),
         _ => None,
     }
 }
