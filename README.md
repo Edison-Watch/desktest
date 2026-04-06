@@ -20,6 +20,10 @@ Install the desktest CLI by running `curl -fsSL https://raw.githubusercontent.co
 
 
 
+## Getting Started
+
+New to desktest? Follow the [Getting Started guide](GETTING_STARTED.md) for a walkthrough from installation to your first test.
+
 ## Features
 
 - **Prompt → Computer use**: Flexible evaluation metrics (see [task definitions](#computer-use-agent-task-definition))

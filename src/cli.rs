@@ -2,6 +2,7 @@ use clap::{
     Parser, Subcommand,
     builder::styling::{Color, Effects, RgbColor, Style, Styles},
 };
+use clap_complete::Shell;
 
 use crate::results;
 
@@ -478,5 +479,16 @@ EXAMPLES:
         /// Do not open the generated HTML file in the default browser
         #[arg(long, default_value_t = false)]
         no_open: bool,
+    },
+
+    /// Generate shell completion scripts for bash, zsh, fish, elvish, or powershell
+    #[command(after_help = "\
+\x1b[1;4;38;2;195;255;253mEXAMPLES:\x1b[0m
+  desktest completions bash > /etc/bash_completion.d/desktest
+  desktest completions zsh > ~/.zfunc/_desktest
+  desktest completions fish > ~/.config/fish/completions/desktest.fish")]
+    Completions {
+        /// The shell to generate completions for
+        shell: Shell,
     },
 }
