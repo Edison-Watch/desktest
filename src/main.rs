@@ -298,6 +298,9 @@ async fn main() {
         Some(cmd) => cmd,
         None => {
             let mut cmd = Cli::command();
+            if no_color {
+                cmd = cmd.color(clap::ColorChoice::Never);
+            }
             let version = cmd.get_version().unwrap_or("unknown").to_string();
             let box_width = print_banner(&version, no_color);
             if box_width > 0 && !no_color {

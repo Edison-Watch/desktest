@@ -60,12 +60,16 @@ pub fn print_logs(artifacts_dir: &Path, opts: LogsOptions) -> Result<(), AppErro
     let duration_secs = compute_duration_secs(&entries);
 
     // Apply step filter
-    let entries_filtered: Vec<&codify::TrajectoryRecord> = if let Some(ref filter) = opts.step_filter {
-        let filter_set: std::collections::HashSet<usize> = filter.iter().copied().collect();
-        entries.iter().filter(|e| filter_set.contains(&e.step)).collect()
-    } else {
-        entries.iter().collect()
-    };
+    let entries_filtered: Vec<&codify::TrajectoryRecord> =
+        if let Some(ref filter) = opts.step_filter {
+            let filter_set: std::collections::HashSet<usize> = filter.iter().copied().collect();
+            entries
+                .iter()
+                .filter(|e| filter_set.contains(&e.step))
+                .collect()
+        } else {
+            entries.iter().collect()
+        };
 
     // Apply failures filter
     let entries_view: Vec<&codify::TrajectoryRecord> = if opts.failures {
@@ -78,11 +82,18 @@ pub fn print_logs(artifacts_dir: &Path, opts: LogsOptions) -> Result<(), AppErro
     };
 
     if opts.json {
-        print_json(&entries_view, &task_id, total_steps, final_result, last_step_num, duration_secs);
+        print_json(
+            &entries_view,
+            &task_id,
+            total_steps,
+            final_result,
+            last_step_num,
+            duration_secs,
+        );
         return Ok(());
     }
 
-    // Print header (to stderr when --summary or --failures so stdout stays clean for piping)
+    // Print header
     println!("== Trajectory Review ==");
     if let Some(id) = &task_id {
         println!("Task:       {id}");
@@ -114,9 +125,11 @@ pub fn print_logs(artifacts_dir: &Path, opts: LogsOptions) -> Result<(), AppErro
 }
 
 /// Check if a result string indicates a failure.
+///
+/// Uses an allowlist of known-good states so that unknown/new result types
+/// are treated as failures by default (safer than a blocklist).
 fn is_failure(result: &str) -> bool {
-    matches!(result, "fail" | "timeout" | "max_steps")
-        || result.starts_with("error")
+    !matches!(result, "success" | "done" | "wait")
 }
 
 fn print_json(
@@ -129,7 +142,8 @@ fn print_json(
 ) {
     let steps: Vec<serde_json::Value> = entries
         .iter()
-        .map(|e| {
+        .enumerate()
+        .map(|(i, e)| {
             let mut step = serde_json::json!({
                 "step": e.step,
                 "timestamp": e.timestamp,
@@ -152,14 +166,27 @@ fn print_json(
             if let Some(ref sp) = e.screenshot_path {
                 map.insert("screenshot_path".into(), serde_json::json!(sp));
             }
+            // Per-step duration: time elapsed since the previous step
+            if i > 0 {
+                if let (Some(prev_ts), Some(cur_ts)) = (
+                    parse_timestamp_secs(&entries[i - 1].timestamp),
+                    parse_timestamp_secs(&e.timestamp),
+                ) {
+                    if let Some(delta) = cur_ts.checked_sub(prev_ts) {
+                        map.insert("duration_secs".into(), serde_json::json!(delta));
+                    }
+                }
+            }
             step
         })
         .collect();
 
+    let shown_steps = steps.len();
     let mut output = serde_json::json!({
         "steps": steps,
         "summary": {
             "total_steps": total_steps,
+            "shown_steps": shown_steps,
             "result": final_result,
             "result_display": format_result(final_result, last_step_num),
             "duration_secs": duration_secs,
@@ -177,25 +204,16 @@ fn print_summary(entries: &[&codify::TrajectoryRecord]) {
         println!("No matching steps.");
         return;
     }
-    println!(
-        "{:<6} {:<8} {:<14} {}",
-        "Step", "Status", "Type", "Summary"
-    );
+    println!("{:<6} {:<8} {:<14} Summary", "Step", "Status", "Type");
     println!("{}", "-".repeat(72));
     for entry in entries {
         let status = if is_failure(&entry.result) {
             "\u{2717}"
-        } else if entry.result == "done" {
-            "\u{2713}"
         } else {
             "\u{2713}"
         };
         let action_type = entry.action_type.as_deref().unwrap_or("-");
-        let thought = entry
-            .thought
-            .as_deref()
-            .unwrap_or("")
-            .replace('\n', " ");
+        let thought = entry.thought.as_deref().unwrap_or("").replace('\n', " ");
         let thought_truncated: String = thought.chars().take(44).collect();
         println!(
             "{:<6} {:<8} {:<14} {}",
@@ -205,10 +223,7 @@ fn print_summary(entries: &[&codify::TrajectoryRecord]) {
 }
 
 fn print_brief(entries: &[&codify::TrajectoryRecord]) {
-    println!(
-        "{:<6} {:<12} {:<26} Thought",
-        "Step", "Result", "Timestamp"
-    );
+    println!("{:<6} {:<12} {:<26} Thought", "Step", "Result", "Timestamp");
     println!("{}", "-".repeat(80));
     for entry in entries {
         let thought = entry.thought.as_deref().unwrap_or("").replace('\n', " ");
@@ -340,7 +355,12 @@ mod tests {
     use super::*;
     use crate::codify::TrajectoryRecord;
 
-    fn make_entry(step: usize, result: &str, thought: Option<&str>, action_type: Option<&str>) -> TrajectoryRecord {
+    fn make_entry(
+        step: usize,
+        result: &str,
+        thought: Option<&str>,
+        action_type: Option<&str>,
+    ) -> TrajectoryRecord {
         TrajectoryRecord {
             step,
             timestamp: format!("2026-01-01T00:00:{:02}Z", step),
@@ -405,6 +425,13 @@ mod tests {
     #[test]
     fn test_is_failure_wait_is_not_failure() {
         assert!(!is_failure("wait"));
+    }
+
+    #[test]
+    fn test_is_failure_unknown_type_is_failure() {
+        // Allowlist approach: unknown result types default to failure
+        assert!(is_failure("something_new"));
+        assert!(is_failure("aborted"));
     }
 
     // --- format_result tests ---
@@ -614,6 +641,7 @@ mod tests {
             "steps": steps,
             "summary": {
                 "total_steps": 5,
+                "shown_steps": 5,
                 "result": "done",
                 "result_display": format_result("done", 5),
                 "duration_secs": 4u64,
@@ -630,6 +658,7 @@ mod tests {
         // Verify summary fields
         let summary = &output["summary"];
         assert_eq!(summary["total_steps"], 5);
+        assert_eq!(summary["shown_steps"], 5);
         assert_eq!(summary["result"], "done");
         assert_eq!(summary["duration_secs"], 4);
 
@@ -647,11 +676,27 @@ mod tests {
     fn test_json_failures_filter() {
         let entries = sample_entries();
         let refs: Vec<&TrajectoryRecord> = entries.iter().collect();
-        let failures: Vec<&&TrajectoryRecord> = refs.iter().filter(|e| is_failure(&e.result)).collect();
+        let failures: Vec<&&TrajectoryRecord> =
+            refs.iter().filter(|e| is_failure(&e.result)).collect();
 
         // Only step 3 (error:crash) should be a failure
         assert_eq!(failures.len(), 1);
         assert_eq!(failures[0].step, 3);
+    }
+
+    #[test]
+    fn test_json_shown_steps_differs_from_total_when_filtered() {
+        // Simulate what --json --failures produces:
+        // total_steps = full run, shown_steps = filtered count
+        let entries = sample_entries();
+        let total_steps = entries.len(); // 5
+        let failures: Vec<&TrajectoryRecord> =
+            entries.iter().filter(|e| is_failure(&e.result)).collect();
+        let shown_steps = failures.len(); // 1
+
+        assert_eq!(total_steps, 5);
+        assert_eq!(shown_steps, 1);
+        assert_ne!(total_steps, shown_steps);
     }
 
     // --- compute_duration tests ---
@@ -697,11 +742,48 @@ mod tests {
     #[test]
     fn test_load_task_id_no_id_field() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("task.json"),
-            r#"{"name": "something"}"#,
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("task.json"), r#"{"name": "something"}"#).unwrap();
         assert_eq!(load_task_id(dir.path()), None);
+    }
+
+    // --- per-step duration in JSON ---
+
+    #[test]
+    fn test_json_per_step_duration() {
+        let entries = sample_entries();
+        let refs: Vec<&TrajectoryRecord> = entries.iter().collect();
+
+        // Build steps using the same logic as print_json
+        let steps: Vec<serde_json::Value> = refs
+            .iter()
+            .enumerate()
+            .map(|(i, e)| {
+                let mut step = serde_json::json!({
+                    "step": e.step,
+                    "timestamp": e.timestamp,
+                    "result": e.result,
+                });
+                let map = step.as_object_mut().unwrap();
+                if i > 0 {
+                    if let (Some(prev_ts), Some(cur_ts)) = (
+                        parse_timestamp_secs(&refs[i - 1].timestamp),
+                        parse_timestamp_secs(&e.timestamp),
+                    ) {
+                        if let Some(delta) = cur_ts.checked_sub(prev_ts) {
+                            map.insert("duration_secs".into(), serde_json::json!(delta));
+                        }
+                    }
+                }
+                step
+            })
+            .collect();
+
+        // First step has no duration (no predecessor)
+        assert!(steps[0].get("duration_secs").is_none());
+
+        // Subsequent steps each have 1s duration (timestamps are 1s apart)
+        for step in &steps[1..] {
+            assert_eq!(step["duration_secs"], 1);
+        }
     }
 }
