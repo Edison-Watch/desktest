@@ -35,7 +35,9 @@ pub fn print_logs(artifacts_dir: &Path, opts: LogsOptions) -> Result<(), AppErro
                     "steps": [],
                     "summary": {
                         "total_steps": 0,
+                        "shown_steps": 0,
                         "result": "empty",
+                        "result_display": "EMPTY (no steps)",
                         "duration_secs": null,
                     }
                 })
@@ -58,6 +60,19 @@ pub fn print_logs(artifacts_dir: &Path, opts: LogsOptions) -> Result<(), AppErro
         .unwrap_or("unknown");
     let duration = compute_duration(&entries);
     let duration_secs = compute_duration_secs(&entries);
+
+    // Pre-compute per-step durations from the full unfiltered list.
+    // This ensures duration_secs reflects the time since the actual previous
+    // step in the trajectory, not the previous *shown* step after filtering.
+    let step_durations: std::collections::HashMap<usize, u64> = entries
+        .windows(2)
+        .filter_map(|w| {
+            let prev_ts = parse_timestamp_secs(&w[0].timestamp)?;
+            let cur_ts = parse_timestamp_secs(&w[1].timestamp)?;
+            let delta = cur_ts.checked_sub(prev_ts)?;
+            Some((w[1].step, delta))
+        })
+        .collect();
 
     // Apply step filter
     let entries_filtered: Vec<&codify::TrajectoryRecord> =
@@ -84,6 +99,7 @@ pub fn print_logs(artifacts_dir: &Path, opts: LogsOptions) -> Result<(), AppErro
     if opts.json {
         print_json(
             &entries_view,
+            &step_durations,
             &task_id,
             total_steps,
             final_result,
@@ -134,6 +150,7 @@ fn is_failure(result: &str) -> bool {
 
 fn print_json(
     entries: &[&codify::TrajectoryRecord],
+    step_durations: &std::collections::HashMap<usize, u64>,
     task_id: &Option<String>,
     total_steps: usize,
     final_result: &str,
@@ -142,8 +159,7 @@ fn print_json(
 ) {
     let steps: Vec<serde_json::Value> = entries
         .iter()
-        .enumerate()
-        .map(|(i, e)| {
+        .map(|e| {
             let mut step = serde_json::json!({
                 "step": e.step,
                 "timestamp": e.timestamp,
@@ -166,16 +182,9 @@ fn print_json(
             if let Some(ref sp) = e.screenshot_path {
                 map.insert("screenshot_path".into(), serde_json::json!(sp));
             }
-            // Per-step duration: time elapsed since the previous step
-            if i > 0 {
-                if let (Some(prev_ts), Some(cur_ts)) = (
-                    parse_timestamp_secs(&entries[i - 1].timestamp),
-                    parse_timestamp_secs(&e.timestamp),
-                ) {
-                    if let Some(delta) = cur_ts.checked_sub(prev_ts) {
-                        map.insert("duration_secs".into(), serde_json::json!(delta));
-                    }
-                }
+            // Per-step duration from the full unfiltered trajectory
+            if let Some(&delta) = step_durations.get(&e.step) {
+                map.insert("duration_secs".into(), serde_json::json!(delta));
             }
             step
         })
@@ -746,44 +755,51 @@ mod tests {
         assert_eq!(load_task_id(dir.path()), None);
     }
 
-    // --- per-step duration in JSON ---
+    // --- per-step duration tests ---
+
+    fn build_step_durations(entries: &[TrajectoryRecord]) -> std::collections::HashMap<usize, u64> {
+        entries
+            .windows(2)
+            .filter_map(|w| {
+                let prev_ts = parse_timestamp_secs(&w[0].timestamp)?;
+                let cur_ts = parse_timestamp_secs(&w[1].timestamp)?;
+                let delta = cur_ts.checked_sub(prev_ts)?;
+                Some((w[1].step, delta))
+            })
+            .collect()
+    }
 
     #[test]
     fn test_json_per_step_duration() {
         let entries = sample_entries();
-        let refs: Vec<&TrajectoryRecord> = entries.iter().collect();
-
-        // Build steps using the same logic as print_json
-        let steps: Vec<serde_json::Value> = refs
-            .iter()
-            .enumerate()
-            .map(|(i, e)| {
-                let mut step = serde_json::json!({
-                    "step": e.step,
-                    "timestamp": e.timestamp,
-                    "result": e.result,
-                });
-                let map = step.as_object_mut().unwrap();
-                if i > 0 {
-                    if let (Some(prev_ts), Some(cur_ts)) = (
-                        parse_timestamp_secs(&refs[i - 1].timestamp),
-                        parse_timestamp_secs(&e.timestamp),
-                    ) {
-                        if let Some(delta) = cur_ts.checked_sub(prev_ts) {
-                            map.insert("duration_secs".into(), serde_json::json!(delta));
-                        }
-                    }
-                }
-                step
-            })
-            .collect();
+        let durations = build_step_durations(&entries);
 
         // First step has no duration (no predecessor)
-        assert!(steps[0].get("duration_secs").is_none());
+        assert!(!durations.contains_key(&1));
 
         // Subsequent steps each have 1s duration (timestamps are 1s apart)
-        for step in &steps[1..] {
-            assert_eq!(step["duration_secs"], 1);
-        }
+        assert_eq!(durations[&2], 1);
+        assert_eq!(durations[&3], 1);
+        assert_eq!(durations[&4], 1);
+        assert_eq!(durations[&5], 1);
+    }
+
+    #[test]
+    fn test_json_per_step_duration_correct_when_filtered() {
+        // Simulate: steps at t=1,2,3,4,5 — filter to only step 3 (failure).
+        // duration_secs for step 3 should be 1s (time since step 2),
+        // NOT dependent on which steps are shown.
+        let entries = sample_entries();
+        let durations = build_step_durations(&entries);
+
+        // Step 3 is error:crash — when filtered via --failures, its duration
+        // should still reflect time since step 2, not time since step 1.
+        let filtered: Vec<&TrajectoryRecord> =
+            entries.iter().filter(|e| is_failure(&e.result)).collect();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].step, 3);
+
+        // Duration comes from the pre-computed full-trajectory map
+        assert_eq!(durations[&3], 1);
     }
 }
