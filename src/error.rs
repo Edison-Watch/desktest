@@ -77,7 +77,7 @@ fn suggest_fix(error: &AppError) -> Option<&'static str> {
 
     // Timeout errors
     if msg.contains("timeout") || msg.contains("Timeout") || msg.contains("timed out") {
-        return Some("Try increasing --timeout or the task's timeout_seconds field.");
+        return Some("Try increasing the task's 'timeout' field (in seconds).");
     }
 
     // Container/session setup
