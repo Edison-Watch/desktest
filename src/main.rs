@@ -364,11 +364,11 @@ async fn main() {
             if let Err(e) =
                 preflight::run_preflight(&run_config, needs_llm, Some(&task_def.app)).await
             {
-                eprintln!(
-                    "Preflight check failed: {}",
-                    format_error_with_suggestion(&e)
-                );
-                eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
+                let formatted = format_error_with_suggestion(&e);
+                eprintln!("Preflight check failed: {formatted}");
+                if !formatted.contains("desktest doctor") {
+                    eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
+                }
                 std::process::exit(e.exit_code());
             }
 
@@ -499,11 +499,11 @@ async fn main() {
             if let Err(e) =
                 preflight::run_preflight(&run_config, needs_llm, Some(&task_def.app)).await
             {
-                eprintln!(
-                    "Preflight check failed: {}",
-                    format_error_with_suggestion(&e)
-                );
-                eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
+                let formatted = format_error_with_suggestion(&e);
+                eprintln!("Preflight check failed: {formatted}");
+                if !formatted.contains("desktest doctor") {
+                    eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
+                }
                 std::process::exit(e.exit_code());
             }
 
@@ -565,11 +565,11 @@ async fn main() {
             if let Err(e) =
                 preflight::run_preflight(&run_config, needs_llm, Some(&task_def.app)).await
             {
-                eprintln!(
-                    "Preflight check failed: {}",
-                    format_error_with_suggestion(&e)
-                );
-                eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
+                let formatted = format_error_with_suggestion(&e);
+                eprintln!("Preflight check failed: {formatted}");
+                if !formatted.contains("desktest doctor") {
+                    eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
+                }
                 std::process::exit(e.exit_code());
             }
 
@@ -847,11 +847,11 @@ async fn main() {
             // Replay mode doesn't need LLM
             if let Err(e) = preflight::run_preflight(&run_config, false, Some(&task_def.app)).await
             {
-                eprintln!(
-                    "Preflight check failed: {}",
-                    format_error_with_suggestion(&e)
-                );
-                eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
+                let formatted = format_error_with_suggestion(&e);
+                eprintln!("Preflight check failed: {formatted}");
+                if !formatted.contains("desktest doctor") {
+                    eprintln!("\nRun `desktest doctor` for detailed diagnostics.");
+                }
                 std::process::exit(e.exit_code());
             }
 
