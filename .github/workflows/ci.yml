@@ -10,6 +10,20 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  claude-md-size:
+    name: CLAUDE.md size check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure CLAUDE.md stays under 200 lines
+        run: |
+          lines=$(wc -l < CLAUDE.md)
+          echo "CLAUDE.md is $lines lines"
+          if [ "$lines" -ge 200 ]; then
+            echo "::error::CLAUDE.md has $lines lines (limit: 200). Keep it concise or move details to CLAUDE.local.md."
+            exit 1
+          fi
+
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest

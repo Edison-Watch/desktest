@@ -30,3 +30,6 @@ desktest-v*.tar.gz
 
 # Install script
 install
+
+# Local Claude Code notes (not checked in)
+CLAUDE.local.md
