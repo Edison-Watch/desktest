@@ -397,8 +397,8 @@ pub async fn probe_a11y_timing(
 }
 
 /// Save an a11y tree to a file in the artifacts directory.
-#[allow(dead_code)]
-pub async fn save_a11y_tree(
+#[cfg(test)]
+async fn save_a11y_tree(
     artifacts_dir: &Path,
     step_index: usize,
     a11y_text: &str,
