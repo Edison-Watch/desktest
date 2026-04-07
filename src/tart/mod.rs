@@ -134,7 +134,6 @@ impl TartSession {
         }
     }
 
-    #[allow(dead_code)] // accessor for future use
     pub fn vm_name(&self) -> &str {
         &self.vm_name
     }
