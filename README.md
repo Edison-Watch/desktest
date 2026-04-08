@@ -18,6 +18,7 @@ Install the desktest CLI by running `curl -fsSL https://raw.githubusercontent.co
 ```
 </details>
 
+<img width="727" height="362" alt="Screenshot 2026-04-08 at 21 57 34" src="https://github.com/user-attachments/assets/3c37ff7c-5db7-4959-977e-1c6aee9f6b74" />
 
 
 ## Getting Started
