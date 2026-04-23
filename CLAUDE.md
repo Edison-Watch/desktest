@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+**Before any other work in this repo, enable prek:** `cargo binstall prek && prek install`. Hooks are defined in `prek.toml`.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
@@ -83,3 +85,7 @@ Host-side modules:
 - `src/windows/deploy.rs` — App deployment into Windows VM
 - `src/windows/readiness.rs` — Desktop/app readiness detection for Windows
 - `src/init_windows.rs` — `desktest init-windows` golden image provisioning
+
+## Subagents
+
+- Folder-size CI failure → spawn subagent `.claude/agents/folder-refactor-advisor.md`.
