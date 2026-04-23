@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-**Before any other work in this repo, enable prek:** `uv tool install prek && prek install`. Hooks are defined in `prek.toml`.
+**Before any other work in this repo, enable prek:** `brew install prek && prek install`. Hooks are defined in `prek.toml`.
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
