@@ -3,6 +3,7 @@
 .env
 .DS_Store
 .claude/*
+!.claude/agents/
 !.claude/skills/
 !.claude/settings.json
 /test-results
