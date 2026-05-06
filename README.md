@@ -21,7 +21,7 @@ Install the desktest CLI by running `curl -fsSL https://raw.githubusercontent.co
 ```
 </details>
 
-<img width="727" height="362" alt="Screenshot 2026-04-08 at 21 57 34" src="https://github.com/user-attachments/assets/3c37ff7c-5db7-4959-977e-1c6aee9f6b74" />
+<img src="docs/architecture.svg" alt="How Desktest works" width="690" />
 
 
 ## Getting Started
@@ -349,7 +349,37 @@ Or set the `DESKTEST_SLACK_WEBHOOK_URL` environment variable (takes precedence o
 <details>
 <summary>Expand</summary>
 
-<img src="docs/architecture.svg" alt="How Desktest works" width="690" />
+```
+Developer writes task.json
+        │
+        ▼
+   ┌──────────────┐
+   │ desktest CLI  │  validate / run / suite / interactive
+   └────┬─────────┘
+        │
+        ├─── Linux ──────────────┐  ├─── macOS ─────────────┐  ├─── Windows ────────────┐
+        │  Docker Container      │  │  Tart VM / native host │  │  QEMU/KVM VM           │
+        │  Xvfb + XFCE + x11vnc  │  │  Native macOS desktop  │  │  Windows 11 desktop    │
+        │  PyAutoGUI (X11)       │  │  PyAutoGUI (Quartz)    │  │  PyAutoGUI (Win32)     │
+        │  pyatspi (AT-SPI2)     │  │  a11y-helper (AXUIEl.) │  │  uiautomation (UIA)    │
+        │  scrot (screenshot)    │  │  screencapture         │  │  PIL ImageGrab         │
+        └──────────┬─────────────┘  └──────────┬─────────────┘  └──────────┬─────────────┘
+                   │ screenshot + a11y tree     │                          │
+                   └──────────────┬─────────────┴──────────────────────────┘
+                                  ▼
+                     ┌──────────────────┐
+                     │  LLM Agent Loop  │  observe → think → act → repeat
+                     │  (PyAutoGUI code)│
+                     └────────┬─────────┘
+                              │
+                              ▼
+                     ┌──────────────────┐
+                     │  Evaluator       │  programmatic checks / LLM judge / hybrid
+                     └────────┬─────────┘
+                              │
+                              ▼
+                     results.json + recording.mp4 + trajectory.jsonl
+```
 
 </details>
 
