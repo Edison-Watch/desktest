@@ -5,7 +5,7 @@ Desktest is a general computer use CLI for automated end-to-end virtualised test
 Once happy -> Convert agent trajectories to deterministic CI code
 
 > [!WARNING]
-> Desktest is beta software under active development. APIs, task schema, and CLI flags may change between releases.
+> Desktest is alpha software under active development. Expect bugs. APIs, task schema, and CLI flags may change between releases.
 
 
 
