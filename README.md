@@ -349,37 +349,7 @@ Or set the `DESKTEST_SLACK_WEBHOOK_URL` environment variable (takes precedence o
 <details>
 <summary>Expand</summary>
 
-```
-Developer writes task.json
-        │
-        ▼
-   ┌──────────────┐
-   │ desktest CLI  │  validate / run / suite / interactive
-   └────┬─────────┘
-        │
-        ├─── Linux ──────────────┐  ├─── macOS ─────────────┐  ├─── Windows ────────────┐
-        │  Docker Container      │  │  Tart VM / native host │  │  QEMU/KVM VM           │
-        │  Xvfb + XFCE + x11vnc  │  │  Native macOS desktop  │  │  Windows 11 desktop    │
-        │  PyAutoGUI (X11)       │  │  PyAutoGUI (Quartz)    │  │  PyAutoGUI (Win32)     │
-        │  pyatspi (AT-SPI2)     │  │  a11y-helper (AXUIEl.) │  │  uiautomation (UIA)    │
-        │  scrot (screenshot)    │  │  screencapture         │  │  PIL ImageGrab         │
-        └──────────┬─────────────┘  └──────────┬─────────────┘  └──────────┬─────────────┘
-                   │ screenshot + a11y tree     │                          │
-                   └──────────────┬─────────────┴──────────────────────────┘
-                                  ▼
-                     ┌──────────────────┐
-                     │  LLM Agent Loop  │  observe → think → act → repeat
-                     │  (PyAutoGUI code)│
-                     └────────┬─────────┘
-                              │
-                              ▼
-                     ┌──────────────────┐
-                     │  Evaluator       │  programmatic checks / LLM judge / hybrid
-                     └────────┬─────────┘
-                              │
-                              ▼
-                     results.json + recording.mp4 + trajectory.jsonl
-```
+<img src="docs/architecture.svg" alt="How Desktest works" width="690" />
 
 </details>
 
