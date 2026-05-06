@@ -1140,15 +1140,13 @@ fn validate_app_config(app: &AppConfig) -> Result<(), AppError> {
             }
         }
         AppConfig::MacosNative {
-            bundle_id,
-            app_path,
+            bundle_id: None,
+            app_path: None,
         } => {
-            if bundle_id.is_none() && app_path.is_none() {
-                return Err(AppError::Config(
-                    "MacosNative app: at least one of 'bundle_id' or 'app_path' must be specified."
-                        .into(),
-                ));
-            }
+            return Err(AppError::Config(
+                "MacosNative app: at least one of 'bundle_id' or 'app_path' must be specified."
+                    .into(),
+            ));
         }
         AppConfig::DockerImage { image, digest, .. } => {
             if image.is_empty() {
