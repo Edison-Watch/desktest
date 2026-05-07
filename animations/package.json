@@ -2,7 +2,7 @@
   "name": "desktest-animations",
   "private": true,
   "scripts": {
-    "storybook": "storybook dev -p 6006",
+    "storybook": "storybook dev -p 6020",
     "build-storybook": "storybook build"
   },
   "dependencies": {
