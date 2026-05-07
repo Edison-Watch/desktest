@@ -1,0 +1,21 @@
+{
+  "name": "desktest-animations",
+  "private": true,
+  "scripts": {
+    "storybook": "storybook dev -p 6020",
+    "build-storybook": "storybook build"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@storybook/addon-essentials": "^8.6.0",
+    "@storybook/react": "^8.6.0",
+    "@storybook/react-vite": "^8.6.0",
+    "@types/react": "^18.3.0",
+    "playwright": "^1.59.1",
+    "storybook": "^8.6.0",
+    "typescript": "^5.7.0"
+  }
+}
