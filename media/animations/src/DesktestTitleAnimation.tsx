@@ -299,8 +299,8 @@ export default function DesktestTitleAnimation() {
                     </div>
                     <div className="dt-separator">{"─ ".repeat(50)}</div>
                     <div className="dt-description">
-                      Automated end-to-end testing for Linux desktop apps
-                      using LLM-powered agents
+                      Automated end-to-end testing for Linux, macOS, and
+                      Windows desktop apps using LLM-powered agents
                     </div>
                     <div className="dt-usage">
                       <span className="dt-usage-label">Usage:</span>
