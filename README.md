@@ -1,8 +1,12 @@
+<div align="center">
 <img width="571" height="174" alt="Screenshot 2026-04-01 at 20 38 16" src="https://github.com/user-attachments/assets/fe2bf5aa-cba4-4e20-ad8f-93beb6399988" />
+</div>
 
 
 
-[🎥Explanation Video](https://github.com/user-attachments/assets/230f789a-5d51-4eec-8848-81f96c742863)
+<p align="center">
+<a href="https://github.com/user-attachments/assets/230f789a-5d51-4eec-8848-81f96c742863">🎥Explanation Video</a>
+</p>
 
 Desktest is a general computer use CLI for automated end-to-end virtualised testing of desktop applications using LLM-powered agents. Spins up a disposable 🐳 Docker container (Linux), [Tart VM (macOS)](https://tart.run/), or QEMU/KVM VM (Windows) with a desktop environment, deploys any apps, and runs a computer-use agent that interacts with it based on your prompt. Built with coding agents in mind as first-class citizen users of `desktest`.
 
@@ -25,7 +29,9 @@ Install the desktest CLI by running `curl -fsSL https://raw.githubusercontent.co
 ```
 </details>
 
+<div align="center">
 <img src="docs/architecture.svg" alt="How Desktest works" width="690" />
+</div>
 
 
 ## Getting Started
@@ -45,7 +51,9 @@ New to desktest? Follow the [Getting Started guide](GETTING_STARTED.md) for a wa
 
 Desktest uses the same agent harness as the [OSWorld](https://os-world.github.io/) benchmark for evaluating multimodal agents on real-world computer tasks. The leaderboard below tracks which models perform best, [updated weekly](https://github.com/Edison-Watch/osworld-leaderboard-updater):
 
-[![OSWorld Leaderboard](https://raw.githubusercontent.com/Edison-Watch/osworld-leaderboard-updater/main/assets/osworld-leaderboard.svg)](https://github.com/Edison-Watch/osworld-leaderboard-updater)
+<p align="center">
+<a href="https://github.com/Edison-Watch/osworld-leaderboard-updater"><img src="https://raw.githubusercontent.com/Edison-Watch/osworld-leaderboard-updater/main/assets/osworld-leaderboard.svg" alt="OSWorld Leaderboard" /></a>
+</p>
 
 ## Use Cases
 
