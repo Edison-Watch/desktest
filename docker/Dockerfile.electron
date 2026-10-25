@@ -1,3 +1,4 @@
+# pin-exempt: built locally from docker/Dockerfile (desktest-desktop:latest) by this repo
 FROM desktest-desktop:latest
 
 USER root

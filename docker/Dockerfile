@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim
+FROM debian:bookworm-20261020-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     net-tools \
     curl \
+    # ca-certificates: listed explicitly so each build pulls the post-eMudhra trust store
     ca-certificates \
     libgtk-3-0 \
     libnotify4 \

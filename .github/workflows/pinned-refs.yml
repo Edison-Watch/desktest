@@ -1,0 +1,23 @@
+name: Pinned refs
+
+# Fail the build if a Dockerfile or workflow uses a mutable reference: images
+# must be pinned by digest and actions by commit sha (see
+# scripts/check_immutable_refs.py).
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-refs:
+    name: Pinned refs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - run: python3 scripts/check_immutable_refs.py
