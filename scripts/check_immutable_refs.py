@@ -71,10 +71,9 @@ def flow_depth(line: str, depth: int) -> int:
 
 
 # A `*version` key whose value starts on the next line: plain multiline or `|` / `>` block.
-VERSION_OPEN = re.compile(
-    BLOCK_KEY + r"""(?P<key>[\w-]*version)["']?\s*:\s*(?:[|>][-+0-9]*)?\s*(?:#.*)?$""",
-    re.IGNORECASE,
-)
+VERSION_OPEN_TAIL = r"""(?P<key>[\w-]*version)["']?\s*:\s*(?:[|>][-+0-9]*)?\s*(?:#.*)?$"""
+VERSION_OPEN = re.compile(BLOCK_KEY + VERSION_OPEN_TAIL, re.IGNORECASE)
+VERSION_OPEN_FLOW = re.compile(FLOW_KEY + VERSION_OPEN_TAIL, re.IGNORECASE)
 EXEMPT = re.compile(r"^\s*#\s*pin-exempt:\s*\S")
 PARSER_DIRECTIVE = re.compile(r"^#\s*(?P<name>[A-Za-z]+)\s*=\s*(?P<value>\S*)\s*$")
 
@@ -266,15 +265,23 @@ def container_problem(key: str, ref: str, is_action_metadata: bool) -> str | Non
     return mutable_image(ref)
 
 
-def next_scalar_line(lines: list[str], lineno: int, key_line: str) -> str | None:
-    """First line of a value that starts below its key, or None if the next line is not indented under it."""
+def next_scalar_line(lines: list[str], lineno: int, key_line: str, in_flow: bool) -> str | None:
+    """First line of a value that starts below its key, or None if no line continues it.
+
+    Comments are dropped; inside a block scalar that can only over-match (fail closed).
+    In a flow collection indentation does not matter and a closing `}` / `]` / `,` ends the value.
+    """
     indent = len(key_line) - len(key_line.lstrip())
     for line in lines[lineno:]:
-        if not line.strip():
+        value = line.strip()
+        if not value or value.startswith("#"):
             continue
-        if len(line) - len(line.lstrip()) <= indent:
+        if not in_flow and len(line) - len(line.lstrip()) <= indent:
             return None
-        return line.strip().strip("\"'").lower()
+        value = re.sub(r"\s+#.*$", "", value)
+        if in_flow:
+            value = re.split(r"\s*[,}\]]", value, maxsplit=1)[0]
+        return value.strip().strip("\"'").lower()
     return None
 
 
@@ -292,7 +299,8 @@ def check_actions_file(path: str, lines: list[str]) -> list[str]:
             if why := uses_problem(ref):
                 errors.append(f"{path}:{lineno}: uses {ref}: {why}")
         if (m := latest_re.search(line)) or (
-            (m := VERSION_OPEN.match(line)) and next_scalar_line(lines, lineno, line) == "latest"
+            (m := (VERSION_OPEN_FLOW.search(line) if in_flow else VERSION_OPEN.match(line)))
+            and next_scalar_line(lines, lineno, line, in_flow) == "latest"
         ):
             errors.append(f"{path}:{lineno}: {m['key']}: latest is mutable; name an exact version")
         if lineno > 1 and EXEMPT.match(lines[lineno - 2]):
