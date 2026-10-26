@@ -45,13 +45,14 @@ MOUNT_FROM = re.compile(r"--mount=\S*?\bfrom=(?P<ref>[^\s,]+)", re.IGNORECASE)
 # Node properties: anchors (&a) and tags (!!seq, !<tag:yaml.org,2002:seq>) may precede a
 # key or collection. Each ends at whitespace or a bracket, so a run like `&&&x` has only
 # one way to split (no catastrophic backtracking).
-PROPS = r"""(?:(?:&[^\s\[\]{},]*|!<[^\s<>]*>|!(?!<)[^\s\[\]{},]*)(?:\s+|(?=[\[{])))*"""
+PROPS = r"""(?:(?:&[^\s\[\]{},]*|!<[^\s<>]*>|!(?!<)[^\s\[\]{},]*)(?:\s+|(?=[\[{])|$))*"""
 BLOCK_KEY = r"""^\s*(?:-\s*)?""" + PROPS + r"""["']?"""
 FLOW_KEY = r"""(?:^\s*(?:-\s*)?|[{,]\s*)""" + PROPS + r"""["']?"""
 FLOW_LINE = re.compile(
     r"""^\s*(?:-\s*)?""" + PROPS + r"""(?:["']?[\w.-]+["']?\s*:\s*)?""" + PROPS + r"""[\[{]"""
 )
-YAML_VALUE = r"""["']?\s*:\s*(?P<ref>[^\s#,{}]+)"""
+# A value may carry its own anchor or tag (`uses: &pin owner/repo@sha`); the ref is what follows.
+YAML_VALUE = r"""["']?\s*:\s*""" + PROPS + r"""(?P<ref>(?![&!])[^\s#,{}]+)"""
 
 
 def key_patterns(key: str) -> tuple[re.Pattern[str], re.Pattern[str], re.Pattern[str]]:
@@ -59,7 +60,10 @@ def key_patterns(key: str) -> tuple[re.Pattern[str], re.Pattern[str], re.Pattern
         re.compile(key + "uses" + YAML_VALUE),
         re.compile(key + "(?P<key>image|container)" + YAML_VALUE),
         re.compile(
-            key + r"""(?P<key>[\w-]*version)["']?\s*:\s*["']?latest["']?\s*(?:[,}#].*)?$""",
+            key
+            + r"""(?P<key>[\w-]*version)["']?\s*:\s*"""
+            + PROPS
+            + r"""["']?latest["']?\s*(?:[,}#].*)?$""",
             re.IGNORECASE,
         ),
     )
@@ -78,7 +82,9 @@ def flow_depth(line: str, depth: int) -> int:
 
 # A checked key whose value starts on the next line: plain multiline or `|` / `>` block.
 OPEN_TAIL = (
-    r"""(?P<key>uses|image|container|[\w-]*version)["']?\s*:\s*(?:[|>][-+0-9]*)?\s*(?:#.*)?$"""
+    r"""(?P<key>uses|image|container|[\w-]*version)["']?\s*:\s*"""
+    + PROPS
+    + r"""(?:[|>][-+0-9]*)?\s*(?:#.*)?$"""
 )
 OPEN = re.compile(BLOCK_KEY + OPEN_TAIL, re.IGNORECASE)
 OPEN_FLOW = re.compile(FLOW_KEY + OPEN_TAIL, re.IGNORECASE)
@@ -298,7 +304,10 @@ def next_scalar_line(lines: list[str], lineno: int, key_line: str, in_flow: bool
         value = re.sub(r"\s+#.*$", "", value)
         if in_flow:
             value = re.split(r"\s*[,}\]]", value, maxsplit=1)[0]
-        return value.strip().strip("\"'")
+        value = re.sub("^" + PROPS, "", value).strip()  # `&v latest`: the anchor is not the value
+        if not value:
+            continue
+        return value.strip("\"'")
     return None
 
 
