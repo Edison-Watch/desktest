@@ -45,7 +45,7 @@ MOUNT_FROM = re.compile(r"--mount=\S*?\bfrom=(?P<ref>[^\s,]+)", re.IGNORECASE)
 # Node properties: anchors (&a) and tags (!!seq, !<tag:yaml.org,2002:seq>) may precede a
 # key or collection. Each ends at whitespace or a bracket, so a run like `&&&x` has only
 # one way to split (no catastrophic backtracking).
-PROPS = r"""(?:(?:&[^\s\[\]{},]*|!<[^>]*>|!(?!<)[^\s\[\]{},]*)(?:\s+|(?=[\[{])))*"""
+PROPS = r"""(?:(?:&[^\s\[\]{},]*|!<[^\s<>]*>|!(?!<)[^\s\[\]{},]*)(?:\s+|(?=[\[{])))*"""
 BLOCK_KEY = r"""^\s*(?:-\s*)?""" + PROPS + r"""["']?"""
 FLOW_KEY = r"""(?:^\s*(?:-\s*)?|[{,]\s*)""" + PROPS + r"""["']?"""
 FLOW_LINE = re.compile(
