@@ -190,22 +190,40 @@ def image_problem(ref: str, args: dict[str, str]) -> str | None:
     return mutable_image(resolved)
 
 
+def declare_args(rest: str, scope: dict[str, str], inherit: dict[str, str]) -> None:
+    """Record an ARG instruction; a bare `ARG NAME` in a stage takes the global default."""
+    for token in rest.split():
+        if arg := ARG_DEFAULT.match(token):
+            scope[arg["name"]] = arg["value"].strip("\"'")
+        elif token in inherit:
+            scope[token] = inherit[token]
+        else:
+            scope.pop(token, None)  # declared without a default: unresolved from here on
+
+
 def check_dockerfile(path: str, lines: list[str]) -> list[str]:
     errors: list[str] = []
     stages: set[str] = set()
-    args: dict[str, str] = {}
+    # Docker scoping: FROM sees only ARGs declared before the first FROM; each stage
+    # starts empty and sees a global value only by redeclaring it without a default.
+    global_args: dict[str, str] = {}
+    stage_args: dict[str, str] | None = None
     for lineno, exempt, text in instructions(lines):
         m = INSTRUCTION.match(text)
         if not m:
             continue
         cmd, rest = m["cmd"].upper(), m["args"]
         if cmd == "ARG":
-            for token in rest.split():
-                if arg := ARG_DEFAULT.match(token):
-                    args[arg["name"]] = arg["value"].strip("\"'")
+            if stage_args is None:
+                declare_args(rest, global_args, {})
+            else:
+                declare_args(rest, stage_args, global_args)
+        scope = global_args if cmd == "FROM" else (stage_args or {})
         for label, ref in image_refs(cmd, rest, stages):
-            if not exempt and (why := image_problem(ref, args)):
+            if not exempt and (why := image_problem(ref, scope)):
                 errors.append(f"{path}:{lineno}: {label}{ref}: {why}")
+        if cmd == "FROM":
+            stage_args = {}
     return errors
 
 
