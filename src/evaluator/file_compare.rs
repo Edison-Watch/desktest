@@ -220,6 +220,9 @@ fn yaml_eq(a: &saphyr::Yaml, b: &saphyr::Yaml) -> bool {
     use saphyr::Yaml;
 
     match (a, b) {
+        // A scalar whose core-schema tag does not fit (`!!int abc`) loads as
+        // BadValue; two of them must not match each other.
+        (Yaml::BadValue, _) | (_, Yaml::BadValue) => false,
         (Yaml::Mapping(a), Yaml::Mapping(b)) => {
             a.len() == b.len()
                 && a.iter()
@@ -455,6 +458,12 @@ mod tests {
     #[test]
     fn test_yaml_one_one_words_stay_strings() {
         let (passed, _) = compare_yaml("a: yes\n", "a: true\n");
+        assert!(!passed);
+    }
+
+    #[test]
+    fn test_yaml_bad_core_tag_values_differ() {
+        let (passed, _) = compare_yaml("a: !!int abc\n", "a: !!int xyz\n");
         assert!(!passed);
     }
 
