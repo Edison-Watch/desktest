@@ -32,3 +32,5 @@ desktest-v*.tar.gz
 
 # Install script
 install
+
+__pycache__/
