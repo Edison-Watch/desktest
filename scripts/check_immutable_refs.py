@@ -42,9 +42,15 @@ MOUNT_FROM = re.compile(r"--mount=\S*?\bfrom=(?P<ref>[^\s,]+)", re.IGNORECASE)
 # A YAML key, optionally quoted, with optional space before the colon. Keys after `{`
 # or `,` count only on a flow-collection line (`- { uses: ... }`, `steps: [{ ... }]`),
 # so a brace or comma inside a `run:` string is not mistaken for a key.
-BLOCK_KEY = r"""^\s*(?:-\s*)?["']?"""
-FLOW_KEY = r"""(?:^\s*(?:-\s*)?|[{,]\s*)["']?"""
-FLOW_LINE = re.compile(r"""^\s*(?:-\s*)?(?:["']?[\w.-]+["']?\s*:\s*)?[\[{]""")
+# Node properties: anchors (&a) and tags (!!seq, !<tag:yaml.org,2002:seq>) may precede a
+# key or collection. Each ends at whitespace or a bracket, so a run like `&&&x` has only
+# one way to split (no catastrophic backtracking).
+PROPS = r"""(?:(?:&[^\s\[\]{},]*|!<[^>]*>|!(?!<)[^\s\[\]{},]*)(?:\s+|(?=[\[{])))*"""
+BLOCK_KEY = r"""^\s*(?:-\s*)?""" + PROPS + r"""["']?"""
+FLOW_KEY = r"""(?:^\s*(?:-\s*)?|[{,]\s*)""" + PROPS + r"""["']?"""
+FLOW_LINE = re.compile(
+    r"""^\s*(?:-\s*)?""" + PROPS + r"""(?:["']?[\w.-]+["']?\s*:\s*)?""" + PROPS + r"""[\[{]"""
+)
 YAML_VALUE = r"""["']?\s*:\s*(?P<ref>[^\s#,{}]+)"""
 
 
@@ -70,10 +76,16 @@ def flow_depth(line: str, depth: int) -> int:
     return max(0, depth + bare.count("{") + bare.count("[") - bare.count("}") - bare.count("]"))
 
 
-# A `*version` key whose value starts on the next line: plain multiline or `|` / `>` block.
-VERSION_OPEN_TAIL = r"""(?P<key>[\w-]*version)["']?\s*:\s*(?:[|>][-+0-9]*)?\s*(?:#.*)?$"""
-VERSION_OPEN = re.compile(BLOCK_KEY + VERSION_OPEN_TAIL, re.IGNORECASE)
-VERSION_OPEN_FLOW = re.compile(FLOW_KEY + VERSION_OPEN_TAIL, re.IGNORECASE)
+# A checked key whose value starts on the next line: plain multiline or `|` / `>` block.
+OPEN_TAIL = (
+    r"""(?P<key>uses|image|container|[\w-]*version)["']?\s*:\s*(?:[|>][-+0-9]*)?\s*(?:#.*)?$"""
+)
+OPEN = re.compile(BLOCK_KEY + OPEN_TAIL, re.IGNORECASE)
+OPEN_FLOW = re.compile(FLOW_KEY + OPEN_TAIL, re.IGNORECASE)
+# A `|` / `>` block-scalar indicator: the value itself is on the next line.
+BLOCK_INDICATOR = re.compile(r"^[|>][-+0-9]*$")
+# A nested mapping key or sequence item: the key above holds a collection, not a scalar.
+COLLECTION_ITEM = re.compile(r"""^(?:-(?:\s|$)|["']?[\w.-]+["']?\s*:(?:\s|$))""")
 EXEMPT = re.compile(r"^\s*#\s*pin-exempt:\s*\S")
 PARSER_DIRECTIVE = re.compile(r"^#\s*(?P<name>[A-Za-z]+)\s*=\s*(?P<value>\S*)\s*$")
 
@@ -217,10 +229,12 @@ def declare_args(rest: str, scope: dict[str, str], inherit: dict[str, str]) -> N
 def check_dockerfile(path: str, lines: list[str]) -> list[str]:
     errors: list[str] = []
     stages: set[str] = set()
-    # Docker scoping: FROM sees only ARGs declared before the first FROM; each stage
-    # starts empty and sees a global value only by redeclaring it without a default.
+    # Docker scoping: FROM sees only ARGs declared before the first FROM; a stage starts
+    # with its base stage's ARGs (empty for an image) and sees a global value only by
+    # redeclaring it without a default.
     global_args: dict[str, str] = {}
     stage_args: dict[str, str] | None = None
+    stage_scopes: dict[str, dict[str, str]] = {}  # ARGs of each named stage, by alias
     for lineno, exempt, text in instructions(lines):
         m = INSTRUCTION.match(text)
         if not m:
@@ -236,7 +250,10 @@ def check_dockerfile(path: str, lines: list[str]) -> list[str]:
             if not exempt and (why := image_problem(ref, scope)):
                 errors.append(f"{path}:{lineno}: {label}{ref}: {why}")
         if cmd == "FROM":
-            stage_args = {}
+            tokens = [t.lower() for t in rest.split() if not t.startswith("--")]
+            stage_args = dict(stage_scopes.get(tokens[0], {})) if tokens else {}
+            if len(tokens) >= 3 and tokens[1] == "as":
+                stage_scopes[tokens[2]] = stage_args
     return errors
 
 
@@ -266,7 +283,7 @@ def container_problem(key: str, ref: str, is_action_metadata: bool) -> str | Non
 
 
 def next_scalar_line(lines: list[str], lineno: int, key_line: str, in_flow: bool) -> str | None:
-    """First line of a value that starts below its key, or None if no line continues it.
+    """First line of a scalar that starts below its key, or None if no scalar continues it.
 
     Comments are dropped; inside a block scalar that can only over-match (fail closed).
     In a flow collection indentation does not matter and a closing `}` / `]` / `,` ends the value.
@@ -276,18 +293,40 @@ def next_scalar_line(lines: list[str], lineno: int, key_line: str, in_flow: bool
         value = line.strip()
         if not value or value.startswith("#"):
             continue
-        if not in_flow and len(line) - len(line.lstrip()) <= indent:
+        if not in_flow and len(line) - len(line.lstrip()) <= indent or COLLECTION_ITEM.match(value):
             return None
         value = re.sub(r"\s+#.*$", "", value)
         if in_flow:
             value = re.split(r"\s*[,}\]]", value, maxsplit=1)[0]
-        return value.strip().strip("\"'").lower()
+        return value.strip().strip("\"'")
     return None
+
+
+def next_line_problem(
+    key: str, ref: str | None, exempt: bool, is_action_metadata: bool
+) -> str | None:
+    """Problem with a `uses` / `image` / `container` / `*version` value written below its key."""
+    if ref is None:
+        return None
+    key = key.lower()
+    if key == "uses":
+        why = uses_problem(ref)
+        return f"uses {ref}: {why}" if why else None
+    if key.endswith("version"):
+        return (
+            f"{key}: latest is mutable; name an exact version" if ref.lower() == "latest" else None
+        )
+    if exempt:
+        return None  # pin-exempt covers images only
+    why = container_problem(key, ref, is_action_metadata)
+    return f"{key} {ref}: {why}" if why else None
 
 
 def check_actions_file(path: str, lines: list[str]) -> list[str]:
     errors: list[str] = []
-    is_action_metadata = PurePosixPath(path).stem == "action"
+    p = PurePosixPath(path)
+    # a workflow may be named action.yml too; only files outside .github/workflows are action metadata
+    is_action_metadata = p.stem == "action" and p.parts[:2] != (".github", "workflows")
     depth = 0  # open flow collections, so continuation lines of a `{ ... }` keep flow parsing
     for lineno, line in enumerate(lines, 1):
         in_flow = depth > 0 or bool(FLOW_LINE.match(line))
@@ -296,18 +335,29 @@ def check_actions_file(path: str, lines: list[str]) -> list[str]:
         # Every match counts: a flow-style line can hold several steps or keys.
         for m in uses_re.finditer(line):
             ref = m["ref"].strip("\"'")
-            if why := uses_problem(ref):
+            if not BLOCK_INDICATOR.match(ref) and (why := uses_problem(ref)):
                 errors.append(f"{path}:{lineno}: uses {ref}: {why}")
-        if (m := latest_re.search(line)) or (
-            (m := (VERSION_OPEN_FLOW.search(line) if in_flow else VERSION_OPEN.match(line)))
-            and next_scalar_line(lines, lineno, line, in_flow) == "latest"
-        ):
+        if m := latest_re.search(line):
             errors.append(f"{path}:{lineno}: {m['key']}: latest is mutable; name an exact version")
-        if lineno > 1 and EXEMPT.match(lines[lineno - 2]):
-            continue  # pin-exempt covers images only, so it is checked after uses
+        exempt = lineno > 1 and bool(EXEMPT.match(lines[lineno - 2]))  # covers images only
+        # A value on the line below its key is checked like one on the key's own line.
+        opened = OPEN_FLOW.search(line) if in_flow else OPEN.match(line)
+        if opened and (
+            why := next_line_problem(
+                opened["key"],
+                next_scalar_line(lines, lineno, line, in_flow),
+                exempt,
+                is_action_metadata,
+            )
+        ):
+            errors.append(f"{path}:{lineno}: {why}")
+        if exempt:
+            continue
         for m in image_re.finditer(line):
             key, ref = m["key"], m["ref"].strip("\"'")
-            if why := container_problem(key, ref, is_action_metadata):
+            if not BLOCK_INDICATOR.match(ref) and (
+                why := container_problem(key, ref, is_action_metadata)
+            ):
                 errors.append(f"{path}:{lineno}: {key} {ref}: {why}")
     return errors
 
