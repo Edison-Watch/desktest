@@ -192,8 +192,14 @@ fn compare_json(actual: &str, expected: &str) -> (bool, String) {
 
 /// Compare two YAML strings semantically.
 fn compare_yaml(actual: &str, expected: &str) -> (bool, String) {
-    let actual_val: Result<serde_yaml::Value, _> = serde_yaml::from_str(actual);
-    let expected_val: Result<serde_yaml::Value, _> = serde_yaml::from_str(expected);
+    let parse = |s: &str| {
+        serde_saphyr::from_str_with_options::<serde_json::Value>(
+            s,
+            serde_saphyr::options! { strict_booleans: true },
+        )
+    };
+    let actual_val = parse(actual);
+    let expected_val = parse(expected);
 
     match (actual_val, expected_val) {
         (Ok(a), Ok(e)) => {
