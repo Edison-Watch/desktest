@@ -61,6 +61,20 @@ def key_patterns(key: str) -> tuple[re.Pattern[str], re.Pattern[str], re.Pattern
 
 BLOCK_PATTERNS = key_patterns(BLOCK_KEY)
 FLOW_PATTERNS = key_patterns(FLOW_KEY)
+QUOTED_OR_COMMENT = re.compile(r""""(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|\s#.*$""")
+
+
+def flow_depth(line: str, depth: int) -> int:
+    """Unclosed `{` / `[` after this line, ignoring quoted text and comments."""
+    bare = QUOTED_OR_COMMENT.sub("", line)
+    return max(0, depth + bare.count("{") + bare.count("[") - bare.count("}") - bare.count("]"))
+
+
+# A `*version` key whose value starts on the next line: plain multiline or `|` / `>` block.
+VERSION_OPEN = re.compile(
+    BLOCK_KEY + r"""(?P<key>[\w-]*version)["']?\s*:\s*(?:[|>][-+0-9]*)?\s*(?:#.*)?$""",
+    re.IGNORECASE,
+)
 EXEMPT = re.compile(r"^\s*#\s*pin-exempt:\s*\S")
 PARSER_DIRECTIVE = re.compile(r"^#\s*(?P<name>[A-Za-z]+)\s*=\s*(?P<value>\S*)\s*$")
 
@@ -252,17 +266,34 @@ def container_problem(key: str, ref: str, is_action_metadata: bool) -> str | Non
     return mutable_image(ref)
 
 
+def next_scalar_line(lines: list[str], lineno: int, key_line: str) -> str | None:
+    """First line of a value that starts below its key, or None if the next line is not indented under it."""
+    indent = len(key_line) - len(key_line.lstrip())
+    for line in lines[lineno:]:
+        if not line.strip():
+            continue
+        if len(line) - len(line.lstrip()) <= indent:
+            return None
+        return line.strip().strip("\"'").lower()
+    return None
+
+
 def check_actions_file(path: str, lines: list[str]) -> list[str]:
     errors: list[str] = []
     is_action_metadata = PurePosixPath(path).stem == "action"
+    depth = 0  # open flow collections, so continuation lines of a `{ ... }` keep flow parsing
     for lineno, line in enumerate(lines, 1):
-        uses_re, image_re, latest_re = FLOW_PATTERNS if FLOW_LINE.match(line) else BLOCK_PATTERNS
+        in_flow = depth > 0 or bool(FLOW_LINE.match(line))
+        uses_re, image_re, latest_re = FLOW_PATTERNS if in_flow else BLOCK_PATTERNS
+        depth = flow_depth(line, depth) if in_flow else 0
         # Every match counts: a flow-style line can hold several steps or keys.
         for m in uses_re.finditer(line):
             ref = m["ref"].strip("\"'")
             if why := uses_problem(ref):
                 errors.append(f"{path}:{lineno}: uses {ref}: {why}")
-        if m := latest_re.search(line):
+        if (m := latest_re.search(line)) or (
+            (m := VERSION_OPEN.match(line)) and next_scalar_line(lines, lineno, line) == "latest"
+        ):
             errors.append(f"{path}:{lineno}: {m['key']}: latest is mutable; name an exact version")
         if lineno > 1 and EXEMPT.match(lines[lineno - 2]):
             continue  # pin-exempt covers images only, so it is checked after uses
