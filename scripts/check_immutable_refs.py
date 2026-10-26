@@ -33,7 +33,7 @@ from pathlib import PurePosixPath
 DIGEST = re.compile(r"@sha256:[0-9a-f]{64}$")
 COMMIT_SHA = re.compile(r"^[^@\s/]+/[^@\s]+@[0-9a-f]{40}$")  # owner/repo[/path]@<sha>
 INSTRUCTION = re.compile(r"^\s*(?P<cmd>[A-Za-z]+)\s+(?P<args>.*)$")
-ARG_DEFAULT = re.compile(r"^(?P<name>[A-Za-z_][A-Za-z0-9_]*)=(?P<value>\S+)$")
+ARG_DEFAULT = re.compile(r"^(?P<name>[A-Za-z_][A-Za-z0-9_]*)=(?P<value>\S*)$")
 VARIABLE = re.compile(
     r"\$\{(?P<braced>[A-Za-z_][A-Za-z0-9_]*)\}|\$(?P<bare>[A-Za-z_][A-Za-z0-9_]*)"
 )
