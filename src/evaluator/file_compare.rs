@@ -191,19 +191,19 @@ fn compare_json(actual: &str, expected: &str) -> (bool, String) {
 }
 
 /// Compare two YAML strings semantically.
+///
+/// Uses saphyr's YAML-native value type so integer and string keys stay
+/// distinct and custom tags (`!foo`) take part in the comparison. Core-schema
+/// tags (`!!str`, `!!int`, ...) are resolved to their values first.
 fn compare_yaml(actual: &str, expected: &str) -> (bool, String) {
-    let parse = |s: &str| {
-        serde_saphyr::from_str_with_options::<serde_json::Value>(
-            s,
-            serde_saphyr::options! { strict_booleans: true },
-        )
-    };
-    let actual_val = parse(actual);
-    let expected_val = parse(expected);
+    use saphyr::LoadableYamlNode;
+
+    let actual_val = saphyr::Yaml::load_from_str(actual);
+    let expected_val = saphyr::Yaml::load_from_str(expected);
 
     match (actual_val, expected_val) {
         (Ok(a), Ok(e)) => {
-            if a == e {
+            if a.len() == e.len() && a.iter().zip(&e).all(|(a, e)| yaml_eq(a, e)) {
                 (true, "YAML data structures match".to_string())
             } else {
                 (false, "YAML data structures differ".to_string())
@@ -211,6 +211,25 @@ fn compare_yaml(actual: &str, expected: &str) -> (bool, String) {
         }
         (Err(e), _) => (false, format!("Failed to parse actual file as YAML: {e}")),
         (_, Err(e)) => (false, format!("Failed to parse expected file as YAML: {e}")),
+    }
+}
+
+/// Structural YAML equality that ignores mapping key order (saphyr's own
+/// `PartialEq` compares mappings in insertion order).
+fn yaml_eq(a: &saphyr::Yaml, b: &saphyr::Yaml) -> bool {
+    use saphyr::Yaml;
+
+    match (a, b) {
+        (Yaml::Mapping(a), Yaml::Mapping(b)) => {
+            a.len() == b.len()
+                && a.iter()
+                    .all(|(k, v)| b.get(k).is_some_and(|bv| yaml_eq(v, bv)))
+        }
+        (Yaml::Sequence(a), Yaml::Sequence(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| yaml_eq(a, b))
+        }
+        (Yaml::Tagged(ta, a), Yaml::Tagged(tb, b)) => ta == tb && yaml_eq(a, b),
+        _ => a == b,
     }
 }
 
@@ -408,8 +427,40 @@ mod tests {
     }
 
     #[test]
+    fn test_yaml_int_and_string_keys_differ() {
+        let (passed, _) = compare_yaml("1: a\n", "\"1\": a\n");
+        assert!(!passed);
+    }
+
+    #[test]
+    fn test_yaml_custom_tag_matters() {
+        let (passed, _) = compare_yaml("a: !foo bar\n", "a: bar\n");
+        assert!(!passed);
+        let (passed, _) = compare_yaml("a: !foo bar\n", "a: !foo bar\n");
+        assert!(passed);
+    }
+
+    #[test]
+    fn test_yaml_core_schema_tag_resolves() {
+        let (passed, _) = compare_yaml("a: !!str 1\n", "a: \"1\"\n");
+        assert!(passed);
+    }
+
+    #[test]
+    fn test_yaml_nested_key_order_ignored() {
+        let (passed, _) = compare_yaml("o:\n  x: 1\n  y: [1, 2]\n", "o:\n  y: [1, 2]\n  x: 1\n");
+        assert!(passed);
+    }
+
+    #[test]
+    fn test_yaml_one_one_words_stay_strings() {
+        let (passed, _) = compare_yaml("a: yes\n", "a: true\n");
+        assert!(!passed);
+    }
+
+    #[test]
     fn test_yaml_invalid() {
-        let (passed, detail) = compare_yaml(":\n  :\n    - invalid:", "a: 1\n");
+        let (passed, detail) = compare_yaml("a: [1, 2\n", "a: 1\n");
         assert!(!passed);
         assert!(detail.contains("parse"));
     }
