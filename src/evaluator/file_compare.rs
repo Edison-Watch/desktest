@@ -198,8 +198,17 @@ fn compare_json(actual: &str, expected: &str) -> (bool, String) {
 fn compare_yaml(actual: &str, expected: &str) -> (bool, String) {
     use saphyr::LoadableYamlNode;
 
-    let actual_val = saphyr::Yaml::load_from_str(actual);
-    let expected_val = saphyr::Yaml::load_from_str(expected);
+    // A scalar whose core-schema tag does not fit (`!!int abc`) loads as
+    // BadValue rather than failing, so report it as a parse failure.
+    let load = |s: &str| {
+        let docs = saphyr::Yaml::load_from_str(s).map_err(|e| e.to_string())?;
+        if docs.iter().any(has_bad_value) {
+            return Err("a value does not match its core-schema tag".to_string());
+        }
+        Ok(docs)
+    };
+    let actual_val = load(actual);
+    let expected_val = load(expected);
 
     match (actual_val, expected_val) {
         (Ok(a), Ok(e)) => {
@@ -214,15 +223,24 @@ fn compare_yaml(actual: &str, expected: &str) -> (bool, String) {
     }
 }
 
+fn has_bad_value(y: &saphyr::Yaml) -> bool {
+    use saphyr::Yaml;
+
+    match y {
+        Yaml::BadValue => true,
+        Yaml::Mapping(m) => m.iter().any(|(k, v)| has_bad_value(k) || has_bad_value(v)),
+        Yaml::Sequence(s) => s.iter().any(has_bad_value),
+        Yaml::Tagged(_, v) => has_bad_value(v),
+        _ => false,
+    }
+}
+
 /// Structural YAML equality that ignores mapping key order (saphyr's own
 /// `PartialEq` compares mappings in insertion order).
 fn yaml_eq(a: &saphyr::Yaml, b: &saphyr::Yaml) -> bool {
     use saphyr::Yaml;
 
     match (a, b) {
-        // A scalar whose core-schema tag does not fit (`!!int abc`) loads as
-        // BadValue; two of them must not match each other.
-        (Yaml::BadValue, _) | (_, Yaml::BadValue) => false,
         (Yaml::Mapping(a), Yaml::Mapping(b)) => {
             a.len() == b.len()
                 && a.iter()
@@ -462,9 +480,10 @@ mod tests {
     }
 
     #[test]
-    fn test_yaml_bad_core_tag_values_differ() {
-        let (passed, _) = compare_yaml("a: !!int abc\n", "a: !!int xyz\n");
+    fn test_yaml_bad_core_tag_is_parse_error() {
+        let (passed, detail) = compare_yaml("a: !!int abc\n", "a: !!int abc\n");
         assert!(!passed);
+        assert!(detail.contains("parse actual"));
     }
 
     #[test]
