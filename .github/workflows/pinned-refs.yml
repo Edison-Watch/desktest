@@ -20,4 +20,20 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
-      - run: python3 scripts/check_immutable_refs.py
+      # On pull requests, run the base branch's copy of the guard so a PR cannot weaken
+      # the checker script (falls back to the PR's copy until the base has one). This
+      # workflow file still comes from the PR, so protect it with CODEOWNERS or a ruleset.
+      - name: Fetch the base branch's guard
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.base_ref }}
+          path: .pinned-refs-base
+          sparse-checkout: scripts/check_immutable_refs.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Check immutable refs
+        run: |
+          guard=scripts/check_immutable_refs.py
+          if [ -f ".pinned-refs-base/$guard" ]; then guard=".pinned-refs-base/$guard"; fi
+          python3 "$guard"
