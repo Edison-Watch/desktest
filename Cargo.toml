@@ -2,6 +2,7 @@
 name = "desktest"
 version = "0.25.0"
 edition = "2024"
+license = "MIT"
 
 [[bin]]
 name = "desktest"
@@ -22,7 +23,7 @@ shell-escape = "0.1"
 regex = "1"
 csv = "1"
 saphyr = { version = "=0.2.2", default-features = false }
-quick-xml = { version = "0.37", features = ["serialize"] }
+quick-xml = { version = "0.41", features = ["serialize"] }
 axum = "0.8"
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures = "0.3"
